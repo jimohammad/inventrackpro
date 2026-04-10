@@ -264,10 +264,22 @@ function renumber() {
 }
 
 // ── Item search per row ──────────────────────────────────────────────────────
+function getOrCreateDrop(rid) {
+    var drop = document.getElementById('itemDrop_' + rid);
+    if (!drop) {
+        drop = document.createElement('div');
+        drop.id = 'itemDrop_' + rid;
+        drop.className = 'autocomplete-box';
+        drop.style.display = 'none';
+        document.body.appendChild(drop);
+    }
+    return drop;
+}
+
 function searchItem(input, rid) {
     clearTimeout(searchTimers[rid]);
     const q    = input.value.trim();
-    const drop = document.getElementById('itemDrop_' + rid);
+    const drop = getOrCreateDrop(rid);
     if (q.length < 1) { drop.style.display = 'none'; return; }
     const whId = document.getElementById('whSelect').value;
     searchTimers[rid] = setTimeout(() => {

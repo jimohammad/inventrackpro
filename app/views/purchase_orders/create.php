@@ -224,7 +224,6 @@ function addRow() {
                 oninput="searchItem(this,'${rid}')"
                 onblur="hideItemDrop('${rid}')">
             <input type="hidden" name="items[${rowCount}][item_id]" id="itemId_${rid}">
-            <div class="autocomplete-box" id="itemDrop_${rid}" style="display:none;"></div>
         </td>
         <td class="col-qty">
             <input type="number" name="items[${rowCount}][quantity]" id="qty_${rid}"

@@ -1,5 +1,20 @@
 {
   "permissions": {
     "allow": ["Edit", "Write", "Read", "Bash", "Glob", "Grep"]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"C:/Users/PC/My Drive/Iqbalerp_Folder\" && git add -A && git diff --cached --quiet || git commit -m \"Auto-save: $(date +\"%Y-%m-%d %H:%M\")\" && git push origin master",
+            "async": true,
+            "statusMessage": "Pushing to GitHub..."
+          }
+        ]
+      }
+    ]
   }
 }

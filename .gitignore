@@ -1,0 +1,36 @@
+# Environment & credentials - NEVER commit these
+.env
+*.env
+.env.*
+!.env.example
+
+# Backups contain full database dumps
+backups/*.sql
+backups/*.gz
+
+# IDE / Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+error_log
+
+# Graphify
+graphify-out/
+.graphify_*
+.graphify_python
+
+# Cache
+backups/cache/
+
+# Python
+__pycache__/
+*.pyc

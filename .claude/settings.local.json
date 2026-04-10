@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -r 'echo php_ini_scanned_files\\(\\) . PHP_EOL; echo PHP_BINARY . PHP_EOL; foreach\\(['\\\\''pdo_mysql'\\\\'','\\\\''mysqli'\\\\''] as $e\\) echo $e . '\\\\'': '\\\\'' . \\(extension_loaded\\($e\\)?'\\\\''yes'\\\\'':'\\\\''no'\\\\''\\) . PHP_EOL;')"
+    ]
+  }
+}

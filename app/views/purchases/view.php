@@ -1,92 +1,178 @@
-<!-- Purchase View -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <a href="?page=purchases" class="btn btn-sm btn-outline-secondary me-2"><i class="bi bi-arrow-left"></i></a>
-        <span class="page-title"><?= $purchase['invoice_no'] ?></span>
-        <span class="badge ms-2 badge-<?= $purchase['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($purchase['status']) ?></span>
+<?php
+$curr = APP_CURRENCY;
+$dp = DECIMAL_PLACES;
+$isPaid = $purchase['balance'] < 0.01;
+$statusColor = $isPaid ? '#22c55e' : '#f59e0b';
+$statusLabel = ucfirst($purchase['status']);
+?>
+<style>
+.pv-page { max-width:720px;margin:0 auto; }
+.pv-head { display:flex;align-items:center;gap:12px;margin-bottom:20px; }
+.pv-head a { width:32px;height:32px;border-radius:8px;border:1.5px solid var(--border-color);display:flex;align-items:center;justify-content:center;color:var(--text-muted);text-decoration:none;font-size:.85rem; }
+.pv-head a:hover { border-color:var(--primary);color:var(--primary); }
+.pv-head h1 { font-size:1.15rem;font-weight:700;margin:0; }
+.pv-badge { padding:3px 12px;border-radius:20px;font-size:.72rem;font-weight:700;color:#fff; }
+
+/* Amount card */
+.pv-amount-card {
+    background:linear-gradient(135deg,#1e3a5f,#2d5a9e);
+    border-radius:14px;padding:24px;text-align:center;margin-bottom:16px;
+    box-shadow:0 4px 20px rgba(30,58,95,.2);
+}
+.pv-amount-label { font-size:.72rem;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:1px;font-weight:600; }
+.pv-amount-value { font-size:2rem;font-weight:800;color:#fff;margin:6px 0;letter-spacing:.5px; }
+.pv-amount-meta { display:flex;justify-content:center;gap:20px;margin-top:10px; }
+.pv-amount-meta span { font-size:.78rem;color:rgba(255,255,255,.7); }
+.pv-amount-meta strong { color:#fff; }
+
+/* Detail card */
+.pv-card { background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;margin-bottom:12px;overflow:hidden; }
+.pv-card-head { font-size:.68rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.6px;padding:12px 16px 0;display:flex;align-items:center;gap:6px; }
+.pv-card-head i { font-size:.8rem; }
+
+/* Detail rows */
+.pv-rows { padding:10px 16px 14px; }
+.pv-row { display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-color);font-size:.84rem; }
+.pv-row:last-child { border-bottom:none; }
+.pv-row-label { color:var(--text-muted);font-weight:500; }
+.pv-row-value { font-weight:600;color:var(--text-main);text-align:right; }
+.pv-row-value a { color:var(--primary);text-decoration:none; }
+
+/* Items table */
+.pv-tbl { width:100%;border-collapse:collapse;font-size:.82rem; }
+.pv-tbl th { padding:8px 12px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);background:var(--bg-main);border-bottom:1.5px solid var(--border-color); }
+.pv-tbl td { padding:6px 12px;border-bottom:1px solid var(--border-color);vertical-align:middle; }
+.pv-tbl tr:last-child td { border-bottom:none; }
+.pv-tbl .item-name { font-weight:600;color:var(--text-main); }
+.pv-tbl .imei-tag { display:inline-block;background:rgba(99,102,241,.08);color:var(--primary);font-size:.7rem;padding:1px 6px;border-radius:4px;margin:1px 2px;font-family:monospace; }
+
+/* Payment list */
+.pv-pay-item { display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid var(--border-color);font-size:.82rem; }
+.pv-pay-item:last-child { border-bottom:none; }
+.pv-empty { text-align:center;padding:16px;color:var(--text-muted);font-size:.82rem; }
+
+/* Actions */
+.pv-actions { display:flex;gap:8px;justify-content:center;margin-top:4px; }
+.pv-btn { padding:8px 16px;border-radius:8px;font-size:.82rem;font-weight:600;text-decoration:none;display:flex;align-items:center;gap:5px;cursor:pointer;border:none; }
+.pv-btn-print { background:rgba(99,102,241,.1);color:var(--primary); }
+.pv-btn-print:hover { background:rgba(99,102,241,.18); }
+.pv-btn-pdf { background:rgba(34,197,94,.1);color:#16a34a; }
+.pv-btn-pdf:hover { background:rgba(34,197,94,.18); }
+</style>
+
+<div class="pv-page">
+    <!-- Header -->
+    <div class="pv-head">
+        <a href="?page=purchases"><i class="bi bi-arrow-left"></i></a>
+        <h1><?= $purchase['invoice_no'] ?></h1>
+        <span class="pv-badge" style="background:<?= $statusColor ?>;"><?= $statusLabel ?></span>
     </div>
-</div>
 
-<div class="row g-3">
-    <div class="col-md-8">
-        <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between">
-                <span>Purchase Details</span>
-                <small class="text-muted"><?= date('d M Y', strtotime($purchase['date'])) ?></small>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6"><p class="text-muted mb-1" style="font-size:0.8rem;">SUPPLIER</p><p class="fw-semibold mb-0"><?= htmlspecialchars($purchase['party_name']) ?></p><?php if ($purchase['party_phone']): ?><small class="text-muted"><?= htmlspecialchars($purchase['party_phone']) ?></small><?php endif; ?></div>
-                    <div class="col-md-6"><p class="text-muted mb-1" style="font-size:0.8rem;">WAREHOUSE</p><p><?= htmlspecialchars($purchase['warehouse_name'] ?? '—') ?></p></div>
-                    <?php if (!empty($purchase['supplier_invoice_no'])): ?>
-                    <div class="col-md-6 mt-3">
-                        <p class="text-muted mb-1" style="font-size:0.8rem;">SUPPLIER INVOICE #</p>
-                        <p class="fw-semibold mb-0" style="font-family:monospace;letter-spacing:0.5px;"><?= htmlspecialchars($purchase['supplier_invoice_no']) ?></p>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
+    <!-- Amount Card -->
+    <div class="pv-amount-card">
+        <div class="pv-amount-label">Grand Total</div>
+        <div class="pv-amount-value"><?= $curr ?> <?= number_format($purchase['grand_total'], $dp) ?></div>
+        <div class="pv-amount-meta">
+            <span>Paid: <strong><?= $curr ?> <?= number_format($purchase['paid_amount'], $dp) ?></strong></span>
+            <span>Balance: <strong style="color:<?= $isPaid ? '#86efac' : '#fde68a' ?>;"><?= $curr ?> <?= number_format($purchase['balance'], $dp) ?></strong></span>
         </div>
+    </div>
 
-        <div class="card">
-            <div class="card-header">Items</div>
-            <div class="card-body p-0">
-                <table class="table mb-0">
-                    <thead><tr><th>#</th><th>Item</th><th class="text-center">Qty</th><th class="text-end">Cost</th><th class="text-end">Total</th></tr></thead>
-                    <tbody>
-                        <?php foreach ($purchase['items'] as $i => $item): ?>
-                        <tr>
-                            <td><?= $i+1 ?></td>
-                            <td>
-                                <span class="fw-semibold"><?= htmlspecialchars($item['item_name']) ?></span>
-                                <?php if ($item['imei_list']): ?>
-                                <br>
-                                <?php foreach (explode('||', $item['imei_list']) as $imei): ?>
-                                <span class="badge" style="background:rgba(99,102,241,0.12);color:var(--primary);font-size:0.72rem;"><?= trim($imei) ?></span>
-                                <?php endforeach; ?>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center"><?= $item['quantity'] ?></td>
-                            <td class="text-end"><?= APP_CURRENCY ?> <?= number_format($item['unit_price'], DECIMAL_PLACES) ?></td>
-                            <td class="text-end fw-semibold"><?= APP_CURRENCY ?> <?= number_format($item['total'], DECIMAL_PLACES) ?></td>
-                        </tr>
+    <!-- Actions -->
+    <div class="pv-actions">
+        <a href="?page=purchases&action=print&id=<?= $purchase['id'] ?>" class="pv-btn pv-btn-print" target="_blank">
+            <i class="bi bi-printer"></i> Print
+        </a>
+        <a href="?page=purchases&action=print&id=<?= $purchase['id'] ?>&autopdf=1" class="pv-btn pv-btn-pdf" target="_blank">
+            <i class="bi bi-file-earmark-pdf"></i> PDF
+        </a>
+    </div>
+
+    <!-- Purchase Details -->
+    <div class="pv-card">
+        <div class="pv-card-head"><i class="bi bi-file-earmark-text"></i> Purchase Details</div>
+        <div class="pv-rows">
+            <div class="pv-row">
+                <span class="pv-row-label">Date</span>
+                <span class="pv-row-value"><?= date('d M Y', strtotime($purchase['date'])) ?></span>
+            </div>
+            <div class="pv-row">
+                <span class="pv-row-label">Supplier</span>
+                <span class="pv-row-value"><?= htmlspecialchars($purchase['party_name']) ?></span>
+            </div>
+            <?php if (!empty($purchase['party_phone'])): ?>
+            <div class="pv-row">
+                <span class="pv-row-label">Phone</span>
+                <span class="pv-row-value"><a href="tel:<?= htmlspecialchars($purchase['party_phone']) ?>"><?= htmlspecialchars($purchase['party_phone']) ?></a></span>
+            </div>
+            <?php endif; ?>
+            <div class="pv-row">
+                <span class="pv-row-label">Warehouse</span>
+                <span class="pv-row-value"><?= htmlspecialchars($purchase['warehouse_name'] ?? '—') ?></span>
+            </div>
+            <?php if (!empty($purchase['supplier_invoice_no'])): ?>
+            <div class="pv-row">
+                <span class="pv-row-label">Supplier Invoice</span>
+                <span class="pv-row-value" style="font-family:monospace;letter-spacing:.5px;"><?= htmlspecialchars($purchase['supplier_invoice_no']) ?></span>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($purchase['notes'])): ?>
+            <div class="pv-row">
+                <span class="pv-row-label">Notes</span>
+                <span class="pv-row-value" style="max-width:60%;text-align:right;"><?= htmlspecialchars($purchase['notes']) ?></span>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Items -->
+    <div class="pv-card">
+        <div class="pv-card-head"><i class="bi bi-box-seam"></i> Items (<?= count($purchase['items']) ?>)</div>
+        <table class="pv-tbl">
+            <thead>
+                <tr>
+                    <th style="width:30px;">#</th>
+                    <th>Item</th>
+                    <th style="text-align:center;width:55px;">Qty</th>
+                    <th style="text-align:right;width:90px;">Price</th>
+                    <th style="text-align:right;width:100px;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($purchase['items'] as $i => $item): ?>
+                <tr>
+                    <td style="color:var(--text-muted);"><?= $i + 1 ?></td>
+                    <td>
+                        <span class="item-name"><?= htmlspecialchars($item['item_name']) ?></span>
+                        <?php if (!empty($item['imei_list'])): ?>
+                        <br>
+                        <?php foreach (explode('||', $item['imei_list']) as $imei): ?>
+                        <span class="imei-tag"><?= trim($imei) ?></span>
                         <?php endforeach; ?>
-                    </tbody>
-                    <tfoot>
-                        <tr><td colspan="4" class="text-end text-muted">Subtotal</td><td class="text-end"><?= APP_CURRENCY ?> <?= number_format($purchase['subtotal'], DECIMAL_PLACES) ?></td></tr>
-                        <?php if ($purchase['discount'] > 0): ?><tr><td colspan="4" class="text-end text-danger">Discount</td><td class="text-end">- <?= APP_CURRENCY ?> <?= number_format($purchase['discount'], DECIMAL_PLACES) ?></td></tr><?php endif; ?>
-                        <tr><td colspan="4" class="text-end fw-bold" style="font-size:1rem;">Grand Total</td><td class="text-end fw-bold" style="font-size:1rem;"><?= APP_CURRENCY ?> <?= number_format($purchase['grand_total'], DECIMAL_PLACES) ?></td></tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-4">
-        <div class="card mb-3">
-            <div class="card-header">Payment Summary</div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between mb-2"><span class="text-muted">Total</span><span class="fw-semibold"><?= APP_CURRENCY ?> <?= number_format($purchase['grand_total'], DECIMAL_PLACES) ?></span></div>
-                <div class="d-flex justify-content-between mb-2"><span class="text-muted">Paid</span><span style="color:var(--success);font-weight:600;"><?= APP_CURRENCY ?> <?= number_format($purchase['paid_amount'], DECIMAL_PLACES) ?></span></div>
-                <hr style="border-color:var(--border-color);">
-                <div class="d-flex justify-content-between"><span class="fw-bold">Balance</span><span style="font-weight:700;color:<?= $purchase['balance'] > 0 ? 'var(--warning)':'var(--success)' ?>;"><?= APP_CURRENCY ?> <?= number_format($purchase['balance'], DECIMAL_PLACES) ?></span></div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">Payments</div>
-            <div class="card-body p-0">
-                <?php if (empty($purchase['payments'])): ?>
-                <p class="text-muted text-center py-3 mb-0">No payments recorded</p>
-                <?php else: ?>
-                <?php foreach ($purchase['payments'] as $pay): ?>
-                <div class="d-flex justify-content-between px-3 py-2" style="border-bottom:1px solid var(--border-color);">
-                    <div><p class="mb-0" style="font-size:0.82rem;"><?= $pay['payment_no'] ?></p><small class="text-muted"><?= date('d M Y', strtotime($pay['date'])) ?></small></div>
-                    <span style="color:var(--success);font-weight:600;"><?= APP_CURRENCY ?> <?= number_format($pay['amount'], DECIMAL_PLACES) ?></span>
-                </div>
+                        <?php endif; ?>
+                    </td>
+                    <td style="text-align:center;font-weight:600;"><?= $item['quantity'] ?></td>
+                    <td style="text-align:right;"><?= number_format($item['unit_price'], $dp) ?></td>
+                    <td style="text-align:right;font-weight:600;"><?= number_format($item['total'], $dp) ?></td>
+                </tr>
                 <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
+            </tbody>
+        </table>
     </div>
+
+    <!-- Payments -->
+    <?php if (!empty($purchase['payments'])): ?>
+    <div class="pv-card">
+        <div class="pv-card-head"><i class="bi bi-cash-stack"></i> Payments (<?= count($purchase['payments']) ?>)</div>
+        <?php foreach ($purchase['payments'] as $pay): ?>
+        <div class="pv-pay-item">
+            <div>
+                <span style="font-weight:600;"><?= $pay['payment_no'] ?></span>
+                <br><small style="color:var(--text-muted);"><?= date('d M Y', strtotime($pay['date'])) ?></small>
+            </div>
+            <span style="font-weight:700;color:#22c55e;"><?= $curr ?> <?= number_format($pay['amount'], $dp) ?></span>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 </div>

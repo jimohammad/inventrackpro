@@ -10,7 +10,7 @@
 .customer-search-wrap input{width:100%;padding:9px 12px 9px 36px;border:2px solid #e0e7ff;border-radius:10px;font-size:0.875rem;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
 .customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
-.items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:hidden;}
+.items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:visible;}
 .items-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#f8faff,#f0f4ff);border-bottom:1px solid #e0e7ff;}
 .items-card-header span{font-size:0.8rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px;}
 table.items-tbl{width:100%;border-collapse:collapse;font-size:0.83rem;}
@@ -42,7 +42,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .save-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:2px solid #e0e7ff;border-radius:0 0 12px 12px;position:sticky;bottom:0;z-index:90;box-shadow:0 -4px 12px rgba(0,0,0,0.06);margin-top:-1px;}
 .btn-save-sale{padding:8px 28px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
 .btn-save-sale:hover{transform:translateY(-1px);}
-.autocomplete-box{position:absolute;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;}
+.autocomplete-box{position:fixed;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;}
 .autocomplete-item{padding:9px 14px;cursor:pointer;font-size:0.83rem;border-bottom:1px solid #f8fafc;color:#1e293b;}
 .autocomplete-item:last-child{border-bottom:none;}
 .autocomplete-item:hover{background:#f8faff;}
@@ -299,20 +299,18 @@ function searchItem(input, rid) {
                         selectItem(this.dataset.rid, itemStore[this.dataset.rid][parseInt(this.dataset.idx)]);
                     });
                 });
-                // Position above or below based on available space
+                // Position fixed — above or below based on space
                 var inputEl = document.querySelector('#' + rid + ' .item-search');
                 var rect = inputEl.getBoundingClientRect();
                 var spaceBelow = window.innerHeight - rect.bottom;
+                drop.style.left = rect.left + 'px';
+                drop.style.width = Math.max(380, rect.width) + 'px';
                 if (spaceBelow < 240) {
-                    drop.style.bottom = '100%';
+                    drop.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
                     drop.style.top = 'auto';
-                    drop.style.marginBottom = '4px';
-                    drop.style.marginTop = '0';
                 } else {
-                    drop.style.top = '100%';
+                    drop.style.top = (rect.bottom + 4) + 'px';
                     drop.style.bottom = 'auto';
-                    drop.style.marginTop = '4px';
-                    drop.style.marginBottom = '0';
                 }
                 drop.style.display = 'block';
             });
@@ -325,6 +323,10 @@ function hideItemDrop(rid) {
         if (d) d.style.display = 'none';
     }, 200);
 }
+function hideAllDropdowns() {
+    document.querySelectorAll('.autocomplete-box').forEach(d => d.style.display = 'none');
+}
+window.addEventListener('scroll', hideAllDropdowns, true);
 
 function selectItem(rid, item) {
     const kwd = parseFloat(item.purchase_price || 0);

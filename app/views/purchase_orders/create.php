@@ -344,7 +344,7 @@ function selectItem(rid, item) {
     document.querySelector('#' + rid + ' .item-search').value = item.name;
     document.getElementById('itemId_'   + rid).value = item.id;
     document.getElementById('kwdprice_' + rid).value = kwd.toFixed(3);
-    document.getElementById('itemDrop_' + rid).style.display = 'none';
+    getOrCreateDrop(rid).style.display = 'none';
     calcFromPrice(rid);
     const rows = document.querySelectorAll('#poTbody tr');
     if (rows[rows.length - 1]?.id === rid) addRow();

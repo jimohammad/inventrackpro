@@ -330,8 +330,8 @@ function searchItem(input, rid) {
 
 function hideItemDrop(rid) {
     setTimeout(() => {
-        const d = document.getElementById('itemDrop_' + rid);
-        if (d) d.style.display = 'none';
+        const d = getOrCreateDrop(rid);
+        d.style.display = 'none';
     }, 200);
 }
 function hideAllDropdowns() {

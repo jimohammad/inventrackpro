@@ -9,6 +9,25 @@ require_once __DIR__ . '/../../config/app.php';
  */
 abstract class BaseController {
 
+    /** Settings cache — loaded once per request, shared by all controllers */
+    private static ?array $settingsCache = null;
+
+    /**
+     * Get all app settings as key→value array.
+     * Cached in memory after first call — only 1 DB query per request.
+     */
+    public static function getSettings(): array {
+        if (self::$settingsCache === null) {
+            $db   = Database::getInstance();
+            $rows = $db->fetchAll("SELECT key_name, value FROM settings");
+            self::$settingsCache = [];
+            foreach ($rows as $r) {
+                self::$settingsCache[$r['key_name']] = $r['value'];
+            }
+        }
+        return self::$settingsCache;
+    }
+
     public function __construct() {
         Auth::startSession();
         Auth::required(); // every controller needs login by default

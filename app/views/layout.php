@@ -15,7 +15,7 @@
             document.getElementById('htmlRoot').setAttribute('data-theme', t);
         })();
     </script>
-    
+
     <!-- Preconnect to CDN for faster resource loading -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
@@ -539,6 +539,16 @@
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    <?php if (Auth::can('service', 'view')): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=service" class="sidebar-link <?= ($page ?? '') === 'service' ? 'active' : '' ?>">
+            <i class="bi bi-tools"></i> Service Center
+        </a>
+        <?php if (Auth::can('service', 'add')): ?>
+        <a href="?page=service&action=create" class="quick-add-btn" title="New Service">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <!-- PARTY_SIDEBAR_V2 -->
     <?php if (Auth::can('customers', 'view') || Auth::can('suppliers', 'view')): ?>
     <div class="sidebar-label">Parties</div>
@@ -586,8 +596,13 @@
     <a href="?page=openingstock" class="sidebar-link <?= ($page ?? '') === 'openingstock' ? 'active' : '' ?>">
         <i class="bi bi-box-arrow-in-down"></i> Opening Stock
     </a>
-    <a href="?page=imei&action=register" class="sidebar-link <?= ($page ?? '') === 'imei' ? 'active' : '' ?>">
+    <?php if (Auth::isAdmin() || Auth::can('imei', 'view')): ?>
+    <a href="?page=imei&action=register" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'register' ? 'active' : '' ?>">
         <i class="bi bi-upc-scan"></i> IMEI Scanner
+    </a>
+    <?php endif; ?>
+    <a href="?page=imei&action=lifecycle" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'lifecycle' ? 'active' : '' ?>">
+        <i class="bi bi-clock-history"></i> IMEI Lifecycle
     </a>
     <?php endif; ?>
 

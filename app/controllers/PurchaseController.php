@@ -312,6 +312,137 @@ class PurchaseController extends BaseController {
         include __DIR__ . '/../views/purchases/print.php';
     }
 
+    // ── IMEI Scan Station ─────────────────────────────────────────────
+    public function imeiScan(): void {
+        Auth::authorize('purchases', 'edit');
+        $id = $this->inputInt('id', 0, 'get');
+        $db = Database::getInstance();
+
+        $purchase = $db->fetchOne(
+            "SELECT p.*, par.name as party_name, w.name as warehouse_name
+             FROM purchases p
+             JOIN parties par ON par.id = p.party_id
+             LEFT JOIN warehouses w ON w.id = p.warehouse_id
+             WHERE p.id = ?",
+            [$id]
+        );
+        if (!$purchase) { $this->flash('error', 'Purchase not found.'); $this->redirect('?page=purchases'); }
+
+        // Only items with has_imei=1
+        $items = $db->fetchAll(
+            "SELECT pi.id as pi_id, pi.item_id, pi.quantity, i.name as item_name,
+                    (SELECT COUNT(*) FROM imei_records WHERE purchase_id = pi.purchase_id AND item_id = pi.item_id) as scanned
+             FROM purchase_items pi
+             JOIN items i ON i.id = pi.item_id
+             WHERE pi.purchase_id = ? AND i.has_imei = 1
+             ORDER BY pi.id ASC",
+            [$id]
+        );
+
+        $pageTitle = 'Scan IMEIs — ' . $purchase['invoice_no'];
+        $page      = 'purchases';
+
+        ob_start();
+        include __DIR__ . '/../views/purchases/imei_scan.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    // AJAX: add a single IMEI for a purchase item
+    public function imeiScanAdd(): void {
+        Auth::authorize('purchases', 'edit');
+        header('Content-Type: application/json');
+
+        $purchaseId = $this->inputInt('purchase_id', 0, 'post');
+        $itemId     = $this->inputInt('item_id',     0, 'post');
+        $imei       = trim($this->input('imei', '', 'post'));
+
+        if (!$purchaseId || !$itemId || !$imei) {
+            echo json_encode(['ok' => false, 'msg' => 'Missing data.']); return;
+        }
+        if (!preg_match('/^\d{15,18}$/', $imei)) {
+            echo json_encode(['ok' => false, 'msg' => 'IMEI must be 15–18 digits.']); return;
+        }
+
+        $db = Database::getInstance();
+
+        // Check duplicate globally
+        $existing = $db->fetchOne("SELECT id, item_id, purchase_id FROM imei_records WHERE imei = ?", [$imei]);
+        if ($existing) {
+            if ($existing['purchase_id'] == $purchaseId && $existing['item_id'] == $itemId) {
+                echo json_encode(['ok' => false, 'msg' => 'Already scanned in this purchase.']); return;
+            }
+            echo json_encode(['ok' => false, 'msg' => 'IMEI exists in another record (id=' . $existing['id'] . ').']); return;
+        }
+
+        // Get warehouse from purchase
+        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
+        $warehouseId = $purchase['warehouse_id'] ?? null;
+
+        $db->insert(
+            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status) VALUES (?,?,?,?,'in_stock')",
+            [$imei, $itemId, $warehouseId, $purchaseId]
+        );
+
+        $scanned = (int)$db->fetchOne(
+            "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id=? AND item_id=?",
+            [$purchaseId, $itemId]
+        )['c'];
+
+        $qty = (int)$db->fetchOne(
+            "SELECT quantity FROM purchase_items WHERE purchase_id=? AND item_id=?",
+            [$purchaseId, $itemId]
+        )['quantity'];
+
+        echo json_encode(['ok' => true, 'imei' => $imei, 'scanned' => $scanned, 'qty' => $qty]);
+    }
+
+    // AJAX: delete last scanned IMEI (undo)
+    public function imeiScanDelete(): void {
+        Auth::authorize('purchases', 'edit');
+        header('Content-Type: application/json');
+
+        $purchaseId = $this->inputInt('purchase_id', 0, 'post');
+        $itemId     = $this->inputInt('item_id',     0, 'post');
+        $imei       = trim($this->input('imei', '', 'post'));
+
+        if (!$purchaseId || !$itemId || !$imei) {
+            echo json_encode(['ok' => false, 'msg' => 'Missing data.']); return;
+        }
+
+        $db = Database::getInstance();
+        $row = $db->fetchOne(
+            "SELECT id FROM imei_records WHERE imei=? AND purchase_id=? AND item_id=?",
+            [$imei, $purchaseId, $itemId]
+        );
+        if (!$row) { echo json_encode(['ok' => false, 'msg' => 'IMEI not found.']); return; }
+
+        $db->execute("DELETE FROM imei_records WHERE id=?", [$row['id']]);
+
+        $scanned = (int)$db->fetchOne(
+            "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id=? AND item_id=?",
+            [$purchaseId, $itemId]
+        )['c'];
+
+        echo json_encode(['ok' => true, 'scanned' => $scanned]);
+    }
+
+    // AJAX: get scanned IMEI list for an item
+    public function imeiScanList(): void {
+        Auth::authorize('purchases', 'view');
+        header('Content-Type: application/json');
+
+        $purchaseId = $this->inputInt('purchase_id', 0, 'get');
+        $itemId     = $this->inputInt('item_id',     0, 'get');
+
+        $db   = Database::getInstance();
+        $rows = $db->fetchAll(
+            "SELECT imei, created_at FROM imei_records WHERE purchase_id=? AND item_id=? ORDER BY id DESC",
+            [$purchaseId, $itemId]
+        );
+        echo json_encode($rows);
+    }
+
     // AUDIT FIX F1: FOR UPDATE prevents duplicate purchase numbers
     private function nextInvoiceNo(Database $db): string {
         $last = $db->fetchOne("SELECT invoice_no FROM purchases ORDER BY id DESC LIMIT 1 FOR UPDATE");

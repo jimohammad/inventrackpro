@@ -11,6 +11,11 @@ require_once __DIR__ . '/app/helpers/Auth.php';
 require_once __DIR__ . '/app/controllers/BaseController.php';
 require_once __DIR__ . '/app/models/BaseModel.php';
 
+// Prevent browser from caching pages so changes show immediately
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+
 Auth::startSession();
 
 // Get the requested page from URL e.g. ?page=sales&action=add
@@ -19,8 +24,8 @@ $action = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['action'] ?? 'index');
 if (empty($action)) $action = 'index';
 
 // Public pages that don't need login
-$publicPages = ['login', 'logout', 'fieldstatement'];
-$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement'];
+$publicPages = ['login', 'logout', 'fieldstatement', 'servicetrack'];
+$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetrack'];
 
 if (!in_array($page, $publicPages)) {
     Auth::required();
@@ -60,6 +65,8 @@ $routes = [
     'parties'         => 'PartyController',
     'suppliercontacts'=> 'SupplierContactController',
     'imei'            => 'IMEIController',
+    'service'         => 'ServiceController',
+    'servicetrack'    => 'ServiceController',
     'users'           => 'UserController',
     'warehouses'      => 'WarehouseAdminController',
     'settings'        => 'SettingsController',

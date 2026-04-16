@@ -255,7 +255,7 @@ class WarrantyController extends BaseController {
             "SELECT ir.imei, ir.imei2, i.name AS item_name, i.id AS item_id
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.status = 'in_stock' AND (ir.imei LIKE ? OR ir.imei2 LIKE ?)
+             WHERE ir.status IN ('in_stock','returned') AND (ir.imei LIKE ? OR ir.imei2 LIKE ?)
              $extra
              LIMIT 10",
             $params

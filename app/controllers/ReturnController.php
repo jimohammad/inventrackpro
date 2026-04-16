@@ -186,9 +186,7 @@ class ReturnController extends BaseController {
         if (!$return) die('Return not found.');
 
         $db       = Database::getInstance();
-        $settings = [];
-        $rows     = $db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($rows as $r) $settings[$r['key_name']] = $r['value'];
+        $settings = self::getSettings();
 
         // Party balance for print
         $partyBalance = $this->partyModel->findWithBalance($return['party_id']);

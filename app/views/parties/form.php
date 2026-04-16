@@ -4,6 +4,23 @@
     <h1 class="page-title mb-0"><?= isset($editMode) ? 'Edit Party' : 'New Party' ?></h1>
 </div>
 
+<?php if (!isset($editMode)): ?>
+<!-- Type tabs for new party -->
+<div class="d-flex gap-0 mb-4" style="border-radius:12px;overflow:hidden;border:2px solid #e0e7ff;background:#f8faff;max-width:400px;">
+    <button type="button" id="tabCustomer"
+        onclick="setPartyType('customer')"
+        style="flex:1;padding:12px 20px;border:none;font-weight:700;font-size:0.95rem;cursor:pointer;transition:all 0.18s;background:rgba(16,185,129,0.15);color:#10b981;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <i class="bi bi-person-fill"></i> Customer
+    </button>
+    <div style="width:2px;background:#e0e7ff;flex-shrink:0;"></div>
+    <button type="button" id="tabSupplier"
+        onclick="setPartyType('supplier')"
+        style="flex:1;padding:12px 20px;border:none;font-weight:700;font-size:0.95rem;cursor:pointer;transition:all 0.18s;background:transparent;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <i class="bi bi-truck"></i> Supplier
+    </button>
+</div>
+<?php endif; ?>
+
 <div class="row justify-content-center">
     <div class="col-md-9">
         <form method="POST" action="?page=parties&action=<?= isset($editMode) ? 'update' : 'store' ?>">
@@ -39,6 +56,7 @@
                                 style="background:#f1f5f9;font-weight:700;color:#4338ca;letter-spacing:1px;">
                             <small class="text-muted">Auto generated</small>
                         </div>
+                        <?php if (isset($editMode)): ?>
                         <div class="col-md-3">
                             <label class="form-label fw-500">Type <span class="text-danger">*</span></label>
                             <select name="type" class="form-select" required>
@@ -51,11 +69,14 @@
                                 <?php endif; ?>
                             </select>
                         </div>
+                        <?php else: ?>
+                        <input type="hidden" name="type" id="partyTypeInput" value="customer">
+                        <?php endif; ?>
                         <div class="col-12">
                             <label class="form-label fw-500">Address</label>
                             <input type="text" name="address" class="form-control" value="<?= htmlspecialchars($party['address'] ?? '') ?>" placeholder="Street address">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="fieldArea">
                             <label class="form-label fw-500">Area</label>
                             <select name="city" class="form-select">
                                 <option value="">Select Area...</option>
@@ -66,9 +87,18 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-500">Country</label>
+                            <?php if (!isset($editMode)): ?>
+                            <input type="text" name="country" id="countryText" class="form-control" value="Kuwait" placeholder="Country">
+                            <select name="country" id="countrySelect" class="form-select" style="display:none;" disabled>
+                                <option value="UAE">UAE</option>
+                                <option value="Hong Kong">Hong Kong</option>
+                                <option value="China">China</option>
+                            </select>
+                            <?php else: ?>
                             <input type="text" name="country" class="form-control" value="<?= htmlspecialchars($party['country'] ?? 'Kuwait') ?>">
+                            <?php endif; ?>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="fieldIdCard">
                             <label class="form-label fw-500">Kuwait Civil ID</label>
                             <input type="text" name="id_card" class="form-control" maxlength="12"
                                 value="<?= htmlspecialchars($party['id_card'] ?? '') ?>"
@@ -170,7 +200,7 @@
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="fieldCreditLimit">
                             <label class="form-label fw-500">Credit Limit</label>
                             <div class="input-group">
                                 <span class="input-group-text" style="background:rgba(245,158,11,0.1);border-color:var(--border-color);color:#f59e0b;font-weight:600;"><?= APP_CURRENCY ?></span>
@@ -231,9 +261,59 @@ function combinePhone(n) {
     var num = document.getElementById('num' + n).value.trim();
     document.getElementById('phone' + n + '_combined').value = num ? (cc + num) : '';
 }
-// Initialize on load
+
+function setPartyType(type) {
+    var inp = document.getElementById('partyTypeInput');
+    if (!inp) return;
+    inp.value = type;
+
+    var tc = document.getElementById('tabCustomer');
+    var ts = document.getElementById('tabSupplier');
+    if (tc && ts) {
+        if (type === 'customer') {
+            tc.style.background = 'rgba(16,185,129,0.85)';
+            tc.style.color = '#fff';
+            ts.style.background = 'transparent';
+            ts.style.color = '#94a3b8';
+        } else {
+            ts.style.background = 'rgba(99,102,241,0.85)';
+            ts.style.color = '#fff';
+            tc.style.background = 'transparent';
+            tc.style.color = '#94a3b8';
+        }
+    }
+
+    var sup = (type === 'supplier');
+
+    // Area field — hide for supplier
+    var fa = document.getElementById('fieldArea');
+    if (fa) fa.style.display = sup ? 'none' : '';
+
+    // Kuwait Civil ID — hide for supplier
+    var fi = document.getElementById('fieldIdCard');
+    if (fi) fi.style.display = sup ? 'none' : '';
+
+    // Credit Limit — hide for supplier
+    var fc = document.getElementById('fieldCreditLimit');
+    if (fc) fc.style.display = sup ? 'none' : '';
+
+    // Country: text input for customer, dropdown for supplier
+    var ct = document.getElementById('countryText');
+    var cs = document.getElementById('countrySelect');
+    if (ct && cs) {
+        ct.style.display = sup ? 'none' : '';
+        ct.disabled      = sup;
+        cs.style.display = sup ? '' : 'none';
+        cs.disabled      = !sup;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     combinePhone(1);
     combinePhone(2);
+    // Activate default Customer tab on new party page
+    if (document.getElementById('partyTypeInput')) {
+        setPartyType('customer');
+    }
 });
 </script>

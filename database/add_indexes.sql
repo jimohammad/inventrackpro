@@ -58,3 +58,13 @@ CREATE INDEX idx_actlog_created ON activity_log (created_at);
 
 -- STOCK TRANSFERS
 CREATE INDEX idx_st_created ON stock_transfers (created_at);
+
+-- SERVICE RECORDS
+CREATE INDEX idx_svc_tracking_token ON service_records (tracking_token);
+CREATE INDEX idx_svc_imei ON service_records (imei);
+CREATE INDEX idx_svc_wh_status ON service_records (warehouse_id, status);
+CREATE INDEX idx_svc_wh_stage ON service_records (warehouse_id, device_stage);
+CREATE INDEX idx_svc_party ON service_records (party_id);
+
+-- SERVICE HISTORY
+CREATE INDEX idx_svchist_service ON service_history (service_id);

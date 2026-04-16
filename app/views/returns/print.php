@@ -3,8 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <title>Return <?= $return['return_no'] ?></title>
+<?php $thermal = isset($_GET['thermal']); ?>
 <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+<?php if (!$thermal): ?>
+/* ══════════════════════════════════
+   A5 LAYOUT — unchanged
+══════════════════════════════════ */
     body {
         font-family: 'Segoe UI', Arial, sans-serif;
         font-size: 12px; color: #1a1a1a;
@@ -18,12 +24,6 @@
     .inv-title { text-align: right; }
     .inv-title h1 { font-size: 22px; font-weight: 800; color: #dc2626; letter-spacing: 1px; }
     .inv-title p { font-size: 11px; color: #555; margin-top: 4px; line-height: 1.7; }
-
-    .party-section { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-    .party-box { background: #fff5f5; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; flex: 1; }
-    .party-box label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #dc2626; letter-spacing: 0.5px; }
-    .party-box p { font-size: 12px; font-weight: 600; color: #1a1a1a; margin-top: 2px; }
-    .party-box small { color: #666; }
 
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
     thead th {
@@ -55,12 +55,73 @@
         .wrap { padding: 0; width: 100%; max-width: 100%; }
         @page { margin: 15mm 18mm 12mm 18mm; }
     }
+
+<?php else: ?>
+/* ══════════════════════════════════
+   THERMAL — Receipt Style
+══════════════════════════════════ */
+    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; background: #fff; padding: 20px 4px; }
+
+    .no-print { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; margin: -20px -4px 16px; }
+    .no-print button { background: #6366f1; color: #fff; border: none; padding: 6px 16px; border-radius: 5px; font-size: 13px; cursor: pointer; margin-right: 6px; }
+    .no-print button.close-btn { background: #e5e7eb; color: #444; }
+
+    .wrap { max-width: 480px; margin: 0 auto; padding: 16px 6px; border: 1px solid #e5e7eb; border-radius: 10px; }
+
+    .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
+    .company-name { font-size: 18px; font-weight: 800; color: #1e3a5f; }
+    .company-info { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.6; }
+
+    .receipt-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #dc2626; margin: 14px 0 6px; }
+    .receipt-subtitle { text-align: center; margin-bottom: 14px; }
+
+    .amount-box { margin: 18px 0; background: linear-gradient(135deg, #fff5f5, #fee2e2); border: 2px solid #fecaca; border-radius: 10px; padding: 14px; text-align: center; }
+    .amount-label { font-size: 10px; color: #dc2626; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .amount-value { font-size: 26px; font-weight: 800; color: #991b1b; margin-top: 4px; }
+
+    .receipt-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
+    .receipt-row:last-child { border-bottom: none; }
+    .receipt-row .lbl { color: #666; }
+    .receipt-row .val { font-weight: 600; color: #1a1a1a; text-align: right; }
+
+    .items-section { margin: 14px 0; padding: 10px 0; border-top: 2px dashed #e5e7eb; border-bottom: 2px dashed #e5e7eb; }
+    .items-section table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .items-section thead th { font-size: 10px; font-weight: 800; text-transform: uppercase; border-bottom: 1px solid #000; padding: 3px 2px; }
+    .items-section tbody td { padding: 4px 2px; border-bottom: 1px dashed #e5e7eb; vertical-align: top; }
+    .items-section tbody tr:last-child td { border-bottom: none; }
+    .item-name { font-weight: 700; }
+
+    .balance-section { margin-top: 14px; padding-top: 12px; border-top: 2px dashed #e5e7eb; }
+    .balance-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
+    .balance-row .lbl { color: #666; }
+    .balance-row .val { font-weight: 600; text-align: right; }
+    .balance-final { display: flex; justify-content: space-between; padding: 8px 0 0; border-top: 2px solid #1e3a5f; margin-top: 4px; }
+    .balance-final .lbl { font-weight: 800; color: #1e3a5f; font-size: 12px; }
+    .balance-final .val { font-weight: 800; font-size: 13px; }
+
+    .receipt-footer { text-align: center; margin-top: 18px; padding-top: 14px; border-top: 2px dashed #e5e7eb; font-size: 10px; color: #888; }
+
+    @media print {
+        body { padding: 0; background: #fff; }
+        .no-print { display: none !important; }
+        .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
+        @page { margin: 8mm 3mm; }
+    }
+<?php endif; ?>
 </style>
 </head>
 <body>
 
+<?php if (!$thermal): ?>
+<!-- ════════════════════════════════
+     A5 LAYOUT — unchanged
+════════════════════════════════ -->
 <div class="no-print">
     <button onclick="window.print()" style="background:#dc2626;color:#fff;">⎙ Print</button>
+    <a href="?page=returns&action=print&id=<?= $return['id'] ?>&thermal=1"
+        style="background:#059669;color:#fff;border:none;padding:7px 18px;border-radius:5px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;margin-left:6px;cursor:pointer;">
+        🖨 Thermal
+    </a>
     <button onclick="exportPDF()" style="background:#7c3aed;color:#fff;">⤓ PDF</button>
     <button onclick="window.location='?page=returns'" style="background:#f3f4f6;color:#444;border:1px solid #e5e7eb!important;">Close</button>
 </div>
@@ -142,6 +203,105 @@
         <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?></p>
     </div>
 </div>
+
+<?php else: ?>
+<!-- ════════════════════════════════
+     THERMAL — Receipt Style
+════════════════════════════════ -->
+<div class="no-print">
+    <button onclick="window.print()">⎙ Print</button>
+    <button onclick="exportPDF()" style="background:#dc2626;">⤓ PDF</button>
+    <a href="?page=returns&action=print&id=<?= $return['id'] ?>"
+        style="background:#6366f1;color:#fff;border:none;padding:6px 16px;border-radius:5px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;margin-right:6px;">
+        ⬚ A5
+    </a>
+    <button class="close-btn" onclick="window.location='?page=returns'">Close</button>
+</div>
+
+<div class="wrap">
+    <!-- Header -->
+    <div class="receipt-header">
+        <div class="company-name"><?= htmlspecialchars($settings['company_name'] ?? APP_NAME) ?></div>
+        <div class="company-info">
+            <?= nl2br(htmlspecialchars($settings['company_address'] ?? '')) ?><br>
+            <?= htmlspecialchars($settings['company_phone'] ?? '') ?>
+        </div>
+    </div>
+
+    <!-- Title -->
+    <div class="receipt-title">Sale Return</div>
+    <div class="receipt-subtitle">
+        <span style="display:inline-block;padding:4px 18px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;background:#fee2e2;color:#991b1b;">
+            ↩ Return
+        </span>
+    </div>
+
+    <!-- Details -->
+    <div class="receipt-row"><span class="lbl">Return No</span><span class="val"><?= $return['return_no'] ?></span></div>
+    <div class="receipt-row"><span class="lbl">Date</span><span class="val"><?= date('d M Y', strtotime($return['date'])) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Customer</span><span class="val"><?= htmlspecialchars($return['party_name']) ?></span></div>
+    <?php if (!empty($return['party_phone'])): ?>
+    <div class="receipt-row"><span class="lbl">Phone</span><span class="val"><?= htmlspecialchars($return['party_phone']) ?></span></div>
+    <?php endif; ?>
+    <div class="receipt-row"><span class="lbl">Branch</span><span class="val"><?= htmlspecialchars($return['warehouse_name'] ?? '—') ?></span></div>
+    <?php if (!empty($return['reason'])): ?>
+    <div class="receipt-row"><span class="lbl">Reason</span><span class="val"><?= htmlspecialchars($return['reason']) ?></span></div>
+    <?php endif; ?>
+
+    <!-- Items -->
+    <div class="items-section">
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align:left;">Item</th>
+                    <th style="text-align:center;width:30px;">Qty</th>
+                    <th style="text-align:right;width:55px;">Price</th>
+                    <th style="text-align:right;width:55px;">Amt</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($return['items'] as $item): ?>
+                <tr>
+                    <td><span class="item-name"><?= htmlspecialchars($item['item_name']) ?></span></td>
+                    <td style="text-align:center;"><?= $item['quantity'] ?></td>
+                    <td style="text-align:right;"><?= number_format($item['unit_price'], DECIMAL_PLACES) ?></td>
+                    <td style="text-align:right;font-weight:700;"><?= number_format($item['total'], DECIMAL_PLACES) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Return Amount Box -->
+    <div class="amount-box">
+        <div class="amount-label">Return Amount</div>
+        <div class="amount-value"><?= APP_CURRENCY ?> <?= number_format($return['grand_total'], DECIMAL_PLACES) ?></div>
+    </div>
+
+    <!-- Balance Section -->
+    <div class="balance-section">
+        <div class="balance-row">
+            <span class="lbl">Previous Balance</span>
+            <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
+        </div>
+        <div class="balance-row">
+            <span class="lbl" style="color:#dc2626;">Return Deducted</span>
+            <span class="val" style="color:#dc2626;">- <?= APP_CURRENCY ?> <?= number_format($return['grand_total'], DECIMAL_PLACES) ?></span>
+        </div>
+        <div class="balance-final">
+            <span class="lbl">Current Balance</span>
+            <span class="val" style="color:<?= $currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669') ?>;">
+                <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
+            </span>
+        </div>
+    </div>
+
+    <div class="receipt-footer">
+        <p><?= htmlspecialchars($settings['invoice_footer'] ?? 'Thank you!') ?></p>
+        <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?> &nbsp;·&nbsp; <?= htmlspecialchars(Auth::name()) ?></p>
+    </div>
+</div>
+<?php endif; ?>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <script>

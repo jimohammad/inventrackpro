@@ -48,6 +48,7 @@
 .ir-scanned-num { width:28px;font-weight:700;color:var(--text-muted);font-size:.75rem; }
 .ir-scanned-imei { font-family:monospace;font-weight:600;color:var(--text-main);letter-spacing:.5px; }
 .ir-scanned-ok { color:#16a34a;font-size:.85rem; }
+.ir-status-icon { min-width:18px;text-align:center; }
 .ir-scan-total {
     display:flex;align-items:center;justify-content:space-between;
     padding:10px 14px;background:rgba(99,102,241,.06);border-radius:8px;margin-top:8px;
@@ -71,7 +72,16 @@
     <!-- Step 1: Select Item -->
     <div class="ir-card">
         <div class="ir-sep"><i class="bi bi-box-seam"></i> Select Item</div>
-        <div class="ir-item-grid">
+        <div style="position:relative;margin-bottom:14px;">
+            <i class="bi bi-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:0.9rem;pointer-events:none;"></i>
+            <input type="text" id="itemSearch" placeholder="Search item by name..."
+                   autocomplete="off"
+                   oninput="filterItems(this.value)"
+                   style="width:100%;padding:9px 12px 9px 36px;border:1.5px solid #e0e7ff;border-radius:9px;font-size:0.9rem;font-weight:600;background:#fafbff;outline:none;transition:border-color .2s,box-shadow .2s;"
+                   onfocus="this.style.borderColor='#818cf8';this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'"
+                   onblur="this.style.borderColor='#e0e7ff';this.style.boxShadow=''">
+        </div>
+        <div class="ir-item-grid" id="itemGrid">
             <?php foreach ($items as $it):
                 $remaining = max(0, (int)$it['stock'] - (int)$it['imei_count']);
             ?>
@@ -111,19 +121,27 @@
 </div>
 
 <script>
-var scanItemId = null;
+var scanItemId   = null;
 var scanItemName = '';
-var scanTotal = 0;
+var scanTotal    = 0;
+
+// Queue system — prevents dropped scans when scanning fast
+var scanQueue      = [];   // IMEIs waiting to be saved
+var queueRunning   = false;
+var localScanned   = {};   // imei → row element (for dedup within session)
+var localSeq       = 0;    // display counter for pending rows
 
 function selectScanItem(id, name, stock, imeiCount) {
-    // Deselect all
     document.querySelectorAll('.ir-item').forEach(function(el) { el.classList.remove('active'); });
-    // Select this
     document.getElementById('irItem_' + id).classList.add('active');
 
-    scanItemId = id;
+    scanItemId   = id;
     scanItemName = name;
-    scanTotal = imeiCount;
+    scanTotal    = imeiCount;
+    scanQueue    = [];
+    queueRunning = false;
+    localScanned = {};
+    localSeq     = imeiCount;
 
     document.getElementById('scanItemName').textContent = name;
     document.getElementById('scanCount').textContent = imeiCount;
@@ -131,17 +149,57 @@ function selectScanItem(id, name, stock, imeiCount) {
     document.getElementById('scanMsg').className = 'ir-msg';
     document.getElementById('scanMsg').textContent = '';
 
-    var panel = document.getElementById('scannerPanel');
-    panel.classList.add('show');
+    document.getElementById('scannerPanel').classList.add('show');
     setTimeout(function() { document.getElementById('scanInput').focus(); }, 100);
 }
 
 function submitScan() {
     var input = document.getElementById('scanInput');
-    var imei = input.value.trim();
+    var imei  = input.value.trim().replace(/\D/g, ''); // strip non-digits
+    input.value = '';
+    input.focus();
+
     if (!imei || !scanItemId) return;
 
-    input.disabled = true;
+    // Minimum length validation (13 for H40, 15 for everything else)
+    var minLen = (scanItemName.toLowerCase().indexOf('h40') !== -1) ? 13 : 15;
+    if (imei.length < minLen) {
+        showMsg('err', 'Too short (' + imei.length + ' digits) — need at least ' + minLen);
+        return;
+    }
+
+    // Client-side duplicate check within this session
+    if (localScanned[imei]) {
+        showMsg('err', 'Already scanned: ' + imei);
+        return;
+    }
+
+    // Add to UI immediately — never wait for server
+    localSeq++;
+    var rowId = 'row_' + imei.replace(/[^a-zA-Z0-9]/g,'_');
+    var list  = document.getElementById('scannedList');
+    var div   = document.createElement('div');
+    div.className = 'ir-scanned-item';
+    div.id = rowId;
+    div.innerHTML =
+        '<span class="ir-scanned-num">' + localSeq + '</span>' +
+        '<span class="ir-scanned-imei">' + imei + '</span>' +
+        '<span class="ir-status-icon" style="font-size:.85rem;color:#f59e0b;"><i class="bi bi-hourglass-split"></i></span>';
+    list.insertBefore(div, list.firstChild);
+
+    localScanned[imei] = div;
+    document.getElementById('scanCount').textContent = localSeq;
+
+    // Add to save queue and process
+    scanQueue.push(imei);
+    processQueue();
+}
+
+function processQueue() {
+    if (queueRunning || scanQueue.length === 0) return;
+    queueRunning = true;
+
+    var imei = scanQueue.shift();
 
     fetch('?page=imei&action=saveImei', {
         method: 'POST',
@@ -150,42 +208,58 @@ function submitScan() {
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-        input.disabled = false;
-        input.value = '';
-        input.focus();
+        var rowId = 'row_' + imei.replace(/[^a-zA-Z0-9]/g,'_');
+        var row   = document.getElementById(rowId);
+        var icon  = row ? row.querySelector('.ir-status-icon') : null;
 
-        var msg = document.getElementById('scanMsg');
         if (data.error) {
-            msg.className = 'ir-msg err';
-            msg.textContent = data.error;
-            return;
+            showMsg('err', data.error);
+            if (icon) icon.innerHTML = '<i class="bi bi-x-circle-fill" style="color:#dc2626;" title="' + data.error + '"></i>';
+            // Remove from local map so user can re-scan after correcting
+            delete localScanned[imei];
+            // Adjust display count
+            localSeq--;
+            document.getElementById('scanCount').textContent = localSeq;
+            if (row) row.style.opacity = '0.4';
+        } else {
+            showMsg('ok', 'Saved: ' + imei);
+            if (icon) icon.innerHTML = '<i class="bi bi-check-circle-fill" style="color:#16a34a;"></i>';
+            scanTotal = data.count;
+            // Update badge on item card
+            var badge = document.getElementById('irBadge_' + scanItemId);
+            if (badge) badge.textContent = data.count + ' IMEI';
         }
-
-        msg.className = 'ir-msg ok';
-        msg.textContent = 'Added: ' + imei;
-
-        scanTotal = data.count;
-        document.getElementById('scanCount').textContent = scanTotal;
-
-        // Update badge on item card
-        var badge = document.getElementById('irBadge_' + scanItemId);
-        if (badge) badge.textContent = scanTotal + ' IMEI';
-
-        // Add to scanned list
-        var list = document.getElementById('scannedList');
-        var div = document.createElement('div');
-        div.className = 'ir-scanned-item';
-        div.innerHTML = '<span class="ir-scanned-num">' + scanTotal + '</span>' +
-            '<span class="ir-scanned-imei">' + imei + '</span>' +
-            '<span class="ir-scanned-ok"><i class="bi bi-check-circle-fill"></i></span>';
-        list.insertBefore(div, list.firstChild);
     })
     .catch(function() {
-        input.disabled = false;
-        input.focus();
-        var msg = document.getElementById('scanMsg');
-        msg.className = 'ir-msg err';
-        msg.textContent = 'Network error — try again';
+        showMsg('err', 'Network error — retrying ' + imei);
+        // Re-queue at front for retry
+        scanQueue.unshift(imei);
+    })
+    .finally(function() {
+        queueRunning = false;
+        processQueue(); // process next in queue
     });
 }
+
+function showMsg(type, text) {
+    var msg = document.getElementById('scanMsg');
+    msg.className = 'ir-msg ' + type;
+    msg.textContent = text;
+}
+
+function filterItems(q) {
+    q = q.toLowerCase().trim();
+    document.querySelectorAll('#itemGrid .ir-item').forEach(function(el) {
+        var name = el.querySelector('.ir-item-name').textContent.toLowerCase();
+        el.style.display = (!q || name.indexOf(q) > -1) ? '' : 'none';
+    });
+}
+
+// Keep scan input focused when clicking outside item cards,
+// but don't steal focus from the search box
+document.addEventListener('click', function(e) {
+    if (scanItemId && !e.target.closest('.ir-item') && e.target.id !== 'itemSearch') {
+        document.getElementById('scanInput').focus();
+    }
+});
 </script>

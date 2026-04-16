@@ -527,9 +527,7 @@ class ReportController extends BaseController {
         }
         unset($t);
 
-        $settings = [];
-        $rows = $this->db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($rows as $r) $settings[$r['key_name']] = $r['value'];
+        $settings = self::getSettings();
 
         include __DIR__ . '/../views/reports/party_statement_print.php';
     }
@@ -669,9 +667,7 @@ class ReportController extends BaseController {
             'invoices' => count(array_unique(array_column($rows, 'invoice_no')))
         );
 
-        $settings = array();
-        $srows = $this->db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($srows as $r) $settings[$r['key_name']] = $r['value'];
+        $settings = self::getSettings();
 
         include __DIR__ . '/../views/reports/item_sales_print.php';
     }

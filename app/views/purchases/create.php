@@ -85,9 +85,9 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 <form method="POST" action="?page=purchases&action=store" id="purForm">
     <?= Auth::csrfField() ?>
     <input type="hidden" name="tax" value="0">
-    <input type="hidden" name="paid_amount" value="0">
+    <input type="hidden" name="paid_amount" id="purPaidHidden" value="0">
     <input type="hidden" name="payment_method" value="cash">
-    <input type="hidden" name="account_id" value="<?= $accounts[0]['id'] ?? '' ?>">
+    <input type="hidden" name="account_id" id="purAccountHidden" value="<?= $accounts[0]['id'] ?? '' ?>">
     <input type="hidden" name="print_mode" id="purPrintMode" value="0">
 
 <div class="sale-wrap">
@@ -188,6 +188,32 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
             <div class="totals-row grand">
                 <span>Grand Total</span>
                 <span id="purGrandDisplay">0.000</span>
+            </div>
+            <!-- Payment section -->
+            <div style="margin-top:10px;padding:10px 12px;background:#f8faff;border:1.5px solid #e0e7ff;border-radius:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:0.85rem;font-weight:600;color:#475569;">Pay From Account</span>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+                        <input type="checkbox" id="purPayFullChk" onchange="togglePurPayFull(this)"
+                               style="width:16px;height:16px;accent-color:#6366f1;cursor:pointer;">
+                        <span style="font-size:0.82rem;font-weight:700;color:#6366f1;">Pay in Full</span>
+                    </label>
+                </div>
+                <select id="purAccountSelect" onchange="document.getElementById('purAccountHidden').value=this.value"
+                    style="width:100%;padding:7px 10px;border:1.5px solid #e0e7ff;border-radius:8px;font-size:0.85rem;font-weight:600;color:#1e293b;background:#fff;margin-bottom:8px;">
+                    <?php foreach ($accounts as $acc): ?>
+                    <option value="<?= $acc['id'] ?>"><?= htmlspecialchars($acc['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:0.82rem;font-weight:600;color:#475569;white-space:nowrap;">Amount Paid</span>
+                    <div style="display:flex;align-items:center;gap:4px;flex:1;">
+                        <span style="font-size:0.8rem;font-weight:700;color:#6366f1;"><?= APP_CURRENCY ?></span>
+                        <input type="number" id="purPaidInput" step="0.001" min="0" value="0.000"
+                               oninput="onPurPaidInput()"
+                               style="flex:1;padding:7px 10px;border:1.5px solid #e0e7ff;border-radius:8px;font-size:0.9rem;font-weight:700;color:#1e293b;background:#fff;text-align:right;">
+                    </div>
+                </div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin-top:8px;background:linear-gradient(135deg,#fff5f5,#fee2e2);border:1.5px solid #fca5a5;border-radius:8px;">
                 <span style="font-size:0.9rem;font-weight:700;color:#dc2626;"><i class="bi bi-clock-history me-1"></i> Balance Due</span>
@@ -420,8 +446,39 @@ function calcPurTotals() {
     document.getElementById('purSubFoot').textContent      = subtotal.toFixed(3);
     document.getElementById('purQtyFoot').textContent      = totalQty;
     document.getElementById('purGrandDisplay').textContent = grand.toFixed(3);
-    document.getElementById('purBalDisplay').textContent   = grand.toFixed(3);
     document.getElementById('purQtyBadge').textContent     = totalQty + ' item' + (totalQty !== 1 ? 's' : '');
+    // If Pay in Full is ticked, keep paid = grand
+    const chk = document.getElementById('purPayFullChk');
+    if (chk && chk.checked) {
+        document.getElementById('purPaidInput').value = grand.toFixed(3);
+        document.getElementById('purPaidHidden').value = grand.toFixed(3);
+    }
+    const paid = parseFloat(document.getElementById('purPaidInput')?.value) || 0;
+    const bal  = Math.max(0, grand - paid);
+    document.getElementById('purBalDisplay').textContent = bal.toFixed(3);
+}
+
+function togglePurPayFull(chk) {
+    const grand = parseFloat(document.getElementById('purGrandDisplay').textContent) || 0;
+    if (chk.checked) {
+        document.getElementById('purPaidInput').value      = grand.toFixed(3);
+        document.getElementById('purPaidHidden').value     = grand.toFixed(3);
+        document.getElementById('purBalDisplay').textContent = '0.000';
+    } else {
+        document.getElementById('purPaidInput').value      = '0.000';
+        document.getElementById('purPaidHidden').value     = '0';
+        document.getElementById('purBalDisplay').textContent = grand.toFixed(3);
+    }
+}
+
+function onPurPaidInput() {
+    // Un-tick "Pay in Full" if user manually edits the amount
+    const chk = document.getElementById('purPayFullChk');
+    if (chk) chk.checked = false;
+    const paid  = parseFloat(document.getElementById('purPaidInput').value) || 0;
+    const grand = parseFloat(document.getElementById('purGrandDisplay').textContent) || 0;
+    document.getElementById('purPaidHidden').value        = paid.toFixed(3);
+    document.getElementById('purBalDisplay').textContent  = Math.max(0, grand - paid).toFixed(3);
 }
 
 // IMEI Modal

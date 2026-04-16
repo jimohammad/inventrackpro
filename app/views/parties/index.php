@@ -34,7 +34,7 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
 <div class="mb-3" style="position:relative;">
     <i class="bi bi-search" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;"></i>
     <input type="text" id="partySearch" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-           placeholder="Search parties by name, phone, area..."
+           placeholder="Search by account no, name, phone, area..."
            style="padding:14px 16px 14px 46px;font-size:1.15rem;font-weight:600;border:2px solid #e0e7ff;border-radius:10px;background:#fafbff;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
            onfocus="this.style.borderColor='#818cf8';this.style.boxShadow='0 0 0 4px rgba(99,102,241,0.12)';this.style.background='#ffffff';"
            onblur="this.style.borderColor='#e0e7ff';this.style.boxShadow='';this.style.background='#fafbff';">
@@ -46,6 +46,7 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
             <thead style="text-transform:none;font-size:0.82rem;font-weight:600;letter-spacing:0;">
                 <tr>
                     <th style="width:40px;">#</th>
+                    <th style="width:110px;">Acc No</th>
                     <th>Name</th>
                     <th>Type</th>
                     <th>Phone</th>
@@ -62,6 +63,15 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
                 <?php foreach ($parties as $i => $p): ?>
                 <tr>
                     <td style="color:var(--text-muted);font-size:0.8rem;text-align:center;"><?= $i + 1 ?></td>
+                    <td>
+                        <?php if (!empty($p['party_code'])): ?>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;font-weight:700;color:#4338ca;background:#eff6ff;padding:2px 8px;border-radius:5px;border:1px solid #c7d2fe;letter-spacing:1px;white-space:nowrap;">
+                            <?= htmlspecialchars($p['party_code']) ?>
+                        </span>
+                        <?php else: ?>
+                        <span style="color:#94a3b8;font-size:0.8rem;">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <a href="?page=parties&action=detail&id=<?= $p['id'] ?>"
                            style="color:var(--primary);font-weight:600;text-decoration:none;">

@@ -182,9 +182,7 @@ class PaymentController extends BaseController {
         if (!$payment) die('Payment not found.');
 
         $db       = Database::getInstance();
-        $settings = [];
-        $rows     = $db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($rows as $r) $settings[$r['key_name']] = $r['value'];
+        $settings = self::getSettings();
 
         // Party balance
         $partyBalance = $this->partyModel->findWithBalance($payment['party_id']);

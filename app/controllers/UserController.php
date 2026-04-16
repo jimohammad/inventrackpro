@@ -120,7 +120,7 @@ class UserController extends BaseController {
 
     private function savePermissions(object $db, int $userId): void {
         $perms   = $_POST['perms'] ?? [];
-        $modules = ['dashboard','sales','purchases','returns','inventory','stock','payments','expenses','customers','suppliers','reports','warranty','settings',
+        $modules = ['dashboard','sales','purchases','returns','inventory','stock','payments','expenses','customers','suppliers','reports','imei','warranty','supplier_contacts','settings',
                      'rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei'];
 
         foreach ($modules as $mod) {

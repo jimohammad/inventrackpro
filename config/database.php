@@ -10,6 +10,7 @@
 
 // ── Load .env file ─────────────────────────────────────────
 $envPaths = [
+    __DIR__ . '/../.env.local',        // local dev override (gitignored, never on server)
     __DIR__ . '/../../.env',           // one level above public_html (recommended)
     __DIR__ . '/../.env',              // root of public_html (fallback)
     '/home/u793102776/.env',           // absolute Hostinger path
@@ -63,31 +64,67 @@ if (empty(DB_NAME) || empty(DB_USER)) {
 /**
  * PDO Database Connection Class
  * Single instance (Singleton) - only one connection open at a time
+ * Includes auto-reconnect logic to handle dropped connections
  */
 class Database {
     private static ?Database $instance = null;
-    private PDO $pdo;
+    private ?PDO $pdo = null;
 
     private function __construct() {
+        $this->connect();
+    }
+
+    /**
+     * Establish a fresh DB connection with retry logic
+     */
+    private function connect(int $retries = 3): void {
         $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
 
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
-            PDO::ATTR_PERSISTENT         => false, // disabled — shared hosting has limited connections
+            // PDO::ATTR_PERSISTENT removed — persistent connections cause
+            // "too many connections" errors on cloud/shared hosting
             PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+            PDO::ATTR_TIMEOUT            => 10, // 10 second connection timeout
         ];
 
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= $retries; $attempt++) {
+            try {
+                $this->pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+                $this->pdo->exec("SET time_zone = '+03:00'"); // Kuwait timezone
+                return; // success — exit retry loop
+            } catch (PDOException $e) {
+                $lastException = $e;
+                error_log("DB Connection attempt {$attempt} failed: " . $e->getMessage());
+                if ($attempt < $retries) {
+                    sleep(1); // wait 1 second before retrying
+                }
+            }
+        }
+
+        // All retries failed
+        error_log("DB Connection Failed after {$retries} attempts: " . $lastException->getMessage());
+        die(json_encode([
+            'success' => false,
+            'message' => 'Database connection failed. Please contact your administrator.'
+        ]));
+    }
+
+    /**
+     * Check if connection is still alive, reconnect if not
+     */
+    private function ensureConnected(): void {
         try {
-            $this->pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
-            $this->pdo->exec("SET time_zone = '+03:00'"); // Kuwait timezone
+            // Ping the server with a lightweight query
+            $this->pdo->query('SELECT 1');
         } catch (PDOException $e) {
-            error_log("DB Connection Failed: " . $e->getMessage());
-            die(json_encode([
-                'success' => false,
-                'message' => 'Database connection failed. Please contact your administrator.'
-            ]));
+            error_log("DB connection lost, reconnecting... " . $e->getMessage());
+            $this->pdo = null;
+            $this->connect();
         }
     }
 
@@ -99,10 +136,12 @@ class Database {
     }
 
     public function getConnection(): PDO {
+        $this->ensureConnected();
         return $this->pdo;
     }
 
     public function query(string $sql, array $params = []): PDOStatement {
+        $this->ensureConnected();
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt;
@@ -126,6 +165,7 @@ class Database {
     }
 
     public function beginTransaction(): void {
+        $this->ensureConnected();
         $this->pdo->beginTransaction();
     }
 

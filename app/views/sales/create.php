@@ -577,7 +577,8 @@ let currentItemName = '';
 
 // ═══ INIT ═══
 document.addEventListener('DOMContentLoaded', () => {
-    addRow(); addRow();
+    addRow(true); addRow(true);
+    document.getElementById('partySearch').focus();
     setInterval(updateClock, 1000);
 });
 
@@ -592,7 +593,7 @@ function updateWarehouse(val) { warehouseId = val; }
 // ═══ PAY MODE — removed, all sales are credit ═══
 
 // ═══ ROWS ═══
-function addRow() {
+function addRow(noFocus) {
     rowCount++;
     const rid = 'row_' + rowCount;
     imeiData[rid] = [];
@@ -614,7 +615,7 @@ function addRow() {
             </button>
         </td>
         <td class="col-qty">
-            <input type="number" name="items[${rowCount}][quantity]" id="qty_${rid}" value="1" min="1" style="text-align:center;" oninput="calcRow('${rid}')">
+            <input type="number" name="items[${rowCount}][quantity]" id="qty_${rid}" value="" min="1" placeholder="1" style="text-align:center;" oninput="calcRow('${rid}')">
         </td>
         <td class="col-price">
             <input type="number" name="items[${rowCount}][unit_price]" id="price_${rid}" value="" step="0.001" placeholder="0.000"
@@ -697,6 +698,9 @@ function selectItem(rid, item) {
     document.getElementById('minPrice_' + rid).value = parseFloat(item.sale_price).toFixed(3);
     document.getElementById('unit_'     + rid).value = item.unit;
     document.getElementById('itemDrop_' + rid).style.display = 'none';
+    // Set qty to 1 when item is manually selected (if still empty)
+    const qtyEl = document.getElementById('qty_' + rid);
+    if (qtyEl && !qtyEl.value) qtyEl.value = 1;
     // Store category and item name for IMEI length rules
     if (!window.rowCategoryMap) window.rowCategoryMap = {};
     if (!window.rowItemNameMap) window.rowItemNameMap = {};
@@ -1106,16 +1110,14 @@ function scanImeiToRow() {
     const imei  = input.value.trim();
     if (!imei) return;
 
-    input.disabled = true;
+    input.value = '';
+    input.focus();
     msg.className = 'scan-bar-msg';
     msg.textContent = 'Looking up...';
 
     fetch('?page=imei&action=lookupImei&imei=' + encodeURIComponent(imei))
         .then(r => r.json())
         .then(data => {
-            input.disabled = false;
-            input.value = '';
-            input.focus();
 
             if (!data.found) {
                 msg.className = 'scan-bar-msg err';
@@ -1138,31 +1140,22 @@ function scanImeiToRow() {
             let targetRid = null;
             const rows = document.querySelectorAll('#itemsBody tr');
 
-            // Option 1: find existing row with same item that doesn't have max IMEIs
+            // Find existing row with same item — always group same item together
             for (const tr of rows) {
                 const rid = tr.dataset.rowId;
                 const itemIdEl = document.getElementById('itemId_' + rid);
                 if (itemIdEl && parseInt(itemIdEl.value) === data.item_id) {
-                    const qty = parseInt(document.getElementById('qty_' + rid)?.value) || 1;
-                    const existingImeis = imeiData[rid] ? imeiData[rid].length : 0;
-                    if (existingImeis < qty) {
-                        // Same item, still has room — add IMEI here and bump qty
-                        targetRid = rid;
-                        break;
-                    }
+                    targetRid = rid;
+                    break;
                 }
             }
 
             if (targetRid) {
-                // Add IMEI to existing row and increment qty
-                const qtyEl = document.getElementById('qty_' + targetRid);
-                const currentQty = parseInt(qtyEl.value) || 1;
-                const currentImeis = imeiData[targetRid] ? imeiData[targetRid].length : 0;
-                if (currentImeis >= currentQty) {
-                    qtyEl.value = currentImeis + 1;
-                }
+                // Add IMEI to existing row and set qty = total IMEIs for this item
+                if (!imeiData[targetRid]) imeiData[targetRid] = [];
                 imeiData[targetRid].push(imei);
-                document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join(',');
+                document.getElementById('qty_' + targetRid).value = imeiData[targetRid].length;
+                document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
                 updateImeiBtn(targetRid);
                 calcRow(targetRid);
             } else {
@@ -1207,9 +1200,6 @@ function scanImeiToRow() {
             calcTotals();
         })
         .catch(() => {
-            input.disabled = false;
-            input.value = '';
-            input.focus();
             msg.className = 'scan-bar-msg err';
             msg.textContent = 'Network error';
             setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);

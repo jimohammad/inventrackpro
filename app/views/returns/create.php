@@ -679,23 +679,32 @@ function processQuickScan() {
                     }
                     calcReturnRow(existingRid);
                 } else {
-                    addReturnRow({
-                        item_id:    data.item_id,
-                        item_name:  data.item_name,
-                        quantity:   1,
-                        unit_price: data.sale_price
+                    // Use first empty row if available, otherwise add new one
+                    let targetRid = null;
+                    document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
+                        const rowId = tr.dataset.rowId;
+                        if (!rowId || targetRid) return;
+                        if (!document.getElementById('rItemId_' + rowId)?.value) targetRid = rowId;
                     });
-                    const rows = document.querySelectorAll('#returnItemsBody tr');
-                    const lastRow = rows[rows.length - 1];
-                    const rid = lastRow.dataset.rowId;
-                    retImeiData[rid] = [data.imei];
-                    document.getElementById('rImei_' + rid).value = data.imei;
-                    const btn = document.getElementById('retImeiBtn_' + rid);
+                    if (!targetRid) {
+                        addReturnRow();
+                        const rows = document.querySelectorAll('#returnItemsBody tr');
+                        targetRid = rows[rows.length - 1].dataset.rowId;
+                    }
+                    document.getElementById('rSearch_' + targetRid).value = data.item_name;
+                    document.getElementById('rItemId_' + targetRid).value = data.item_id;
+                    document.getElementById('rPrice_'  + targetRid).value = parseFloat(data.sale_price).toFixed(3);
+                    if (!window.retRowItemNameMap) window.retRowItemNameMap = {};
+                    window.retRowItemNameMap[targetRid] = (data.item_name || '').toLowerCase();
+                    document.getElementById('rQty_' + targetRid).value = 1;
+                    retImeiData[targetRid] = [data.imei];
+                    document.getElementById('rImei_' + targetRid).value = data.imei;
+                    const btn = document.getElementById('retImeiBtn_' + targetRid);
                     if (btn) {
                         btn.classList.add('has-imei');
                         btn.innerHTML = `<i class="bi bi-upc-scan"></i> 1`;
                     }
-                    calcReturnRow(rid);
+                    calcReturnRow(targetRid);
                 }
 
                 const invoice = data.sold_invoice ? ` (${data.sold_invoice})` : '';
@@ -706,11 +715,18 @@ function processQuickScan() {
             }
 
             // IMEI NOT in system — accepted, cashier picks item manually
-            // Create a new row, attach the IMEI, focus the item search
-            addReturnRow();
-            const rows = document.querySelectorAll('#returnItemsBody tr');
-            const lastRow = rows[rows.length - 1];
-            const rid = lastRow.dataset.rowId;
+            // Use first empty row if available, otherwise add new one
+            let rid = null;
+            document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
+                const rowId = tr.dataset.rowId;
+                if (!rowId || rid) return;
+                if (!document.getElementById('rItemId_' + rowId)?.value) rid = rowId;
+            });
+            if (!rid) {
+                addReturnRow();
+                const rows = document.querySelectorAll('#returnItemsBody tr');
+                rid = rows[rows.length - 1].dataset.rowId;
+            }
 
             // Pre-attach the IMEI to this new row
             retImeiData[rid] = [data.imei];

@@ -1,11 +1,22 @@
 <!-- Party Ledger View -->
-<div class="d-flex align-items-center mb-4 gap-3">
+<div class="d-flex align-items-center mb-4 gap-3 flex-wrap">
     <a href="?page=parties" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
-    <div>
-        <h1 class="page-title mb-0"><?= htmlspecialchars($party['name']) ?></h1>
-        <span class="badge ms-1" style="background:rgba(99,102,241,0.15);color:var(--primary);"><?= ucfirst($party['type']) ?></span>
+    <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h1 class="page-title mb-0"><?= htmlspecialchars($party['name']) ?></h1>
+            <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--primary);"><?= ucfirst($party['type']) ?></span>
+        </div>
         <?php if (!empty($party['party_code'])): ?>
-        <span class="badge ms-1" style="background:rgba(100,116,139,0.12);color:#64748b;"><?= $party['party_code'] ?></span>
+        <div class="mt-1 d-flex align-items-center gap-2">
+            <span style="font-size:0.72rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Account No</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:800;color:#4338ca;background:#eff6ff;padding:2px 12px;border-radius:6px;border:1.5px solid #c7d2fe;letter-spacing:2px;">
+                <?= htmlspecialchars($party['party_code']) ?>
+            </span>
+            <button onclick="navigator.clipboard.writeText('<?= htmlspecialchars($party['party_code']) ?>');this.innerHTML='<i class=\'bi bi-check-lg\'></i>';setTimeout(()=>this.innerHTML='<i class=\'bi bi-copy\'></i>',1500)"
+                style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:2px 6px;font-size:0.85rem;" title="Copy account number">
+                <i class="bi bi-copy"></i>
+            </button>
+        </div>
         <?php endif; ?>
     </div>
     <?php if (Auth::can('settings','edit')): ?>

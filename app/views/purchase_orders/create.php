@@ -153,9 +153,15 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
                 </select>
             </div>
             <div class="totals-row">
-                <span>Amount Paid (KWD)</span>
+                <span style="display:flex;align-items:center;gap:8px;">
+                    Amount Paid (KWD)
+                    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.75rem;color:#6366f1;font-weight:700;">
+                        <input type="checkbox" id="fullPayChk" checked onchange="toggleFullPay()" style="accent-color:#6366f1;width:15px;height:15px;cursor:pointer;">
+                        Full
+                    </label>
+                </span>
                 <input type="number" name="paid_kwd" id="paidKwd" step="0.001" min="0" value="0"
-                    oninput="recalcTotals();">
+                    oninput="document.getElementById('fullPayChk').checked=false;">
             </div>
             <div class="totals-row grand">
                 <span>Total in KWD</span>
@@ -211,7 +217,7 @@ function selectSupplier(id, name) {
 }
 
 // ── Add row ────────────────────────────────────────────────────────────────
-function addRow() {
+function addRow(noFocus) {
     rowCount++;
     const rid = 'porow_' + rowCount;
     const tr  = document.createElement('tr');
@@ -247,7 +253,7 @@ function addRow() {
         <input type="hidden" name="items[${rowCount}][unit_price]" value="0">
     `;
     document.getElementById('poTbody').appendChild(tr);
-    tr.querySelector('.item-search').focus();
+    if (!noFocus) tr.querySelector('.item-search').focus();
 }
 
 function removeRow(rid) {
@@ -432,9 +438,16 @@ function recalcTotals() {
     document.getElementById('subtotalKwd').textContent = sumK.toFixed(3);
     document.getElementById('totalKwd2').textContent   = sumK.toFixed(3);
     document.getElementById('grandKwd').textContent    = sumK.toFixed(3) + ' KWD';
+    if (document.getElementById('fullPayChk').checked) {
+        document.getElementById('paidKwd').value = sumK.toFixed(3);
+    }
     const totalRows = document.querySelectorAll('#poTbody tr').length;
     document.getElementById('poQtyBadge').textContent = totalRows + ' row' + (totalRows !== 1 ? 's' : '');
     checkSaveBtn();
+}
+
+function toggleFullPay() {
+    if (document.getElementById('fullPayChk').checked) recalcTotals();
 }
 
 function checkSaveBtn() {
@@ -442,6 +455,7 @@ function checkSaveBtn() {
     document.getElementById('poSaveBtn').disabled = !hasItems || !supplierId;
 }
 
-// Start with 2 empty rows
-addRow(); addRow();
+// Start with 2 empty rows (no auto-focus on items — supplier first)
+addRow(true); addRow(true);
+document.getElementById('supplierSearch').focus();
 </script>

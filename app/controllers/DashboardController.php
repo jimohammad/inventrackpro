@@ -28,7 +28,18 @@ class DashboardController extends BaseController {
             $cached = json_decode(file_get_contents($cacheFile), true);
         }
 
-        $expectedKeys = ['todaySales','todayExpenses','todayCash','stockValue','pendingReceivables','pendingPayables','lowStockItems','recentSales','accounts','topItems','pendingPOs'];
+        // Always-fresh data (not cached) — accounts and today's cash need real-time values
+        $accounts = $db->fetchAll(
+            "SELECT name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $todayCashFresh = $db->fetchOne(
+            "SELECT COALESCE(SUM(amount),0) as t, COUNT(*) as c
+             FROM payments WHERE date = CURDATE() AND payment_type = 'in' AND ref_type != 'discount' AND warehouse_id = ?",
+            [$whId]
+        );
+        $todayCash = ['total' => (float)$todayCashFresh['t'], 'count' => (int)$todayCashFresh['c']];
+
+        $expectedKeys = ['todaySales','todayExpenses','stockValue','pendingReceivables','pendingPayables','lowStockItems','recentSales','topItems','pendingPOs'];
         if ($cached && !array_diff($expectedKeys, array_keys($cached))) {
             extract($cached);
         } else {
@@ -37,14 +48,11 @@ class DashboardController extends BaseController {
                 "SELECT
                     (SELECT COALESCE(SUM(grand_total),0) FROM sales WHERE date = CURDATE() AND status != 'cancelled' AND warehouse_id = ?) as sales_total,
                     (SELECT COUNT(*) FROM sales WHERE date = CURDATE() AND status != 'cancelled' AND warehouse_id = ?) as sales_count,
-                    (SELECT COALESCE(SUM(amount),0) FROM expenses WHERE date = CURDATE() AND warehouse_id = ?) as expenses_total,
-                    (SELECT COALESCE(SUM(amount),0) FROM payments WHERE date = CURDATE() AND payment_type = 'in' AND ref_type != 'discount' AND warehouse_id = ?) as cash_total,
-                    (SELECT COUNT(*) FROM payments WHERE date = CURDATE() AND payment_type = 'in' AND ref_type != 'discount' AND warehouse_id = ?) as cash_count",
-                [$whId, $whId, $whId, $whId, $whId]
+                    (SELECT COALESCE(SUM(amount),0) FROM expenses WHERE date = CURDATE() AND warehouse_id = ?) as expenses_total",
+                [$whId, $whId, $whId]
             );
             $todaySales    = ['total' => (float)$todayTotals['sales_total'], 'count' => (int)$todayTotals['sales_count']];
             $todayExpenses = ['total' => (float)$todayTotals['expenses_total']];
-            $todayCash     = ['total' => (float)$todayTotals['cash_total'], 'count' => (int)$todayTotals['cash_count']];
 
             // Stock value — filtered by warehouse
             $stockValue = $db->fetchOne(
@@ -106,11 +114,6 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Accounts
-            $accounts = $db->fetchAll(
-                "SELECT name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
-            );
-
             // Top items this month — filtered by warehouse
             $topItems = $db->fetchAll(
                 "SELECT i.name, SUM(si.quantity) as qty_sold, SUM(si.total) as revenue
@@ -130,12 +133,11 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Cache results
+            // Cache results (excluding accounts and todayCash — those are fetched live above)
             $toCache = compact(
                 'todaySales','todayExpenses','stockValue',
                 'pendingReceivables','pendingPayables','lowStockItems',
-                'recentSales','accounts','topItems',
-                'todayCash','pendingPOs'
+                'recentSales','topItems','pendingPOs'
             );
             @file_put_contents($cacheFile, json_encode($toCache), LOCK_EX);
         }
@@ -161,13 +163,14 @@ class DashboardController extends BaseController {
 
         $db      = Database::getInstance();
         $like    = "%{$q}%";
+        $whId    = Auth::warehouseId();
         $results = [];
 
-        // Search invoices (sales)
+        // Search invoices (sales) — warehouse scoped
         $sales = $db->fetchAll(
             "SELECT id, invoice_no, grand_total, status FROM sales
-             WHERE invoice_no LIKE ? OR notes LIKE ? LIMIT 3",
-            [$like, $like]
+             WHERE warehouse_id = ? AND (invoice_no LIKE ? OR notes LIKE ?) LIMIT 3",
+            [$whId, $like, $like]
         );
         foreach ($sales as $s) {
             $results[] = [
@@ -178,11 +181,11 @@ class DashboardController extends BaseController {
             ];
         }
 
-        // Search purchases
+        // Search purchases — warehouse scoped
         $purchases = $db->fetchAll(
             "SELECT id, invoice_no, grand_total, status FROM purchases
-             WHERE invoice_no LIKE ? LIMIT 3",
-            [$like]
+             WHERE warehouse_id = ? AND invoice_no LIKE ? LIMIT 3",
+            [$whId, $like]
         );
         foreach ($purchases as $p) {
             $results[] = [
@@ -193,13 +196,13 @@ class DashboardController extends BaseController {
             ];
         }
 
-        // Search IMEI
+        // Search IMEI — warehouse scoped
         $imeis = $db->fetchAll(
-            "SELECT ir.imei, i.name as item_name, ir.status 
+            "SELECT ir.imei, i.name as item_name, ir.status
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.imei LIKE ? OR ir.imei2 LIKE ? LIMIT 3",
-            [$like, $like]
+             WHERE ir.warehouse_id = ? AND (ir.imei LIKE ? OR ir.imei2 LIKE ?) LIMIT 3",
+            [$whId, $like, $like]
         );
         foreach ($imeis as $im) {
             $results[] = [

@@ -38,10 +38,14 @@
                 </div>
 
                 <div class="col-md-6">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Account</label>
-                    <input type="text" class="form-control form-control-sm" readonly
-                           value="<?= htmlspecialchars($expense['account_name'] ?? '—') ?>"
-                           style="background:#f8fafc;">
+                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Account <span class="text-danger">*</span></label>
+                    <select name="account_id" class="form-select form-select-sm" required>
+                        <?php foreach ($accounts as $acc): ?>
+                        <option value="<?= $acc['id'] ?>" <?= $acc['id'] == $expense['account_id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($acc['name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
 
                 <div class="col-12">

@@ -200,13 +200,13 @@ class PurchaseController extends BaseController {
                 $num   = $last ? (int) substr($last['payment_no'], 4) : 0;
                 $payNo = 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
                 $db->insert(
-                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [$payNo, 'purchase', $purchaseId, $this->inputInt('party_id'),
                      'out',
                      $this->inputInt('account_id') ?: 1,
                      $paid, $this->input('payment_method') ?: 'cash',
-                     $this->input('date') ?: date('Y-m-d'), Auth::id()]
+                     $this->input('date') ?: date('Y-m-d'), Auth::warehouseId(), Auth::id()]
                 );
                 $db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",

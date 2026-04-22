@@ -55,8 +55,8 @@ class PaymentController extends BaseController {
             $refData = $db->fetchOne(
                 "SELECT t.*, p.name as party_name FROM {$table} t
                  JOIN parties p ON p.id = t.party_id
-                 WHERE t.id = ?",
-                [$refId]
+                 WHERE t.id = ? AND t.warehouse_id = ?",
+                [$refId, Auth::warehouseId()]
             );
         }
 
@@ -73,13 +73,14 @@ class PaymentController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
-    // AJAX: Get party balance
+    // AJAX: Get party balance (scoped to current warehouse)
     public function partyBalance(): void {
         header('Content-Type: application/json');
         $id = (int)($_GET['id'] ?? 0);
         if (!$id) { echo json_encode(['balance' => 0]); return; }
 
         $db = Database::getInstance();
+        $whId = Auth::warehouseId();
         $row = $db->fetchOne(
             "SELECT p.opening_balance
                 + COALESCE(sl.total, 0)
@@ -90,14 +91,14 @@ class PaymentController extends BaseController {
                 + COALESCE(rt_p.total, 0)
                 as balance
              FROM parties p
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM sales WHERE party_id = ? AND status != 'cancelled' GROUP BY party_id) sl ON sl.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) as total FROM payments WHERE party_id = ? AND ref_type IN ('sale','discount') GROUP BY party_id) py_s ON py_s.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND type = 'sale_return' AND status = 'approved' GROUP BY party_id) rt_s ON rt_s.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM purchases WHERE party_id = ? AND status != 'cancelled' GROUP BY party_id) pr ON pr.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(amount) as total FROM payments WHERE party_id = ? AND ref_type = 'purchase' GROUP BY party_id) py_p ON py_p.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' GROUP BY party_id) rt_p ON rt_p.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM sales WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled' GROUP BY party_id) sl ON sl.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) as total FROM payments WHERE party_id = ? AND warehouse_id = ? AND ref_type IN ('sale','discount') GROUP BY party_id) py_s ON py_s.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND warehouse_id = ? AND type = 'sale_return' AND status = 'approved' GROUP BY party_id) rt_s ON rt_s.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM purchases WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled' GROUP BY party_id) pr ON pr.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(amount) as total FROM payments WHERE party_id = ? AND warehouse_id = ? AND ref_type = 'purchase' GROUP BY party_id) py_p ON py_p.party_id = p.id
+             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND warehouse_id = ? AND type = 'purchase_return' AND status = 'approved' GROUP BY party_id) rt_p ON rt_p.party_id = p.id
              WHERE p.id = ?",
-            [$id, $id, $id, $id, $id, $id, $id]
+            [$id, $whId, $id, $whId, $id, $whId, $id, $whId, $id, $whId, $id, $whId, $id]
         );
         echo json_encode(['balance' => (float)($row['balance'] ?? 0)]);
     }
@@ -299,24 +300,25 @@ class PaymentController extends BaseController {
                 ]
             );
 
-            // Update linked sale/purchase balances when amount changes
+            // Update linked sale/purchase balances when amount changes (warehouse-scoped)
             if ($amountChanged && $payment['ref_id'] > 0) {
                 $diff = $newAmount - $oldAmount;
+                $whId = Auth::warehouseId();
                 if ($payment['ref_type'] === 'sale') {
                     $db->execute(
                         "UPDATE sales SET paid_amount = paid_amount + ?, balance = GREATEST(0, balance - ?),
                          status = CASE WHEN GREATEST(0, balance - ?) < 0.001 THEN 'paid'
                                        WHEN paid_amount + ? > 0 THEN 'partial' ELSE status END
-                         WHERE id = ?",
-                        [$diff, $diff, $diff, $diff, $payment['ref_id']]
+                         WHERE id = ? AND warehouse_id = ?",
+                        [$diff, $diff, $diff, $diff, $payment['ref_id'], $whId]
                     );
                 } elseif ($payment['ref_type'] === 'purchase') {
                     $db->execute(
                         "UPDATE purchases SET paid_amount = paid_amount + ?, balance = GREATEST(0, balance - ?),
                          status = CASE WHEN GREATEST(0, balance - ?) < 0.001 THEN 'paid'
                                        WHEN paid_amount + ? > 0 THEN 'partial' ELSE status END
-                         WHERE id = ?",
-                        [$diff, $diff, $diff, $diff, $payment['ref_id']]
+                         WHERE id = ? AND warehouse_id = ?",
+                        [$diff, $diff, $diff, $diff, $payment['ref_id'], $whId]
                     );
                 }
             }

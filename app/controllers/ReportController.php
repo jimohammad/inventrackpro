@@ -306,7 +306,7 @@ class ReportController extends BaseController {
         $transactions = [];
         $openingBal   = 0;
         $summary      = ['total_invoiced' => 0, 'total_paid' => 0, 'total_returned' => 0,
-                          'total_purchases' => 0, 'total_paid_out' => 0, 'balance' => 0];
+                          'total_purchases' => 0, 'total_paid_out' => 0, 'total_discounts' => 0, 'balance' => 0];
 
         if ($partyId) {
             $party = $this->db->fetchOne(
@@ -366,8 +366,18 @@ class ReportController extends BaseController {
                     [$partyId, $fromDate, $toDate]
                 );
 
+                // Customer discounts — credit (reduces what customer owes)
+                $discounts = $this->db->fetchAll(
+                    "SELECT id, 'discount' as txn_type, discount_no as ref_no, date,
+                            0 as debit, amount as credit, reason as notes
+                     FROM customer_discounts
+                     WHERE party_id = ? AND date BETWEEN ? AND ?
+                     ORDER BY date ASC, id ASC",
+                    [$partyId, $fromDate, $toDate]
+                );
+
                 // Merge and sort
-                $transactions = array_merge($sales, $purchases, $payments, $returns);
+                $transactions = array_merge($sales, $purchases, $payments, $returns, $discounts);
                 usort($transactions, function($a, $b) {
                     $d = strcmp($a['date'], $b['date']);
                     return $d !== 0 ? $d : 0;
@@ -412,8 +422,14 @@ class ReportController extends BaseController {
                     [$partyId, $fromDate]
                 )['t'] ?? 0);
 
+                $discountsBefore = (float)($this->db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM customer_discounts
+                     WHERE party_id = ? AND date < ?",
+                    [$partyId, $fromDate]
+                )['t'] ?? 0);
+
                 $openingBal = (float)($party['opening_balance'] ?? 0)
-                    + $salesBefore - $payInBefore - $saleRetBefore
+                    + $salesBefore - $payInBefore - $saleRetBefore - $discountsBefore
                     - $purchasesBefore + $payOutBefore + $purRetBefore;
 
                 // Running balance
@@ -429,6 +445,7 @@ class ReportController extends BaseController {
                 $purTxns  = array_filter($transactions, function($t) { return $t['txn_type'] === 'purchase'; });
                 $payTxns  = array_filter($transactions, function($t) { return $t['txn_type'] === 'payment'; });
                 $retTxns  = array_filter($transactions, function($t) { return $t['txn_type'] === 'return'; });
+                $discTxns = array_filter($transactions, function($t) { return $t['txn_type'] === 'discount'; });
 
                 $summary['total_invoiced']  = array_sum(array_column(array_values($saleTxns), 'debit'));
                 $summary['total_purchases'] = array_sum(array_column(array_values($purTxns), 'credit'));
@@ -436,6 +453,7 @@ class ReportController extends BaseController {
                                             + array_sum(array_column(array_values($payTxns), 'debit'));
                 $summary['total_returned']  = array_sum(array_column(array_values($retTxns), 'credit'))
                                             + array_sum(array_column(array_values($retTxns), 'debit'));
+                $summary['total_discounts'] = array_sum(array_column(array_values($discTxns), 'credit'));
                 $summary['balance']         = $running;
             }
         }
@@ -492,8 +510,15 @@ class ReportController extends BaseController {
              ORDER BY date ASC, id ASC",
             [$partyId, $fromDate, $toDate]
         );
+        $discounts = $this->db->fetchAll(
+            "SELECT 'discount' as txn_type, discount_no as ref_no, date,
+                    0 as debit, amount as credit, reason as notes
+             FROM customer_discounts WHERE party_id = ? AND date BETWEEN ? AND ?
+             ORDER BY date ASC, id ASC",
+            [$partyId, $fromDate, $toDate]
+        );
 
-        $transactions = array_merge($sales, $purchases, $payments, $returns);
+        $transactions = array_merge($sales, $purchases, $payments, $returns, $discounts);
         usort($transactions, function($a, $b) { return strcmp($a['date'], $b['date']); });
 
         // Opening balance
@@ -515,9 +540,12 @@ class ReportController extends BaseController {
         $purRetBefore = (float)($this->db->fetchOne(
             "SELECT COALESCE(SUM(grand_total),0) as t FROM returns WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' AND date < ?", [$partyId, $fromDate]
         )['t'] ?? 0);
+        $discountsBefore = (float)($this->db->fetchOne(
+            "SELECT COALESCE(SUM(amount),0) as t FROM customer_discounts WHERE party_id = ? AND date < ?", [$partyId, $fromDate]
+        )['t'] ?? 0);
 
         $openingBal = (float)($party['opening_balance'] ?? 0)
-            + $salesBefore - $payInBefore - $saleRetBefore
+            + $salesBefore - $payInBefore - $saleRetBefore - $discountsBefore
             - $purchasesBefore + $payOutBefore + $purRetBefore;
 
         $running = $openingBal;

@@ -74,9 +74,9 @@ class DiscountController extends BaseController {
             $accId = $acc['id'] ?? 1;
 
             $db->insert(
-                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, created_by)
-                 VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?)",
-                [$payNo, $partyId, $accId, $amount, $date, 'Discount ' . $discountNo . ($reason ? ' — ' . $reason : ''), Auth::id()]
+                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, warehouse_id, created_by)
+                 VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?, ?)",
+                [$payNo, $partyId, $accId, $amount, $date, 'Discount ' . $discountNo . ($reason ? ' — ' . $reason : ''), Auth::warehouseId(), Auth::id()]
             );
 
             $db->commit();
@@ -105,8 +105,8 @@ class DiscountController extends BaseController {
         $db->beginTransaction();
         try {
             $db->execute(
-                "DELETE FROM payments WHERE notes LIKE ? AND party_id = ? AND amount = ? LIMIT 1",
-                ['%' . $disc['discount_no'] . '%', $disc['party_id'], $disc['amount']]
+                "DELETE FROM payments WHERE notes LIKE ? AND party_id = ? AND amount = ? AND warehouse_id = ? LIMIT 1",
+                ['%' . $disc['discount_no'] . '%', $disc['party_id'], $disc['amount'], Auth::warehouseId()]
             );
             $db->execute("DELETE FROM customer_discounts WHERE id = ?", [$id]);
             $db->commit();

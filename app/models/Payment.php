@@ -9,9 +9,9 @@ class Payment extends BaseModel {
         $where  = "WHERE 1=1";
         $params = [];
 
-        // Always scope to selected warehouse via party
+        // Scope to payment's warehouse (not party's) — a party can have payments in multiple warehouses
         if (Auth::warehouseId()) {
-            $where .= " AND pa.warehouse_id = ?";
+            $where .= " AND py.warehouse_id = ?";
             $params[] = Auth::warehouseId();
         }
 
@@ -84,8 +84,8 @@ class Payment extends BaseModel {
             $paymentType = $data['payment_type'] ?? 'in';
 
             $id = $this->db->insert(
-                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, warehouse_id, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     $payNo,
                     $data['ref_type'] ?? 'sale',
@@ -99,6 +99,7 @@ class Payment extends BaseModel {
                     $data['cheque_no'] ?? null,
                     $data['date'] ?? date('Y-m-d'),
                     $data['notes'] ?? null,
+                    Auth::warehouseId(),
                     Auth::id(),
                 ]
             );

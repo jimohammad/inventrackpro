@@ -40,6 +40,7 @@
         .type-sale     { background:rgba(99,102,241,0.12); color:#6366f1; }
         .type-purchase { background:rgba(245,158,11,0.12); color:#b45309; }
         .type-payment  { background:rgba(16,185,129,0.12); color:#059669; }
+        .type-discount { background:rgba(139,92,246,0.12); color:#8b5cf6; }
 
         .text-right  { text-align:right; }
         .text-center { text-align:center; }

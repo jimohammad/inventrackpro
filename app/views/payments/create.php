@@ -74,18 +74,20 @@
                         </div>
                     </div>
 
-                    <!-- Party -->
-                    <div class="mb-3">
-                        <label class="form-label">Customer / Supplier <span class="text-danger">*</span></label>
-                        <select name="party_id" class="form-select select2-party" required id="partySelect">
-                            <option value="">Select party...</option>
+                    <!-- Party (prominent) -->
+                    <div class="mb-3" style="background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(139,92,246,.06));border:2px solid rgba(99,102,241,.25);border-radius:12px;padding:14px 16px;">
+                        <label class="form-label" style="font-weight:700;font-size:0.82rem;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+                            <i class="bi bi-person-fill me-1"></i>Customer / Supplier <span class="text-danger">*</span>
+                        </label>
+                        <select name="party_id" class="form-select select2-party" required id="partySelect" style="font-size:1rem;font-weight:600;padding:10px 14px;border:2px solid rgba(99,102,241,.3);border-radius:10px;">
+                            <option value="">Search party...</option>
                             <?php foreach ($parties as $p): ?>
                             <option value="<?= $p['id'] ?>" <?= ($refData && $refData['party_id'] == $p['id']) ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($p['name']) ?> (<?= ucfirst($p['type']) ?>)
                             </option>
                             <?php endforeach; ?>
                         </select>
-                        <div id="partyBalBadge" style="display:none;margin-top:8px;padding:12px 16px;border-radius:10px;font-size:0.9rem;font-weight:700;">
+                        <div id="partyBalBadge" style="display:none;margin-top:10px;padding:12px 16px;border-radius:10px;font-size:0.9rem;font-weight:700;">
                             <div style="display:flex;align-items:center;justify-content:space-between;">
                                 <span id="balLabel" style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"></span>
                                 <span id="balAmount" style="font-size:1.15rem;font-weight:800;"></span>

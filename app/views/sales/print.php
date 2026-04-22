@@ -194,6 +194,13 @@ body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #
                 <td style="text-align:right;font-weight:700;"><?= number_format($item['total'], DECIMAL_PLACES) ?></td>
             </tr>
             <?php endforeach; ?>
+            <?php $totalQty = array_sum(array_column($sale['items'], 'quantity')); ?>
+            <tr style="border-top:1.5px solid #1e3a5f;">
+                <td colspan="2" style="font-weight:700;font-size:8px;text-align:right;padding-right:6px;">Total Qty:</td>
+                <td style="text-align:center;font-weight:800;"><?= $totalQty ?></td>
+                <td></td>
+                <td></td>
+            </tr>
         </tbody>
     </table>
 
@@ -302,6 +309,13 @@ body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #
                     <td style="text-align:right;font-weight:700;"><?= number_format($item['total'], DECIMAL_PLACES) ?></td>
                 </tr>
                 <?php endforeach; ?>
+                <?php $totalQty = array_sum(array_column($sale['items'], 'quantity')); ?>
+                <tr style="border-top:1px dashed #333;">
+                    <td style="font-weight:700;text-align:right;">Total Qty:</td>
+                    <td style="text-align:center;font-weight:800;"><?= $totalQty ?></td>
+                    <td></td>
+                    <td></td>
+                </tr>
             </tbody>
         </table>
     </div>

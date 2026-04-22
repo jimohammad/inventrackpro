@@ -81,10 +81,15 @@ class SalesController extends BaseController {
             $db = Database::getInstance();
 
             $party = $db->fetchOne(
-                "SELECT name, credit_limit FROM parties WHERE id = ?",
+                "SELECT name, credit_limit FROM parties WHERE id = ? AND is_active = 1",
                 [$partyId]
             );
-            $name        = $party['name'] ?? 'This agent';
+            if (!$party) {
+                $this->flash('error', 'Customer is inactive or does not exist.');
+                $this->redirect('?page=sales&action=create');
+                return;
+            }
+            $name        = $party['name'];
             $creditLimit = (float) ($party['credit_limit'] ?? 0);
 
             // Skip heavy balance query if no credit limit is set
@@ -475,8 +480,8 @@ class SalesController extends BaseController {
             }
 
             $db->execute(
-                "UPDATE sales SET date=?, subtotal=?, discount=?, grand_total=?, balance=?, status=?, notes=? WHERE id=?",
-                [$newDate, $newSubtotal, $newDiscount, $newGrandTotal, $newBalance, $newStatus, $newNotes ?: null, $id]
+                "UPDATE sales SET date=?, subtotal=?, discount=?, grand_total=?, balance=?, status=?, notes=? WHERE id=? AND warehouse_id=?",
+                [$newDate, $newSubtotal, $newDiscount, $newGrandTotal, $newBalance, $newStatus, $newNotes ?: null, $id, Auth::warehouseId()]
             );
 
             $db->commit();
@@ -570,8 +575,8 @@ class SalesController extends BaseController {
         $row = Database::getInstance()->fetchOne(
             "SELECT ir.*, i.name as item_name FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.imei = ?",
-            [$imei]
+             WHERE ir.imei = ? AND ir.warehouse_id = ?",
+            [$imei, Auth::warehouseId()]
         );
 
         if (!$row) {
@@ -602,8 +607,9 @@ class SalesController extends BaseController {
                     i.name as item_name, i.has_imei
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
-             WHERE si.sale_id = ?",
-            [$id]
+             JOIN sales s ON s.id = si.sale_id
+             WHERE si.sale_id = ? AND s.warehouse_id = ?",
+            [$id, Auth::warehouseId()]
         );
 
         echo json_encode($items);

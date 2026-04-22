@@ -427,6 +427,30 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
         <span class="scan-bar-count" id="scanBarCount">0 scanned</span>
     </div>
 
+    <!-- Unregistered IMEI item picker (shown when scanned IMEI is not in DB) -->
+    <div id="unregPicker" style="display:none;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:10px;">
+        <div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;"></i>
+            IMEI <span id="unregImeiDisplay" style="font-family:monospace;font-size:.85rem;background:#fef3c7;padding:1px 6px;border-radius:4px;"></span>
+            not registered — select which item this phone is:
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <div style="position:relative;flex:1;">
+                <input type="text" id="unregItemSearch"
+                       placeholder="Type item name to search..."
+                       autocomplete="off"
+                       oninput="searchUnregItem(this.value)"
+                       style="width:100%;padding:8px 12px;border:1.5px solid #f59e0b;border-radius:8px;font-size:.85rem;outline:none;background:#fff;">
+                <div id="unregItemDropdown"
+                     style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:200px;overflow-y:auto;margin-top:2px;"></div>
+            </div>
+            <button type="button" onclick="cancelUnreg()"
+                    style="padding:8px 14px;background:#fff;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:#6b7280;white-space:nowrap;">
+                <i class="bi bi-x"></i> Cancel
+            </button>
+        </div>
+    </div>
+
     <!-- ③ ITEMS TABLE -->
     <div class="items-card">
         <div class="items-card-header">
@@ -1120,9 +1144,16 @@ function scanImeiToRow() {
         .then(data => {
 
             if (!data.found) {
-                msg.className = 'scan-bar-msg err';
-                msg.textContent = data.message || 'IMEI not found';
-                setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+                if (data.accepted) {
+                    // IMEI not in DB — let user pick item manually
+                    openUnregPicker(data.imei || imei);
+                    msg.className = 'scan-bar-msg';
+                    msg.textContent = '';
+                } else {
+                    msg.className = 'scan-bar-msg err';
+                    msg.textContent = data.message || 'IMEI not found';
+                    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+                }
                 return;
             }
 
@@ -1215,4 +1246,112 @@ function updateImeiBtn(rid) {
         btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + count;
     }
 }
+
+// ── Unregistered IMEI picker ──────────────────────────────────────────
+var _unregImei      = null;
+var _unregTimer     = null;
+
+function openUnregPicker(imei) {
+    _unregImei = imei;
+    document.getElementById('unregImeiDisplay').textContent = imei;
+    document.getElementById('unregItemSearch').value        = '';
+    document.getElementById('unregItemDropdown').style.display = 'none';
+    document.getElementById('unregItemDropdown').innerHTML  = '';
+    document.getElementById('unregPicker').style.display   = 'block';
+    document.getElementById('unregPicker').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    setTimeout(() => document.getElementById('unregItemSearch').focus(), 150);
+}
+
+function cancelUnreg() {
+    _unregImei = null;
+    document.getElementById('unregPicker').style.display = 'none';
+    document.getElementById('imeiScanBar').focus();
+}
+
+function searchUnregItem(q) {
+    clearTimeout(_unregTimer);
+    const dd = document.getElementById('unregItemDropdown');
+    if (q.trim().length < 1) { dd.style.display = 'none'; return; }
+    _unregTimer = setTimeout(() => {
+        const whId = document.getElementById('warehouseId')?.value || 0;
+        fetch('?page=sales&action=searchItems&q=' + encodeURIComponent(q) + '&warehouse_id=' + whId)
+            .then(r => r.json())
+            .then(items => {
+                if (!items.length) {
+                    dd.innerHTML = '<div style="padding:10px 14px;font-size:.82rem;color:#6b7280;">No items found</div>';
+                } else {
+                    dd.innerHTML = items.map(it =>
+                        `<div onclick="selectUnregItem(${it.id},'${(it.name+'').replace(/'/g,"\\'")}',${parseFloat(it.sale_price)||0},${it.has_imei||0})"
+                              style="padding:9px 14px;font-size:.83rem;cursor:pointer;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;"
+                              onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+                            <span style="font-weight:600;">${it.name}</span>
+                            <span style="color:#6b7280;font-size:.78rem;">Stock: ${it.stock ?? 0}</span>
+                        </div>`
+                    ).join('');
+                }
+                dd.style.display = 'block';
+            })
+            .catch(() => { dd.style.display = 'none'; });
+    }, 220);
+}
+
+function selectUnregItem(itemId, itemName, salePrice, hasImei) {
+    if (!_unregImei) return;
+    const imei = _unregImei;
+
+    // Hide picker
+    document.getElementById('unregPicker').style.display = 'none';
+    _unregImei = null;
+
+    // Find existing row for this item, or use empty row, or add new
+    let targetRid = null;
+    document.querySelectorAll('#itemsBody tr').forEach(tr => {
+        const rid = tr.dataset.rowId;
+        if (!targetRid && document.getElementById('itemId_' + rid)?.value == itemId) targetRid = rid;
+    });
+
+    if (!targetRid) {
+        let emptyRid = null;
+        document.querySelectorAll('#itemsBody tr').forEach(tr => {
+            const rid = tr.dataset.rowId;
+            if (!emptyRid && !document.getElementById('itemId_' + rid)?.value) emptyRid = rid;
+        });
+        if (!emptyRid) {
+            addRow();
+            const all = document.querySelectorAll('#itemsBody tr');
+            emptyRid = all[all.length - 1].dataset.rowId;
+        }
+        targetRid = emptyRid;
+        document.querySelector('#' + targetRid + ' .item-search').value = itemName;
+        document.getElementById('itemId_'   + targetRid).value = itemId;
+        document.getElementById('hasImei_'  + targetRid).value = hasImei;
+        document.getElementById('price_'    + targetRid).value = salePrice.toFixed(3);
+        document.getElementById('minPrice_' + targetRid).value = salePrice.toFixed(3);
+        document.getElementById('qty_'      + targetRid).value = 1;
+        addRow(); // blank row for next entry
+    }
+
+    if (!imeiData[targetRid]) imeiData[targetRid] = [];
+    imeiData[targetRid].push(imei);
+    document.getElementById('qty_'       + targetRid).value = imeiData[targetRid].length;
+    document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
+    updateImeiBtn(targetRid);
+    calcRow(targetRid);
+
+    scanCount++;
+    document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
+    const msg = document.getElementById('scanBarMsg');
+    msg.className   = 'scan-bar-msg ok';
+    msg.textContent = itemName.substring(0, 25);
+    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 2000);
+    calcTotals();
+    document.getElementById('imeiScanBar').focus();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+    if (!e.target.closest('#unregPicker')) {
+        document.getElementById('unregItemDropdown').style.display = 'none';
+    }
+});
 </script>

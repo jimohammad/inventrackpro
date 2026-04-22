@@ -106,7 +106,7 @@ class ServiceController extends BaseController {
                 return;
             }
 
-            $token = bin2hex(random_bytes(8));
+            $token = bin2hex(random_bytes(24)); // 48-char token — resistant to brute force
             $lastNo = $this->db->fetchOne("SELECT service_no FROM service_records ORDER BY id DESC LIMIT 1 FOR UPDATE");
             $num = $lastNo ? (int)substr($lastNo['service_no'], 4) : 0;
             $serviceNo = 'SRV-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
@@ -240,7 +240,29 @@ class ServiceController extends BaseController {
         $record = null;
         $history = [];
 
+        // Basic rate-limiting: max 30 lookups per IP per 5 minutes (protects against token brute-force)
         if ($token) {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $cacheDir = sys_get_temp_dir() . '/svc_track_rl';
+            if (!is_dir($cacheDir)) @mkdir($cacheDir, 0700, true);
+            $rlFile = $cacheDir . '/' . md5($ip);
+            $now = time();
+            $hits = file_exists($rlFile) ? (array)@json_decode(file_get_contents($rlFile), true) : [];
+            $hits = array_filter($hits, fn($t) => $t > $now - 300);
+            if (count($hits) >= 30) {
+                http_response_code(429);
+                include __DIR__ . '/../views/public/service_track.php';
+                return;
+            }
+            $hits[] = $now;
+            @file_put_contents($rlFile, json_encode(array_values($hits)));
+
+            // Token must be at least 16 chars (reject obvious brute-force attempts)
+            if (strlen($token) < 16) {
+                include __DIR__ . '/../views/public/service_track.php';
+                return;
+            }
+
             $record = $this->db->fetchOne(
                 "SELECT id, service_no, imei, customer_name, device_brand, device_model, fault_description,
                         status, device_stage, received_date, delivered_date

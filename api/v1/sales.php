@@ -215,10 +215,11 @@ switch ($method) {
                 $accountId = $data['account_id'] ?? 1;
 
                 $db->insert(
-                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [$payNo, 'sale', $saleId, $data['party_id'], 'in', $accountId, $paid,
-                     $data['payment_method'] ?? 'cash', $data['date'] ?? date('Y-m-d'), null]
+                     $data['payment_method'] ?? 'cash', $data['date'] ?? date('Y-m-d'),
+                     $data['warehouse_id'] ?? null, null]
                 );
 
                 // AUDIT FIX F4: Update account balance (was missing — caused balance drift)

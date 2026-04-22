@@ -239,7 +239,10 @@ let retCurrentRow   = null;
 let retActiveImeis  = [];
 let retCurrentItemName = '';
 
-document.addEventListener('DOMContentLoaded', () => { addReturnRow(); addReturnRow(); });
+document.addEventListener('DOMContentLoaded', () => {
+    addReturnRow(); addReturnRow();
+    document.getElementById('retPartySearch').focus();
+});
 
 // ── ADD ROW ──
 function addReturnRow(item = null) {
@@ -300,6 +303,7 @@ function calcReturnTotal() {
     let total = 0, totalQty = 0;
     document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
         const rid = tr.dataset.rowId; if (!rid) return;
+        if (!document.getElementById('rItemId_' + rid)?.value) return;
         total    += parseFloat(document.getElementById('rAmt_' + rid)?.textContent) || 0;
         totalQty += parseFloat(document.getElementById('rQty_' + rid)?.value) || 0;
     });

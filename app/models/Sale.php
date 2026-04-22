@@ -207,10 +207,13 @@ class Sale extends BaseModel {
                             );
                         } else {
                             $imeiId = $imeiRow['id'];
-                            $this->db->execute(
-                                "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=?",
+                            $affected = $this->db->execute(
+                                "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
                                 [$saleId, $data['warehouse_id'], $imeiId]
                             );
+                            if ($affected === 0) {
+                                throw new Exception("IMEI {$imei} is not available for sale (already sold or scrapped).");
+                            }
                         }
 
                         $this->db->insert(
@@ -246,8 +249,8 @@ class Sale extends BaseModel {
         $payNo  = 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
         $this->db->insert(
-            "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, warehouse_id, created_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 $payNo, 'sale', $saleId,
                 $data['party_id'],
@@ -257,6 +260,7 @@ class Sale extends BaseModel {
                 $data['payment_method'] ?? 'cash',
                 $data['date'] ?? date('Y-m-d'),
                 $data['payment_notes'] ?? null,
+                $data['warehouse_id'] ?? Auth::warehouseId(),
                 Auth::id(),
             ]
         );

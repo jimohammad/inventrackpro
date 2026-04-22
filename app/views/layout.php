@@ -682,10 +682,12 @@
         <div class="d-flex align-items-center gap-1" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:4px 10px;">
             <i class="bi bi-building" style="color:#10b981;font-size:0.8rem;"></i>
             <span style="color:#10b981;font-size:0.8rem;font-weight:600;"><?= htmlspecialchars(Auth::warehouseName()) ?></span>
+            <?php if (Auth::isAdmin()): ?>
             <a href="?page=warehouse&switch=1" title="Switch warehouse"
                style="color:#10b981;margin-left:4px;font-size:0.75rem;text-decoration:none;opacity:0.7;" >
                 <i class="bi bi-arrow-left-right"></i>
             </a>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -718,11 +720,13 @@
                     </span>
                 </li>
                 <li><hr class="dropdown-divider" style="border-color:var(--border-color);"></li>
+                <?php if (Auth::isAdmin()): ?>
                 <li>
                     <a class="dropdown-item" href="?page=warehouse&switch=1">
                         <i class="bi bi-building me-2"></i>Switch Warehouse
                     </a>
                 </li>
+                <?php endif; ?>
                 <li>
                     <a class="dropdown-item" href="?page=logout&action=logout" style="color:var(--danger);">
                         <i class="bi bi-box-arrow-right me-2"></i>Logout

@@ -79,20 +79,26 @@ class SaleReturn extends BaseModel {
     }
 
     /**
-     * AUDIT FIX #1: Check if IMEI was already returned in any non-rejected return.
-     * Prevents the same phone being "returned" multiple times, which inflates
-     * stock counts and credits customers multiple times for one device.
+     * AUDIT FIX #1: Check if IMEI was already returned for the SAME sale.
+     * Prevents the same phone being returned twice on the same invoice.
+     * Scoped to ref_id so a phone that was returned, re-sold, and returned again
+     * is not incorrectly blocked by its earlier return history.
      */
-    public function isImeiAlreadyReturned(int $imeiId): array|false {
-        return $this->db->fetchOne(
-            "SELECT r.return_no, r.date, r.id as return_id
-             FROM return_item_imei rii
-             JOIN return_items ri ON ri.id = rii.return_item_id
-             JOIN returns r ON r.id = ri.return_id
-             WHERE rii.imei_id = ? AND r.status != 'rejected'
-             LIMIT 1",
-            [$imeiId]
-        );
+    public function isImeiAlreadyReturned(int $imeiId, ?int $saleId = null): array|false {
+        $sql    = "SELECT r.return_no, r.date
+                   FROM return_item_imei rii
+                   JOIN return_items ri ON ri.id = rii.return_item_id
+                   JOIN returns r ON r.id = ri.return_id
+                   WHERE rii.imei_id = ? AND r.status != 'rejected'";
+        $params = [$imeiId];
+
+        if ($saleId) {
+            // Only block if the prior return was for the same sale invoice
+            $sql .= " AND r.ref_id = ?";
+            $params[] = $saleId;
+        }
+
+        return $this->db->fetchOne($sql . " LIMIT 1", $params);
     }
 
     public function create(array $data): array {
@@ -170,7 +176,7 @@ class SaleReturn extends BaseModel {
                     [$item['item_id'], $data['warehouse_id'], $item['quantity'], $item['quantity']]
                 );
 
-                // Handle IMEIs
+                // Handle IMEIs — explicit scan path
                 if (!empty($item['imeis'])) {
                     foreach ($item['imeis'] as $imei) {
                         $imei = trim($imei);
@@ -179,13 +185,7 @@ class SaleReturn extends BaseModel {
                             "SELECT id FROM imei_records WHERE imei = ?", [$imei]
                         );
                         if ($imeiRow) {
-                            // ========================================================
-                            // AUDIT FIX #1: Block IMEI already returned
-                            // This was the #1 critical bug. Same IMEI was being returned
-                            // 2-3 times. Each return added stock + credited the customer.
-                            // Now we check return_item_imei before allowing it through.
-                            // ========================================================
-                            $alreadyReturned = $this->isImeiAlreadyReturned($imeiRow['id']);
+                            $alreadyReturned = $this->isImeiAlreadyReturned($imeiRow['id'], $data['ref_id'] ?? null);
                             if ($alreadyReturned) {
                                 throw new Exception(
                                     "IMEI {$imei} was already returned in " .
@@ -196,15 +196,37 @@ class SaleReturn extends BaseModel {
                             }
 
                             $this->db->execute(
-                                "UPDATE imei_records SET status='returned', sale_id=NULL WHERE id=?",
+                                "UPDATE imei_records SET status='in_stock', sale_id=NULL WHERE id=?",
                                 [$imeiRow['id']]
                             );
                             $this->db->insert(
                                 "INSERT INTO return_item_imei (return_item_id, imei_id) VALUES (?,?)",
                                 [$retItemId, $imeiRow['id']]
                             );
+                        } else {
+                            // IMEI not in system — create it now so it can be re-sold via scan bar
+                            $newImeiId = $this->db->insert(
+                                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at)
+                                 VALUES (?, ?, ?, 'in_stock', 'Auto-created via sale return', NOW())",
+                                [$imei, $item['item_id'], $data['warehouse_id']]
+                            );
+                            $this->db->insert(
+                                "INSERT INTO return_item_imei (return_item_id, imei_id) VALUES (?,?)",
+                                [$retItemId, $newImeiId]
+                            );
                         }
                     }
+                } elseif (!empty($data['ref_id'])) {
+                    // No IMEIs scanned — auto-restore by sale+item so phones can be re-sold.
+                    // Restores exactly the returned quantity, oldest records first.
+                    $this->db->execute(
+                        "UPDATE imei_records
+                         SET status='in_stock', sale_id=NULL
+                         WHERE sale_id=? AND item_id=? AND status='sold'
+                         ORDER BY id
+                         LIMIT ?",
+                        [$data['ref_id'], $item['item_id'], (int)$item['quantity']]
+                    );
                 }
             }
 

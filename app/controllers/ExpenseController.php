@@ -125,24 +125,37 @@ class ExpenseController extends BaseController {
         $old = $this->expenseModel->find($id);
         if (!$old) { $this->flash('error', 'Expense not found.'); $this->redirect('?page=expenses'); }
 
-        $newAmount = $this->inputFloat('amount');
-        $oldAmount = (float)$old['amount'];
+        $newAmount    = $this->inputFloat('amount');
+        $oldAmount    = (float)$old['amount'];
+        $newAccountId = $this->inputInt('account_id') ?: (int)$old['account_id'];
+        $oldAccountId = (int)$old['account_id'];
 
         $db->beginTransaction();
         try {
-            // Reverse old amount, apply new amount to account
-            if (abs($newAmount - $oldAmount) > 0.001) {
-                $diff = $newAmount - $oldAmount; // positive = more expense = deduct more
+            if ($newAccountId !== $oldAccountId) {
+                // Account changed: restore full amount to old account, deduct full amount from new account
+                $db->execute(
+                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
+                    [$oldAmount, $oldAccountId]
+                );
                 $db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
-                    [$diff, $old['account_id']]
+                    [$newAmount, $newAccountId]
+                );
+            } elseif (abs($newAmount - $oldAmount) > 0.001) {
+                // Same account, amount changed: apply the diff
+                $diff = $newAmount - $oldAmount;
+                $db->execute(
+                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
+                    [$diff, $oldAccountId]
                 );
             }
 
             $db->execute(
-                "UPDATE expenses SET category_id=?, amount=?, date=?, description=? WHERE id=?",
+                "UPDATE expenses SET category_id=?, account_id=?, amount=?, date=?, description=? WHERE id=?",
                 [
                     $this->inputInt('category_id') ?: null,
+                    $newAccountId,
                     $newAmount,
                     $this->input('date') ?: $old['date'],
                     $this->input('description'),

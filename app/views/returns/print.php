@@ -9,52 +9,49 @@
 
 <?php if (!$thermal): ?>
 /* ══════════════════════════════════
-   A5 LAYOUT — unchanged
+   A5 LAYOUT — compact
 ══════════════════════════════════ */
-    body {
-        font-family: 'Segoe UI', Arial, sans-serif;
-        font-size: 12px; color: #1a1a1a;
-        background: #fff; padding: 20px;
-    }
-    .wrap { max-width: 680px; margin: 0 auto; padding: 24px; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9px; color: #1a1a1a; background: #fff; }
+.wrap { max-width: 148mm; width: 100%; margin: 0 auto; padding: 8mm 10mm; }
 
-    .inv-header { display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
-    .company-name { font-size: 17px; font-weight: 800; color: #1e3a5f; }
-    .company-info { font-size: 11px; color: #555; margin-top: 4px; line-height: 1.6; }
-    .inv-title { text-align: right; }
-    .inv-title h1 { font-size: 22px; font-weight: 800; color: #dc2626; letter-spacing: 1px; }
-    .inv-title p { font-size: 11px; color: #555; margin-top: 4px; line-height: 1.7; }
+.inv-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; border-bottom: 2px solid #dc2626; padding-bottom: 7px; }
+.company-name { font-size: 12px; font-weight: 800; color: #1e3a5f; }
+.company-info { font-size: 8px; color: #555; margin-top: 3px; line-height: 1.5; }
+.inv-title { text-align: right; }
+.inv-title h1 { font-size: 18px; font-weight: 800; color: #dc2626; letter-spacing: 1px; }
+.inv-title p { font-size: 8px; color: #444; margin-top: 3px; line-height: 1.7; }
 
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    thead th {
-        background: #1e3a5f; color: #fff;
-        padding: 8px 10px; font-size: 11px;
-        text-transform: uppercase; letter-spacing: 0.4px;
-    }
-    tbody td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
-    tbody tr:last-child td { border-bottom: none; }
-    tbody tr:nth-child(even) { background: #fff5f5; }
+.customer-row { background:#fff5f5; border:1px solid #fecaca; border-radius:5px; padding:5px 8px; margin-bottom:8px; display:flex; align-items:center; gap:10px; font-size:9px; }
+.customer-row .clbl { font-weight:700; text-transform:uppercase; color:#dc2626; letter-spacing:0.5px; white-space:nowrap; }
+.customer-row .cname { font-weight:700; color:#1a1a1a; }
+.customer-row .cphone { color:#555; }
 
-    .totals-section { display: flex; justify-content: flex-end; margin-bottom: 20px; }
-    .totals-box { min-width: 240px; }
-    .total-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
-    .total-row:last-child { border-bottom: none; }
-    .total-row .label { color: #666; }
-    .total-row.grand { font-size: 15px; font-weight: 800; color: #dc2626; border-top: 2px solid #dc2626; padding-top: 8px; margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+thead th { background:#1e3a5f; color:#fff; padding:5px 6px; font-size:8px; text-transform:uppercase; letter-spacing:0.3px; white-space:nowrap; }
+tbody td { padding:4px 6px; border-bottom:1px solid #f0f0f0; font-size:8.5px; vertical-align:middle; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:nth-child(even) { background:#fff5f5; }
+tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px solid #1e3a5f; }
 
-    .inv-footer { border-top: 1px dashed #e5e7eb; padding-top: 12px; text-align: center; color: #888; font-size: 11px; margin-top: 16px; }
+.totals-section { display:flex; justify-content:flex-end; margin-bottom:8px; }
+.totals-box { width:55mm; }
+.total-row { display:flex; justify-content:space-between; padding:3px 0; font-size:8.5px; border-bottom:1px solid #f0f0f0; }
+.total-row:last-child { border-bottom:none; }
+.total-row .label { color:#555; }
+.total-row.grand { font-size:10px; font-weight:800; color:#dc2626; border-top:1.5px solid #dc2626 !important; padding-top:5px !important; margin-top:2px; }
 
-    .no-print { text-align: right; margin-bottom: 14px; }
-    .no-print button {
-        padding: 7px 18px; border-radius: 5px; font-size: 13px; cursor: pointer; border: none; margin-left: 6px;
-    }
+.inv-footer { border-top:1px solid #e5e7eb; padding-top:6px; text-align:center; color:#888; font-size:8px; margin-top:8px; }
 
-    @media print {
-        body { padding: 0; background: #fff; }
-        .no-print { display: none !important; }
-        .wrap { padding: 0; width: 100%; max-width: 100%; }
-        @page { margin: 15mm 18mm 12mm 18mm; }
-    }
+.no-print { text-align:right; margin-bottom:14px; }
+.no-print button { padding:7px 18px; border-radius:5px; font-size:13px; cursor:pointer; border:none; margin-left:6px; }
+
+@media screen { body { background:#e5e7eb; padding:20px; } .wrap { box-shadow:0 2px 16px rgba(0,0,0,0.15); background:#fff; } }
+@media print {
+    body { background:#fff; padding:0; }
+    .no-print { display:none !important; }
+    .wrap { max-width:100%; width:100%; padding:0; margin:0; }
+    @page { size: A5 portrait; margin: 8mm 10mm; }
+}
 
 <?php else: ?>
 /* ══════════════════════════════════
@@ -145,11 +142,11 @@
         </div>
     </div>
 
-    <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:7px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;font-size:12px;">
-        <span style="font-weight:700;text-transform:uppercase;color:#dc2626;letter-spacing:0.5px;white-space:nowrap;">Customer:</span>
-        <span style="font-weight:700;color:#1a1a1a;"><?= htmlspecialchars($return['party_name']) ?></span>
+    <div class="customer-row">
+        <span class="clbl">Customer:</span>
+        <span class="cname"><?= htmlspecialchars($return['party_name']) ?></span>
         <?php if (!empty($return['party_phone'])): ?>
-        <span style="color:#555;"><?= htmlspecialchars($return['party_phone']) ?></span>
+        <span class="cphone"><?= htmlspecialchars($return['party_phone']) ?></span>
         <?php endif; ?>
     </div>
 
@@ -168,10 +165,8 @@
             <tr>
                 <td><?= $i + 1 ?></td>
                 <td>
-                    <strong><?= htmlspecialchars($item['item_name']) ?></strong>
-                    <?php if (!empty($item['sku'])): ?>
-                    <br><small style="color:#888;"><?= $item['sku'] ?></small>
-                    <?php endif; ?>
+                    <span style="font-weight:600;"><?= htmlspecialchars($item['item_name']) ?></span>
+                    <?php if (!empty($item['sku'])): ?><span style="font-size:7.5px;color:#888;margin-left:4px;"><?= $item['sku'] ?></span><?php endif; ?>
                 </td>
                 <td style="text-align:center;"><?= $item['quantity'] ?></td>
                 <td style="text-align:right;"><?= number_format($item['unit_price'], DECIMAL_PLACES) ?></td>
@@ -179,6 +174,15 @@
             </tr>
             <?php endforeach; ?>
         </tbody>
+        <tfoot>
+            <tr style="border-top:2px solid #1e3a5f;font-weight:700;">
+                <td></td>
+                <td style="text-align:right;color:#555;">Total Devices Returned:</td>
+                <td style="text-align:center;"><?= array_sum(array_column($return['items'], 'quantity')) ?></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
 
     <div class="totals-section">

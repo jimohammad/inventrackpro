@@ -94,12 +94,14 @@
                     'purchase' => '#f59e0b',
                     'payment'  => '#10b981',
                     'return'   => '#dc2626',
+                    'discount' => '#8b5cf6',
                 ];
                 $typeLabels = [
                     'sale'     => 'Sale',
                     'purchase' => 'Purchase',
                     'payment'  => 'Payment',
                     'return'   => 'Return',
+                    'discount' => 'Discount',
                 ];
                 $typeColor = $typeColors[$t['txn_type']] ?? '#94a3b8';
                 $typeLabel = $typeLabels[$t['txn_type']] ?? ucfirst($t['txn_type']);

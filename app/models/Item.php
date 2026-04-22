@@ -141,6 +141,9 @@ class Item extends BaseModel {
     // Also, subtract with no existing row inserted quantity=0 instead of -$qty, silently
     // losing the subtraction. Now uses atomic INSERT ... ON DUPLICATE KEY UPDATE.
     public function adjustStock(int $itemId, int $warehouseId, int $qty, string $direction = 'add'): void {
+        if (!in_array($direction, ['add', 'subtract'], true)) {
+            throw new InvalidArgumentException("adjustStock: direction must be 'add' or 'subtract', got '{$direction}'");
+        }
         if ($direction === 'add') {
             $this->db->execute(
                 "INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?, ?, ?)

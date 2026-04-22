@@ -215,6 +215,108 @@ class IMEIController extends BaseController {
     }
 
     /**
+     * AJAX: bulk save IMEIs from paste/notepad for a specific purchase
+     */
+    public function bulkSavePurchaseImei(): void {
+        Auth::authorize('imei', 'add');
+        header('Content-Type: application/json');
+
+        if (!$this->isPost()) { echo json_encode(['error' => 'POST required']); return; }
+
+        $raw        = $this->input('imeis');
+        $itemId     = $this->inputInt('item_id');
+        $purchaseId = $this->inputInt('purchase_id');
+
+        if (!$raw || !$itemId || !$purchaseId) {
+            echo json_encode(['error' => 'imeis, item_id and purchase_id are required']);
+            return;
+        }
+
+        $db = Database::getInstance();
+
+        $itemRow  = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$itemId]);
+        if (!$itemRow) { echo json_encode(['error' => 'Item not found']); return; }
+        $minLen = (stripos($itemRow['name'], 'h40') !== false) ? 13 : 15;
+
+        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
+        if (!$purchase) { echo json_encode(['error' => 'Purchase not found']); return; }
+        $whId = $purchase['warehouse_id'] ?? Auth::warehouseId();
+
+        // Parse — split on newlines, commas, semicolons; strip non-digits per token
+        $lines = preg_split('/[\r\n,;]+/', $raw);
+        $saved   = [];
+        $skipped = [];
+        $seen    = [];
+
+        $db->beginTransaction();
+        try {
+            foreach ($lines as $raw_imei) {
+                $imei = preg_replace('/\D/', '', trim($raw_imei));
+                if (!$imei) continue;
+
+                if (strlen($imei) < $minLen) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Too short (' . strlen($imei) . ' digits, need ' . $minLen . ')'];
+                    continue;
+                }
+                if (!$this->luhn($imei)) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Invalid IMEI (check digit failed)'];
+                    continue;
+                }
+                if (isset($seen[$imei])) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Duplicate in list'];
+                    continue;
+                }
+                $seen[$imei] = true;
+
+                $existing = $db->fetchOne("SELECT id, status FROM imei_records WHERE imei = ?", [$imei]);
+                if ($existing) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Already in system (status: ' . $existing['status'] . ')'];
+                    continue;
+                }
+
+                $db->insert(
+                    "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at) VALUES (?, ?, ?, ?, 'in_stock', NOW())",
+                    [$imei, $itemId, $whId, $purchaseId]
+                );
+                $saved[] = $imei;
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('bulkSavePurchaseImei error: ' . $e->getMessage());
+            echo json_encode(['error' => 'Database error. Please try again.']);
+            return;
+        }
+
+        $count = $db->fetchOne(
+            "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id = ? AND item_id = ?",
+            [$purchaseId, $itemId]
+        );
+
+        echo json_encode([
+            'success' => true,
+            'saved'   => count($saved),
+            'skipped' => $skipped,
+            'total'   => (int)$count['c'],
+        ]);
+    }
+
+    /**
+     * Luhn algorithm — validates IMEI check digit
+     */
+    private function luhn(string $number): bool {
+        $sum  = 0;
+        $flip = false;
+        for ($i = strlen($number) - 1; $i >= 0; $i--) {
+            $d = (int)$number[$i];
+            if ($flip) { $d *= 2; if ($d > 9) $d -= 9; }
+            $sum += $d;
+            $flip = !$flip;
+        }
+        return ($sum % 10 === 0);
+    }
+
+    /**
      * AJAX: lookup IMEI — returns item info if found (for scan-first sales)
      */
     public function lookupImei(): void {
@@ -224,17 +326,32 @@ class IMEIController extends BaseController {
         if (!$imei) { echo json_encode(['found' => false]); return; }
 
         $db = Database::getInstance();
+
+        // Check all statuses so we can give a precise error message
         $row = $db->fetchOne(
             "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
                     i.name as item_name, i.sale_price, i.sku, i.has_imei
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.imei = ? AND ir.status IN ('in_stock','returned')",
+             WHERE ir.imei = ?",
             [$imei]
         );
 
         if (!$row) {
-            echo json_encode(['found' => false, 'message' => 'IMEI not found or not available (sold/scrapped)']);
+            echo json_encode([
+                'found'    => false,
+                'accepted' => true,
+                'imei'     => $imei,
+                'message'  => 'IMEI not registered — select item',
+            ]);
+            return;
+        }
+        if ($row['status'] === 'sold') {
+            echo json_encode(['found' => false, 'message' => "Already sold ({$row['item_name']})."]);
+            return;
+        }
+        if (!in_array($row['status'], ['in_stock', 'returned'])) {
+            echo json_encode(['found' => false, 'message' => "Not available — status: {$row['status']}"]);
             return;
         }
 

@@ -102,23 +102,19 @@ class ReturnController extends BaseController {
     // AJAX: search sale invoices for ref lookup
     public function searchSales(): void {
         header('Content-Type: application/json');
-        $q    = trim($_GET['q'] ?? '');
-        $whId = (int)($_GET['warehouse_id'] ?? 0);
+        $q = trim($_GET['q'] ?? '');
         if (strlen($q) < 1) { echo json_encode([]); return; }
         $db   = Database::getInstance();
         $like = "%$q%";
-        $params = [$like, $like];
-        $whCond = '';
-        if ($whId) { $whCond = " AND s.warehouse_id = ?"; $params[] = $whId; }
         $rows = $db->fetchAll(
             "SELECT s.id, s.invoice_no, p.name as party_name, s.grand_total, s.date
              FROM sales s
              JOIN parties p ON p.id = s.party_id
              WHERE s.status != 'cancelled'
+               AND s.warehouse_id = ?
                AND (s.invoice_no LIKE ? OR p.name LIKE ?)
-               $whCond
              ORDER BY s.date DESC LIMIT 15",
-            $params
+            [Auth::warehouseId(), $like, $like]
         );
         echo json_encode($rows);
     }
@@ -128,8 +124,8 @@ class ReturnController extends BaseController {
         header('Content-Type: application/json');
         $imei = trim($_GET['imei'] ?? '');
 
-        if (!$imei || strlen($imei) < 10) {
-            echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Invalid IMEI.']);
+        if (!$imei || !ctype_digit($imei) || strlen($imei) < 14 || strlen($imei) > 15) {
+            echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Invalid IMEI (must be 14-15 digits).']);
             return;
         }
 
@@ -318,8 +314,8 @@ class ReturnController extends BaseController {
             }
 
             $db->execute(
-                "UPDATE returns SET date = ?, subtotal = ?, grand_total = ?, reason = ? WHERE id = ?",
-                [$newDate, $newSubtotal, $newSubtotal, $newReason, $id]
+                "UPDATE returns SET date = ?, subtotal = ?, grand_total = ?, reason = ? WHERE id = ? AND warehouse_id = ?",
+                [$newDate, $newSubtotal, $newSubtotal, $newReason, $id, Auth::warehouseId()]
             );
 
             $db->commit();

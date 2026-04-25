@@ -50,3 +50,8 @@ date_default_timezone_set(APP_TIMEZONE);
 // Error reporting handled by user.ini / server config
 ini_set('display_errors', '0');
 ini_set('display_startup_errors', '0');
+
+// Performance logging toggle (set PERF_LOG_ENABLED=true in .env to enable)
+if (!defined('PERF_LOG_ENABLED')) {
+    define('PERF_LOG_ENABLED', false);
+}

@@ -1,7 +1,24 @@
-// Keyboard shortcuts
+// Report export helpers
+function exportReportCSV(tableId, title) {
+    var table = document.getElementById(tableId);
+    if (!table) { alert('No table found to export.'); return; }
+    var rows = Array.from(table.querySelectorAll('thead tr, tbody tr'));
+    var csv = rows.map(function(row) {
+        return Array.from(row.querySelectorAll('th, td')).map(function(cell) {
+            return '"' + cell.innerText.replace(/"/g, '""').replace(/\r?\n/g, ' ').trim() + '"';
+        }).join(',');
+    });
+    var blob = new Blob(['\uFEFF' + csv.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = title.replace(/[^a-z0-9]/gi, '_') + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+function exportReportPDF() { window.print(); }
+
 // Mobile sidebar toggle
 document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.sidebar')?.classList.toggle('open');
 });
 
 // Keyboard shortcuts
@@ -15,28 +32,28 @@ document.addEventListener('keydown', function(e) {
     if (key === 'o') { e.preventDefault(); window.location.href = '?page=payments&action=create&type=out'; }
 });
 
-// ── Theme Toggle ──
-const htmlRoot   = document.getElementById('htmlRoot');
-const themeBtn   = document.getElementById('themeToggleBtn');
-const themeIcon  = document.getElementById('themeIcon');
+// Theme toggle
+const htmlRoot = document.getElementById('htmlRoot');
+const themeBtn = document.getElementById('themeToggleBtn');
+const themeIcon = document.getElementById('themeIcon');
 
 function applyTheme(theme) {
-    htmlRoot.setAttribute('data-theme', theme);
+    htmlRoot?.setAttribute('data-theme', theme);
     localStorage.setItem('invt_theme', theme);
-    if (theme === 'light') {
-        themeIcon.className = 'bi bi-sun-fill';
-        themeBtn.title = 'Switch to dark mode';
-    } else {
-        themeIcon.className = 'bi bi-moon-stars-fill';
-        themeBtn.title = 'Switch to light mode';
+    if (themeIcon && themeBtn) {
+        if (theme === 'light') {
+            themeIcon.className = 'bi bi-sun-fill';
+            themeBtn.title = 'Switch to dark mode';
+        } else {
+            themeIcon.className = 'bi bi-moon-stars-fill';
+            themeBtn.title = 'Switch to light mode';
+        }
     }
 }
 
-// Set correct icon on load
 applyTheme(localStorage.getItem('invt_theme') || 'dark');
-
 themeBtn?.addEventListener('click', () => {
-    const current = htmlRoot.getAttribute('data-theme') || 'dark';
+    const current = htmlRoot?.getAttribute('data-theme') || 'dark';
     applyTheme(current === 'dark' ? 'light' : 'dark');
 });
 
@@ -49,7 +66,8 @@ setTimeout(() => {
 
 // Global Search (AJAX)
 let searchTimeout;
-const searchInput  = document.getElementById('globalSearch');
+let activeSearchController = null;
+const searchInput = document.getElementById('globalSearch');
 const searchResults = document.getElementById('searchResults');
 
 searchInput?.addEventListener('input', function () {
@@ -57,14 +75,24 @@ searchInput?.addEventListener('input', function () {
     const q = this.value.trim();
 
     if (q.length < 2) {
-        searchResults.style.display = 'none';
+        if (activeSearchController) {
+            activeSearchController.abort();
+            activeSearchController = null;
+        }
+        if (searchResults) searchResults.style.display = 'none';
         return;
     }
 
     searchTimeout = setTimeout(() => {
-        fetch(`?page=dashboard&action=search&q=${encodeURIComponent(q)}`)
+        if (activeSearchController) activeSearchController.abort();
+        activeSearchController = new AbortController();
+
+        fetch(`?page=dashboard&action=search&q=${encodeURIComponent(q)}`, { signal: activeSearchController.signal })
             .then(r => r.json())
             .then(data => {
+                if (!searchResults) return;
+                if (searchInput && searchInput.value.trim() !== q) return;
+
                 if (!data.results || data.results.length === 0) {
                     searchResults.innerHTML = '<div class="search-result-item text-muted">No results found</div>';
                 } else {
@@ -77,18 +105,22 @@ searchInput?.addEventListener('input', function () {
                     `).join('');
                 }
                 searchResults.style.display = 'block';
+                activeSearchController = null;
+            })
+            .catch(err => {
+                if (err && err.name === 'AbortError') return;
+                activeSearchController = null;
             });
     }, 300);
 });
 
-// Close search when clicking outside
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.search-box')) {
+    if (!e.target.closest('.search-box') && searchResults) {
         searchResults.style.display = 'none';
     }
 });
 
-// Initialize DataTables with dark styling
+// Initialize DataTables with default styling
 function initDataTable(selector, options = {}) {
     return $(selector).DataTable({
         pageLength: 25,
@@ -97,96 +129,6 @@ function initDataTable(selector, options = {}) {
         ...options
     });
 }
-var _pinCallback = null;
-var _pinVerified = false;
-
-function requirePin(callback) {
-    if (_pinVerified) { callback(); return; }
-    _pinCallback = callback;
-    document.getElementById('pinModal').style.display = 'flex';
-    document.getElementById('pinError').textContent = '';
-    ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; document.getElementById(id).classList.remove('err'); });
-    setTimeout(() => document.getElementById('pin1').focus(), 100);
-}
-
-function pinNext(n) {
-    if (n < 4 && document.getElementById('pin'+n).value) document.getElementById('pin'+(n+1)).focus();
-    if (n === 4 && document.getElementById('pin4').value) submitPin();
-}
-
-function pinBack(e, n) {
-    if (e.key === 'Backspace' && !document.getElementById('pin'+n).value && n > 1) document.getElementById('pin'+(n-1)).focus();
-    if (e.key === 'Escape') closePin();
-}
-
-function closePin() {
-    document.getElementById('pinModal').style.display = 'none';
-    _pinCallback = null;
-}
-
-function submitPin() {
-    var pin = document.getElementById('pin1').value + document.getElementById('pin2').value +
-              document.getElementById('pin3').value + document.getElementById('pin4').value;
-    if (pin.length < 4) { document.getElementById('pinError').textContent = 'Enter all 4 digits'; return; }
-
-    document.getElementById('pinSubmitBtn').textContent = '...';
-    fetch('?page=settings&action=verifyPin', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'pin=' + encodeURIComponent(pin)
-    })
-        .then(r => r.json())
-        .then(data => {
-            document.getElementById('pinSubmitBtn').textContent = 'Verify';
-            if (data.valid) {
-                _pinVerified = true;
-                document.getElementById('pinModal').style.display = 'none';
-                if (_pinCallback) _pinCallback();
-            } else {
-                document.getElementById('pinError').textContent = 'Wrong PIN';
-                ['pin1','pin2','pin3','pin4'].forEach(id => {
-                    document.getElementById(id).classList.add('err');
-                    document.getElementById(id).value = '';
-                });
-                setTimeout(() => document.getElementById('pin1').focus(), 200);
-            }
-        })
-        .catch(() => {
-            document.getElementById('pinSubmitBtn').textContent = 'Verify';
-            document.getElementById('pinError').textContent = 'Error — try again';
-        });
-}
-
-// Close on overlay click / Escape
-document.getElementById('pinModal').addEventListener('click', function(e) { if (e.target === this) closePin(); });
-document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && document.getElementById('pinModal').style.display === 'flex') closePin(); });
-
-// Universal PIN protection — intercepts all .pin-protect links and buttons
-document.addEventListener('click', function(e) {
-    var el = e.target.closest('.pin-protect');
-    if (!el) return;
-    if (_pinVerified) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (el.tagName === 'A') {
-        requirePin(function() { window.location = el.href; });
-        return;
-    }
-
-    if (el.tagName === 'BUTTON' && el.type === 'submit') {
-        var form = el.closest('form');
-        if (form) {
-            var isCancel = form.action && form.action.indexOf('cancel') !== -1;
-            requirePin(function() {
-                if (isCancel && !confirm('Are you sure you want to cancel this?')) return;
-                form.submit();
-            });
-        }
-        return;
-    }
-}, true);
 
 // Rounded top corners on all card tables
 document.addEventListener('DOMContentLoaded', function() {

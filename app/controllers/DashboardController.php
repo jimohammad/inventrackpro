@@ -3,8 +3,41 @@
 require_once __DIR__ . '/BaseController.php';
 
 class DashboardController extends BaseController {
+    private static function perfLoggingEnabled(): bool {
+        if (defined('PERF_LOG_ENABLED') && PERF_LOG_ENABLED === true) {
+            return true;
+        }
+        $raw = $_ENV['PERF_LOG_ENABLED'] ?? getenv('PERF_LOG_ENABLED') ?? '';
+        $value = strtolower(trim((string) $raw));
+        return in_array($value, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private static function logPerf(string $scope, float $startedAt, int $thresholdMs = 150, array $context = []): void {
+        if (!self::perfLoggingEnabled()) {
+            return;
+        }
+
+        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+        if ($elapsedMs < $thresholdMs) {
+            return;
+        }
+
+        $safeContext = [];
+        foreach ($context as $k => $v) {
+            if (is_scalar($v) || $v === null) {
+                $safeContext[$k] = $v;
+            } elseif (is_array($v)) {
+                $safeContext[$k] = 'array(' . count($v) . ')';
+            } else {
+                $safeContext[$k] = gettype($v);
+            }
+        }
+
+        error_log('[perf] ' . $scope . ' ' . $elapsedMs . 'ms ' . json_encode($safeContext));
+    }
 
     public function index(): void {
+        $startedAt = microtime(true);
         Auth::authorize('dashboard', 'view');
 
         $db = Database::getInstance();
@@ -40,8 +73,10 @@ class DashboardController extends BaseController {
         $todayCash = ['total' => (float)$todayCashFresh['t'], 'count' => (int)$todayCashFresh['c']];
 
         $expectedKeys = ['todaySales','todayExpenses','stockValue','pendingReceivables','pendingPayables','lowStockItems','recentSales','topItems','pendingPOs'];
+        $usedCache = false;
         if ($cached && !array_diff($expectedKeys, array_keys($cached))) {
             extract($cached);
+            $usedCache = true;
         } else {
             // Combined today's totals in single round-trip — filtered by warehouse
             $todayTotals = $db->fetchOne(
@@ -149,10 +184,17 @@ class DashboardController extends BaseController {
         $pageTitle = 'Dashboard';
         $page      = 'dashboard';
         include __DIR__ . '/../views/layout.php';
+
+        self::logPerf('dashboard.index', $startedAt, 300, [
+            'user_id' => Auth::id(),
+            'warehouse_id' => $whId,
+            'cache' => $usedCache ? 'hit' : 'miss',
+        ]);
     }
 
     // Global Search - returns JSON
     public function search(): void {
+        $startedAt = microtime(true);
         header('Content-Type: application/json');
 
         $q = trim($_GET['q'] ?? '');
@@ -160,17 +202,45 @@ class DashboardController extends BaseController {
             echo json_encode(['results' => []]);
             return;
         }
+        $q = mb_substr($q, 0, 80);
 
         $db      = Database::getInstance();
+        $prefix  = "{$q}%";
         $like    = "%{$q}%";
         $whId    = Auth::warehouseId();
         $results = [];
 
+        // Short-lived cache for repeated typeahead terms.
+        $cacheDir = __DIR__ . '/../../backups/cache/search';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0700, true);
+        }
+        $cacheKey = 'srch_' . $whId . '_' . md5($q);
+        $cacheFile = $cacheDir . '/' . $cacheKey . '.json';
+        $cacheLife = 20;
+        $cacheHit = false;
+
+        if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheLife) {
+            $cached = @file_get_contents($cacheFile);
+            if ($cached !== false) {
+                $cacheHit = true;
+                self::logPerf('dashboard.search', $startedAt, 120, [
+                    'warehouse_id' => $whId,
+                    'q_len' => strlen($q),
+                    'cache' => 'hit',
+                ]);
+                echo $cached;
+                return;
+            }
+        }
+
         // Search invoices (sales) — warehouse scoped
         $sales = $db->fetchAll(
             "SELECT id, invoice_no, grand_total, status FROM sales
-             WHERE warehouse_id = ? AND (invoice_no LIKE ? OR notes LIKE ?) LIMIT 3",
-            [$whId, $like, $like]
+             WHERE warehouse_id = ?
+               AND (invoice_no LIKE ? OR invoice_no LIKE ? OR notes LIKE ?)
+             LIMIT 3",
+            [$whId, $prefix, $like, $like]
         );
         foreach ($sales as $s) {
             $results[] = [
@@ -184,8 +254,8 @@ class DashboardController extends BaseController {
         // Search purchases — warehouse scoped
         $purchases = $db->fetchAll(
             "SELECT id, invoice_no, grand_total, status FROM purchases
-             WHERE warehouse_id = ? AND invoice_no LIKE ? LIMIT 3",
-            [$whId, $like]
+             WHERE warehouse_id = ? AND (invoice_no LIKE ? OR invoice_no LIKE ?) LIMIT 3",
+            [$whId, $prefix, $like]
         );
         foreach ($purchases as $p) {
             $results[] = [
@@ -201,8 +271,10 @@ class DashboardController extends BaseController {
             "SELECT ir.imei, i.name as item_name, ir.status
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.warehouse_id = ? AND (ir.imei LIKE ? OR ir.imei2 LIKE ?) LIMIT 3",
-            [$whId, $like, $like]
+             WHERE ir.warehouse_id = ?
+               AND (ir.imei LIKE ? OR ir.imei2 LIKE ? OR ir.imei LIKE ? OR ir.imei2 LIKE ?)
+             LIMIT 3",
+            [$whId, $prefix, $prefix, $like, $like]
         );
         foreach ($imeis as $im) {
             $results[] = [
@@ -216,8 +288,8 @@ class DashboardController extends BaseController {
         // Search parties
         $parties = $db->fetchAll(
             "SELECT id, name, phone, type FROM parties 
-             WHERE name LIKE ? OR phone LIKE ? LIMIT 3",
-            [$like, $like]
+             WHERE name LIKE ? OR phone LIKE ? OR name LIKE ? OR phone LIKE ? LIMIT 3",
+            [$prefix, $prefix, $like, $like]
         );
         foreach ($parties as $pa) {
             $results[] = [
@@ -228,6 +300,19 @@ class DashboardController extends BaseController {
             ];
         }
 
-        echo json_encode(['results' => $results]);
+        $payload = json_encode(['results' => $results]);
+        if ($payload === false) {
+            echo json_encode(['results' => []]);
+            return;
+        }
+
+        @file_put_contents($cacheFile, $payload, LOCK_EX);
+        self::logPerf('dashboard.search', $startedAt, 120, [
+            'warehouse_id' => $whId,
+            'q_len' => strlen($q),
+            'cache' => $cacheHit ? 'hit' : 'miss',
+            'results' => count($results),
+        ]);
+        echo $payload;
     }
 }

@@ -1,36 +1,109 @@
-# Environment & credentials - NEVER commit these
+# ============================================================
+# InvenTrack Pro — .gitignore
+# ============================================================
+
+# Environment & credentials — NEVER commit these
 .env
 *.env
 .env.*
 !.env.example
 
-# Backups contain full database dumps
+# Hostinger PHP configuration (may contain settings/secrets)
+.user
+.user.ini
+user.ini
+
+# Backups — full database dumps and archives
 backups/*.sql
 backups/*.gz
+backups/*.zip
+backups/*.tar
+backups/cache/
 
 # IDE / Editor files
 .idea/
 .vscode/
+.vs/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Logs
+# Logs and error files
 *.log
 error_log
+php_errors.log
+**/error_log
+**/php_errors.log
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+uploads/temp/
+
+# Local databases (dev/sqlite)
+*.sqlite
+*.sqlite3
+*.db
 
 # Graphify
 graphify-out/
 .graphify_*
 .graphify_python
 
+# Claude Code internal state
+.claude/
+
 # Cache
 backups/cache/
+cache/
+*.cache
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+
+# Composer (if added later)
+vendor/
+composer.phar
+
+# Node (if added later)
+node_modules/
+yarn.lock
+yarn-error.log
+npm-debug.log
+
+# Keep lockfiles committed for reproducible app deployments
+!composer.lock
+!package-lock.json
+
+# Build artifacts
+dist/
+build/
+
+# PHP backup/old/swap files
+*.php.bak
+*.php.old
+*.php.swp
+*.php~
+
+# Project metadata files (optional — uncomment if you don't want CLAUDE.md/AGENTS.md tracked)
+# CLAUDE.md
+# AGENTS.md
+
+# IDE-specific config workspace files (these ARE tracked elsewhere — uncomment to ignore)
+# *.code-workspace

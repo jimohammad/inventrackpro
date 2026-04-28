@@ -87,7 +87,7 @@
             <i class="bi bi-cash-stack"></i> Payments
         </a>
         <?php if (Auth::can('payments', 'add')): ?>
-        <a href="?page=payments&action=create&type=in" class="quick-add-btn" title="New Payment In (Alt+I) / Out (Alt+O)">+</a>
+        <a href="?page=payments&action=receive" class="quick-add-btn" title="Receive Payment">+</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -186,6 +186,11 @@
     <a href="?page=imei&action=lifecycle" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'lifecycle' ? 'active' : '' ?>">
         <i class="bi bi-clock-history"></i> IMEI Lifecycle
     </a>
+    <?php if (Auth::isAdmin()): ?>
+    <a href="?page=imei&action=audit" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'audit' ? 'active' : '' ?>">
+        <i class="bi bi-clipboard-check"></i> Stock Audit
+    </a>
+    <?php endif; ?>
     <?php endif; ?>
 
     <?php if (Auth::can('payments', 'view') || Auth::can('expenses', 'view')): ?>

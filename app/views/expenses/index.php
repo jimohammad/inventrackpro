@@ -90,6 +90,7 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
     <div class="exp-form-body">
         <form method="POST" action="?page=expenses&action=store">
             <?= Auth::csrfField() ?>
+            <input type="hidden" name="expense_form_nonce" value="<?= htmlspecialchars($expenseFormNonce ?? '') ?>">
 
             <!-- Date & Account (shared for all rows) -->
             <div style="display:flex;gap:14px;margin-bottom:16px;flex-wrap:wrap;">
@@ -275,12 +276,30 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 <script>
 var expRowCount = 0;
 var categories = <?= json_encode($categories) ?>;
+var defaultGeneralCategoryId = '';
+for (var i = 0; i < categories.length; i++) {
+    var name = String(categories[i].name || '').trim().toLowerCase();
+    if (name === 'general') {
+        defaultGeneralCategoryId = String(categories[i].id);
+        break;
+    }
+}
+
+function focusLastDescriptionField() {
+    var descInputs = document.querySelectorAll('#expRowsBody input[name$="[description]"]');
+    var target = descInputs.length ? descInputs[descInputs.length - 1] : null;
+    if (target) {
+        target.focus();
+        target.select();
+    }
+}
 
 function addExpRow() {
     expRowCount++;
     var catOptions = '<option value="">—</option>';
     categories.forEach(function(c) {
-        catOptions += '<option value="' + c.id + '">' + c.name + '</option>';
+        var selected = (defaultGeneralCategoryId !== '' && String(c.id) === defaultGeneralCategoryId) ? ' selected' : '';
+        catOptions += '<option value="' + c.id + '"' + selected + '>' + c.name + '</option>';
     });
 
     var tr = document.createElement('tr');
@@ -294,8 +313,10 @@ function addExpRow() {
         '<td style="padding:8px 4px;text-align:center;"><button type="button" onclick="removeExpRow(' + expRowCount + ')" style="background:none;border:none;color:#fca5a8;cursor:pointer;font-size:1.1rem;" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#fca5a8\'">×</button></td>';
 
     document.getElementById('expRowsBody').appendChild(tr);
-    // Focus the description field of the new row
-    tr.querySelector('input[type="text"]').focus();
+    // Keep entry flow fast: jump directly to description
+    requestAnimationFrame(function() {
+        focusLastDescriptionField();
+    });
 }
 
 function removeExpRow(n) {
@@ -318,6 +339,10 @@ function toggleExpForm() {
     if (isHidden) {
         if (document.querySelectorAll('#expRowsBody tr').length === 0) {
             addExpRow(); // Start with one row
+        } else {
+            requestAnimationFrame(function() {
+                focusLastDescriptionField();
+            });
         }
         setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     }

@@ -74,11 +74,15 @@ class PurchaseController extends BaseController {
         $itemModel  = new Item();
         $partyModel = new Party();
 
-        $warehouses = $itemModel->getWarehouses();
-        $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $warehouses = self::getWarehouses();
+        $accounts   = self::getAccounts();
         $nextInv    = $this->nextInvoiceNo($db);
         $pageTitle  = 'New Purchase';
         $page       = 'purchases';
+
+        // One-time token to prevent double-submit duplicate purchases
+        $_SESSION['purchase_form_nonce'] = bin2hex(random_bytes(16));
+        $purchaseFormNonce               = $_SESSION['purchase_form_nonce'];
 
         ob_start();
         include __DIR__ . '/../views/purchases/create.php';
@@ -91,6 +95,15 @@ class PurchaseController extends BaseController {
         if (!$this->isPost()) { $this->redirect('?page=purchases&action=create'); }
 
         $db       = Database::getInstance();
+
+        $postedNonce = isset($_POST['purchase_form_nonce']) ? trim((string)$_POST['purchase_form_nonce']) : '';
+        $sessNonce   = $_SESSION['purchase_form_nonce'] ?? '';
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This purchase form was already submitted or expired. Please check Purchases list before trying again.');
+            $this->redirect('?page=purchases');
+        }
+        unset($_SESSION['purchase_form_nonce']);
+
         $rawItems = $_POST['items'] ?? [];
         $items    = [];
 
@@ -163,14 +176,14 @@ class PurchaseController extends BaseController {
                 );
 
                 // Add stock
-                $exists = $db->fetchOne(
-                    "SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ?",
+                $stockRow = $db->fetchOne(
+                    "SELECT id, quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
                     [$item['item_id'], $warehouseId]
                 );
-                if ($exists) {
+                if ($stockRow) {
                     $db->execute(
-                        "UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?",
-                        [$item['quantity'], $item['item_id'], $warehouseId]
+                        "UPDATE stock SET quantity = quantity + ? WHERE id = ?",
+                        [$item['quantity'], $stockRow['id']]
                     );
                 } else {
                     $db->insert(
@@ -268,7 +281,26 @@ class PurchaseController extends BaseController {
             [$id]
         );
 
-        $accounts  = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        // Self-heal: if payments exist but purchase header isn't updated (common when migrated from PO),
+        // sync paid_amount/balance/status so UI matches the ledger.
+        $paidSum = 0.0;
+        foreach ($purchase['payments'] as $py) $paidSum += (float)($py['amount'] ?? 0);
+        $paidSum = round($paidSum, 3);
+        $headerPaid = (float)($purchase['paid_amount'] ?? 0);
+        if (abs($paidSum - $headerPaid) > 0.001) {
+            $grand = (float)($purchase['grand_total'] ?? 0);
+            $newBalance = max(0, $grand - $paidSum);
+            $newStatus  = $newBalance < 0.001 ? 'paid' : ($paidSum > 0 ? 'partial' : 'confirmed');
+            $db->execute(
+                "UPDATE purchases SET paid_amount=?, balance=?, status=? WHERE id=?",
+                [$paidSum, round($newBalance, 3), $newStatus, $id]
+            );
+            $purchase['paid_amount'] = $paidSum;
+            $purchase['balance']     = round($newBalance, 3);
+            $purchase['status']      = $newStatus;
+        }
+
+        $accounts  = self::getAccounts();
         $pageTitle = 'Purchase: ' . $purchase['invoice_no'];
         $page      = 'purchases';
 
@@ -276,6 +308,112 @@ class PurchaseController extends BaseController {
         include __DIR__ . '/../views/purchases/view.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Cancel (delete) a purchase: reverse stock/IMEIs and reverse/delete linked payments.
+     * This is used to fix mistaken double-entry purchases.
+     */
+    public function cancel(): void {
+        Auth::authorize('purchases', 'delete');
+
+        if (!$this->isPost()) {
+            $this->redirect('?page=purchases');
+        }
+
+        $id = $this->inputInt('id');
+        if ($id <= 0) {
+            $this->flash('error', 'Invalid purchase.');
+            $this->redirect('?page=purchases');
+        }
+
+        $db = Database::getInstance();
+
+        $purchase = $db->fetchOne(
+            "SELECT * FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$id, Auth::warehouseId()]
+        );
+        if (!$purchase) {
+            $this->flash('error', 'Purchase not found.');
+            $this->redirect('?page=purchases');
+        }
+        if (($purchase['status'] ?? '') === 'cancelled') {
+            $this->flash('warning', 'Purchase is already cancelled.');
+            $this->redirect('?page=purchases');
+        }
+
+        // Prevent cancelling if a purchase return was approved against this purchase
+        $existingReturns = $db->fetchOne(
+            "SELECT COUNT(*) as cnt FROM returns WHERE ref_id = ? AND type = 'purchase_return' AND status = 'approved'",
+            [$id]
+        );
+        if ($existingReturns && (int)($existingReturns['cnt'] ?? 0) > 0) {
+            $this->flash('error', 'Cannot cancel: approved purchase return exists for this purchase.');
+            $this->redirect('?page=purchases&action=detail&id=' . $id);
+        }
+
+        $items = $db->fetchAll(
+            "SELECT item_id, quantity FROM purchase_items WHERE purchase_id = ?",
+            [$id]
+        );
+
+        $db->beginTransaction();
+        try {
+            // IMEI safety check (lock rows): cannot cancel if any IMEI from this purchase has moved out of stock
+            $badImei = $db->fetchOne(
+                "SELECT id, imei, status, sale_id FROM imei_records
+                 WHERE purchase_id = ? AND (status != 'in_stock' OR sale_id IS NOT NULL)
+                 LIMIT 1 FOR UPDATE",
+                [$id]
+            );
+            if ($badImei) {
+                throw new Exception('Cannot cancel: at least one IMEI from this purchase is already used/sold (IMEI: ' . ($badImei['imei'] ?? '') . ').');
+            }
+
+            // Reverse payments: add back to accounts, then delete payment records
+            $payments = $db->fetchAll(
+                "SELECT id, account_id, amount FROM payments WHERE ref_type = 'purchase' AND ref_id = ? FOR UPDATE",
+                [$id]
+            );
+            foreach ($payments as $py) {
+                $db->execute(
+                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
+                    [(float)$py['amount'], (int)$py['account_id']]
+                );
+            }
+            $db->execute("DELETE FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$id]);
+
+            // Reverse stock
+            foreach ($items as $it) {
+                $stockRow = $db->fetchOne(
+                    "SELECT id, quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
+                    [(int)$it['item_id'], (int)$purchase['warehouse_id']]
+                );
+                $currentQty = (int)($stockRow['quantity'] ?? 0);
+                if ($currentQty < (int)$it['quantity']) {
+                    throw new Exception('Cannot cancel: stock already used/sold for one or more items.');
+                }
+                $db->execute(
+                    "UPDATE stock SET quantity = quantity - ? WHERE id = ?",
+                    [(int)$it['quantity'], (int)$stockRow['id']]
+                );
+            }
+
+            // Remove IMEIs that were created by this purchase (they are still in_stock due to checks above)
+            $db->execute("DELETE FROM imei_records WHERE purchase_id = ?", [$id]);
+
+            // Mark purchase cancelled so it no longer affects balances/reports
+            $db->execute("UPDATE purchases SET status='cancelled' WHERE id = ?", [$id]);
+
+            $db->commit();
+            $this->logActivity('cancel_purchase', 'purchases', $id, 'Cancelled ' . ($purchase['invoice_no'] ?? ''));
+            $this->flash('success', 'Purchase ' . ($purchase['invoice_no'] ?? '') . ' cancelled successfully.');
+        } catch (Exception $e) {
+            $db->rollback();
+            $this->flash('error', 'Failed to cancel purchase: ' . $e->getMessage());
+        }
+
+        $this->redirect('?page=purchases');
     }
 
     public function print(): void {

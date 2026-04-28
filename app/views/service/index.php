@@ -5,11 +5,12 @@ $stages = ServiceController::stages();
 .sv-head { display:flex;justify-content:space-between;align-items:center;margin-bottom:20px; }
 .sv-head h1 { font-size:1.15rem;font-weight:700;margin:0;display:flex;align-items:center;gap:8px; }
 
-.sv-stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px; }
-.sv-stat { background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px; }
-.sv-stat-icon { width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0; }
-.sv-stat-value { font-size:1.2rem;font-weight:800;color:var(--text-main); }
-.sv-stat-label { font-size:.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px; }
+.sv-stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px; }
+.sv-stat { background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;cursor:pointer;transition:all .18s;box-shadow:0 1px 4px rgba(0,0,0,.05); }
+.sv-stat:hover { transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,.1); }
+.sv-stat-icon { width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0; }
+.sv-stat-value { font-size:1.6rem;font-weight:800;color:var(--text-main);line-height:1.1; }
+.sv-stat-label { font-size:.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:1px; }
 
 .sv-filters { background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:12px;padding:14px 18px;margin-bottom:16px; }
 .sv-filters form { display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end; }
@@ -30,6 +31,10 @@ $stages = ServiceController::stages();
 .sv-act { width:26px;height:26px;border-radius:6px;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.75rem;text-decoration:none; }
 .sv-act.view { background:rgba(99,102,241,.1);color:var(--primary); }
 .sv-act.view:hover { background:rgba(99,102,241,.2); }
+.sv-act.edit { background:rgba(245,158,11,.1);color:#f59e0b; }
+.sv-act.edit:hover { background:rgba(245,158,11,.2); }
+.sv-act.del { background:rgba(239,68,68,.08);color:#ef4444; border:none;cursor:pointer; }
+.sv-act.del:hover { background:rgba(239,68,68,.18); }
 </style>
 
 <div class="sv-head">
@@ -41,26 +46,30 @@ $stages = ServiceController::stages();
 
 <!-- Stats -->
 <div class="sv-stats">
-    <div class="sv-stat">
-        <div class="sv-stat-icon" style="background:rgba(99,102,241,.1);color:var(--primary);"><i class="bi bi-list-ul"></i></div>
+    <a href="?page=service" class="sv-stat" style="<?= (!$filters['status'] && $filters['stage']==='') ? 'border-color:#6366f1;box-shadow:0 4px 14px rgba(99,102,241,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;box-shadow:0 3px 10px rgba(99,102,241,.35);"><i class="bi bi-list-ul"></i></div>
         <div><div class="sv-stat-value"><?= $counts['total'] ?? 0 ?></div><div class="sv-stat-label">Total</div></div>
-    </div>
-    <div class="sv-stat">
-        <div class="sv-stat-icon" style="background:rgba(245,158,11,.1);color:#f59e0b;"><i class="bi bi-hourglass-split"></i></div>
+    </a>
+    <a href="?page=service&status=Pending" class="sv-stat" style="<?= $filters['status']==='Pending' ? 'border-color:#f59e0b;box-shadow:0 4px 14px rgba(245,158,11,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,.35);"><i class="bi bi-hourglass-split"></i></div>
         <div><div class="sv-stat-value"><?= $counts['pending'] ?? 0 ?></div><div class="sv-stat-label">Pending</div></div>
-    </div>
-    <div class="sv-stat">
-        <div class="sv-stat-icon" style="background:rgba(59,130,246,.1);color:#3b82f6;"><i class="bi bi-tools"></i></div>
+    </a>
+    <a href="?page=service&status=In+Progress" class="sv-stat" style="<?= $filters['status']==='In Progress' ? 'border-color:#3b82f6;box-shadow:0 4px 14px rgba(59,130,246,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;box-shadow:0 3px 10px rgba(59,130,246,.35);"><i class="bi bi-tools"></i></div>
         <div><div class="sv-stat-value"><?= $counts['in_progress'] ?? 0 ?></div><div class="sv-stat-label">In Progress</div></div>
-    </div>
-    <div class="sv-stat">
-        <div class="sv-stat-icon" style="background:rgba(34,197,94,.1);color:#22c55e;"><i class="bi bi-check-circle"></i></div>
+    </a>
+    <a href="?page=service&status=Completed" class="sv-stat" style="<?= $filters['status']==='Completed' ? 'border-color:#22c55e;box-shadow:0 4px 14px rgba(34,197,94,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#22c55e,#4ade80);color:#fff;box-shadow:0 3px 10px rgba(34,197,94,.35);"><i class="bi bi-check-circle"></i></div>
         <div><div class="sv-stat-value"><?= $counts['completed'] ?? 0 ?></div><div class="sv-stat-label">Completed</div></div>
-    </div>
-    <div class="sv-stat">
-        <div class="sv-stat-icon" style="background:rgba(139,92,246,.1);color:#8b5cf6;"><i class="bi bi-arrow-repeat"></i></div>
+    </a>
+    <a href="?page=service&status=Replaced" class="sv-stat" style="<?= $filters['status']==='Replaced' ? 'border-color:#8b5cf6;box-shadow:0 4px 14px rgba(139,92,246,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);color:#fff;box-shadow:0 3px 10px rgba(139,92,246,.35);"><i class="bi bi-arrow-repeat"></i></div>
         <div><div class="sv-stat-value"><?= $counts['replaced'] ?? 0 ?></div><div class="sv-stat-label">Replaced</div></div>
-    </div>
+    </a>
+    <a href="?page=service&stage=4" class="sv-stat" style="<?= $filters['stage']==='4' ? 'border-color:#10b981;box-shadow:0 4px 14px rgba(16,185,129,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.35);"><i class="bi bi-bag-check"></i></div>
+        <div><div class="sv-stat-value"><?= $counts['delivered'] ?? 0 ?></div><div class="sv-stat-label">Delivered</div></div>
+    </a>
 </div>
 
 <!-- Filters -->
@@ -129,6 +138,16 @@ $stages = ServiceController::stages();
                     <td><span class="sv-badge" style="background:<?= ServiceController::statusColor($r['status']) ?>15;color:<?= ServiceController::statusColor($r['status']) ?>;"><?= $r['status'] ?></span></td>
                     <td class="sv-actions">
                         <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
+                        <?php if (Auth::can('service', 'edit')): ?>
+                        <a href="?page=service&action=edit&id=<?= $r['id'] ?>" class="sv-act edit pin-protect" title="Edit"><i class="bi bi-pencil"></i></a>
+                        <?php endif; ?>
+                        <?php if (Auth::can('service', 'delete')): ?>
+                        <form method="POST" action="?page=service&action=delete" style="display:inline;" onsubmit="return confirm('Delete <?= htmlspecialchars(addslashes($r['service_no'])) ?>?');">
+                            <?= Auth::csrfField() ?>
+                            <input type="hidden" name="id" value="<?= $r['id'] ?>">
+                            <button type="submit" class="sv-act del pin-protect" title="Delete"><i class="bi bi-trash"></i></button>
+                        </form>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -137,3 +156,4 @@ $stages = ServiceController::stages();
         <?php endif; ?>
     </div>
 </div>
+

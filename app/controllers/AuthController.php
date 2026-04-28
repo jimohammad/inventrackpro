@@ -54,8 +54,8 @@ class AuthController {
                         } else {
                             // Record failed attempt
                             $db->execute(
-                                "INSERT INTO login_attempts (ip, email) VALUES (?, ?)",
-                                [$ip, $email]
+                                "INSERT INTO login_attempts (ip, created_at) VALUES (?, NOW())",
+                                [$ip]
                             );
                             $error = $result;
                         }
@@ -64,12 +64,12 @@ class AuthController {
             }
         }
 
-        include __DIR__ . '/../views/login.php';
+        // Render login view
+        require __DIR__ . '/../../app/views/login.php';
     }
 
-    // Logout
+    // Logout user
     public function logout(): void {
-        Auth::clearWarehouse();
         Auth::logout();
         header('Location: ' . APP_URL . '/?page=login');
         exit;

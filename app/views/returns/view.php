@@ -10,7 +10,7 @@
         <?= ucfirst($return['status']) ?>
     </span>
     <div class="ms-auto d-flex gap-2">
-        <a href="?page=returns&action=print&id=<?= $return['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+        <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
         <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autopdf=1" target="_blank" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">

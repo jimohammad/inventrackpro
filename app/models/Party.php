@@ -97,21 +97,50 @@ class Party extends BaseModel {
         );
     }
 
-    // Get party with unified balance
+    // Get party with unified balance — single aggregation query, no correlated subqueries
     public function findWithBalance(int $id): array|false {
-        return $this->db->fetchOne(
-            "SELECT p.*,
-                p.opening_balance
-                + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                - COALESCE((SELECT SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                - COALESCE((SELECT SUM(grand_total) FROM purchases WHERE party_id = p.id AND status != 'cancelled'), 0)
-                + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type = 'purchase'), 0)
-                + COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'purchase_return' AND status = 'approved'), 0)
-                as net_balance
-             FROM parties p WHERE p.id = ?",
-            [$id]
+        $party = $this->db->fetchOne("SELECT * FROM parties WHERE id = ?", [$id]);
+        if (!$party) return false;
+
+        $agg = $this->db->fetchOne(
+            "SELECT
+                SUM(sales_total)       as sales_total,
+                SUM(sale_payments)     as sale_payments,
+                SUM(sale_returns)      as sale_returns,
+                SUM(purchase_total)    as purchase_total,
+                SUM(purchase_payments) as purchase_payments,
+                SUM(purchase_returns)  as purchase_returns
+             FROM (
+                SELECT grand_total as sales_total, 0 as sale_payments, 0 as sale_returns, 0 as purchase_total, 0 as purchase_payments, 0 as purchase_returns
+                FROM sales WHERE party_id=? AND status!='cancelled'
+                UNION ALL
+                SELECT 0, CASE WHEN payment_type='in' THEN amount ELSE -amount END, 0, 0, 0, 0
+                FROM payments WHERE party_id=? AND ref_type IN ('sale','discount')
+                UNION ALL
+                SELECT 0, 0, grand_total, 0, 0, 0
+                FROM returns WHERE party_id=? AND type='sale_return' AND status='approved'
+                UNION ALL
+                SELECT 0, 0, 0, grand_total, 0, 0
+                FROM purchases WHERE party_id=? AND status!='cancelled'
+                UNION ALL
+                SELECT 0, 0, 0, 0, amount, 0
+                FROM payments WHERE party_id=? AND ref_type='purchase'
+                UNION ALL
+                SELECT 0, 0, 0, 0, 0, grand_total
+                FROM returns WHERE party_id=? AND type='purchase_return' AND status='approved'
+             ) t",
+            [$id, $id, $id, $id, $id, $id]
         );
+
+        $party['net_balance'] = (float)$party['opening_balance']
+            + (float)($agg['sales_total']       ?? 0)
+            - (float)($agg['sale_payments']      ?? 0)
+            - (float)($agg['sale_returns']       ?? 0)
+            - (float)($agg['purchase_total']     ?? 0)
+            + (float)($agg['purchase_payments']  ?? 0)
+            + (float)($agg['purchase_returns']   ?? 0);
+
+        return $party;
     }
 
     // Party ledger — ALL transactions in one unified timeline
@@ -238,9 +267,8 @@ class Party extends BaseModel {
         );
     }
 
-    // Search parties (for autocomplete) — fast JOIN-based balance
-    // BUG FIX: $type was interpolated directly into SQL (SQL injection).
-    // Now uses parameterized query.
+    // Search parties (for autocomplete). Step 1: match 15 rows. Step 2: batch-compute
+    // balance only for matched IDs. Avoids scanning full sales/payments/returns tables.
     public function search(string $query, string $type = 'all'): array {
         $like = "%{$query}%";
         $params = [];
@@ -251,24 +279,60 @@ class Party extends BaseModel {
             $params[] = $type;
         }
 
+        $wid = Auth::warehouseId();
+        $whClause = '';
+        if ($wid) {
+            $whClause = "AND p.warehouse_id = ?";
+            $params[] = $wid;
+        }
+
         $params = array_merge($params, [$like, $like, $like, $like, $like]);
 
-        return $this->db->fetchAll(
-            "SELECT p.id, p.name, p.phone, p.type, p.credit_limit, p.opening_balance, p.party_code,
-                    p.opening_balance
-                    + COALESCE(sl.total, 0)
-                    - COALESCE(py_s.total, 0)
-                    - COALESCE(rt_s.total, 0)
-                    as balance
+        $parties = $this->db->fetchAll(
+            "SELECT p.id, p.name, p.phone, p.type, p.credit_limit, p.opening_balance, p.party_code
              FROM parties p
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM sales WHERE status != 'cancelled' GROUP BY party_id) sl ON sl.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) as total FROM payments WHERE ref_type IN ('sale','discount') GROUP BY party_id) py_s ON py_s.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE type = 'sale_return' AND status = 'approved' GROUP BY party_id) rt_s ON rt_s.party_id = p.id
-             WHERE p.is_active = 1 {$typeClause}
+             WHERE p.is_active = 1 {$typeClause} {$whClause}
                AND (p.name LIKE ? OR p.phone LIKE ? OR p.phone2 LIKE ? OR p.id_card LIKE ? OR p.party_code LIKE ?)
              ORDER BY p.name ASC
-             LIMIT 10",
+             LIMIT 15",
             $params
         );
+
+        if (empty($parties)) return [];
+
+        // Batch-compute sale-side balance for matched IDs only (same formula as party statement)
+        $ids = array_column($parties, 'id');
+        $ph  = implode(',', array_fill(0, count($ids), '?'));
+        $bals = $this->db->fetchAll(
+            "SELECT party_id,
+                    SUM(sales_total)   as sales_total,
+                    SUM(sale_payments) as sale_payments,
+                    SUM(sale_returns)  as sale_returns
+             FROM (
+                SELECT party_id, grand_total as sales_total, 0 as sale_payments, 0 as sale_returns
+                FROM sales WHERE party_id IN ($ph) AND status != 'cancelled'
+                UNION ALL
+                SELECT party_id, 0, CASE WHEN payment_type='in' THEN amount ELSE -amount END, 0
+                FROM payments WHERE party_id IN ($ph) AND ref_type IN ('sale','discount')
+                UNION ALL
+                SELECT party_id, 0, 0, grand_total
+                FROM returns WHERE party_id IN ($ph) AND type='sale_return' AND status='approved'
+             ) t GROUP BY party_id",
+            array_merge($ids, $ids, $ids)
+        );
+
+        $balMap = [];
+        foreach ($bals as $b) $balMap[$b['party_id']] = $b;
+
+        foreach ($parties as &$p) {
+            $b = $balMap[$p['id']] ?? null;
+            $p['balance'] = (float)$p['opening_balance']
+                + (float)($b['sales_total']   ?? 0)
+                - (float)($b['sale_payments']  ?? 0)
+                - (float)($b['sale_returns']   ?? 0);
+        }
+        unset($p);
+
+        return $parties;
     }
 }

@@ -78,7 +78,12 @@ $trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
         <div class="sd-sep"><span><i class="bi bi-signpost-split"></i> Device Journey</span></div>
         <div class="sd-journey">
             <?php foreach ($stages as $k => $s):
-                $class = $k < $currentStage ? 'done' : ($k === $currentStage ? 'active' : '');
+                // stage=3 means Replaced (factory fault): show 0,1,2 as done, Delivered as future
+                if ($currentStage === 3) {
+                    $class = $k <= 2 ? 'done' : '';
+                } else {
+                    $class = $k < $currentStage ? 'done' : ($k === $currentStage ? 'active' : '');
+                }
             ?>
             <div class="sd-step <?= $class ?>" style="color:<?= $s['color'] ?>;">
                 <div class="sd-step-icon"><i class="bi <?= $s['icon'] ?>"></i></div>
@@ -86,12 +91,18 @@ $trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if ($currentStage === 3): ?>
+        <div style="text-align:center;padding:6px 16px 12px;">
+            <span style="background:rgba(139,92,246,0.1);color:#8b5cf6;padding:3px 12px;border-radius:20px;font-size:0.78rem;font-weight:700;"><i class="bi bi-arrow-repeat me-1"></i>Device Replaced (Factory Fault)</span>
+        </div>
+        <?php endif; ?>
 
         <?php if (Auth::can('service', 'edit') && $currentStage < 4): ?>
         <div class="sd-actions" style="border-top:1px solid var(--border-color);">
             <?php
-                // Next stage button
+                // Normal flow: 0→1→2→4 (skip stage 3)
                 $nextStage = $currentStage + 1;
+                if ($nextStage === 3) $nextStage = 4;
                 if (isset($stages[$nextStage])):
                     $ns = $stages[$nextStage];
             ?>
@@ -103,13 +114,13 @@ $trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
             </form>
             <?php endif; ?>
 
-            <!-- Jump to Replaced -->
+            <!-- Factory fault replacement — rare action -->
             <?php if ($currentStage !== 3 && $record['status'] !== 'Replaced'): ?>
-            <form method="POST" action="?page=service&action=updateStage" style="display:inline;" onsubmit="return confirm('Mark as Replaced?');">
+            <form method="POST" action="?page=service&action=updateStage" style="display:inline;" onsubmit="return confirm('Mark as Replaced (factory fault only)?');">
                 <?= Auth::csrfField() ?>
                 <input type="hidden" name="id" value="<?= $record['id'] ?>">
                 <input type="hidden" name="stage" value="3">
-                <button type="submit" class="sd-btn sd-btn-custom"><i class="bi bi-arrow-repeat"></i> Replace Device</button>
+                <button type="submit" class="sd-btn" style="background:transparent;border:1px solid #d1d5db;color:#9ca3af;font-size:0.78rem;padding:4px 10px;" title="Only for factory fault cases"><i class="bi bi-arrow-repeat"></i> Factory Replacement</button>
             </form>
             <?php endif; ?>
         </div>
@@ -173,12 +184,17 @@ $trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
     </div>
     <?php endif; ?>
 
-    <!-- Delete button -->
-    <?php if (Auth::can('service', 'delete')): ?>
-    <form method="POST" action="?page=service&action=delete" onsubmit="return confirm('Delete this service record permanently?');" style="text-align:right;margin-top:10px;">
-        <?= Auth::csrfField() ?>
-        <input type="hidden" name="id" value="<?= $record['id'] ?>">
-        <button type="submit" class="sd-btn sd-btn-del"><i class="bi bi-trash"></i> Delete</button>
-    </form>
-    <?php endif; ?>
+    <!-- Edit / Delete -->
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+        <?php if (Auth::can('service', 'edit')): ?>
+        <a href="?page=service&action=edit&id=<?= $record['id'] ?>" class="sd-btn pin-protect" style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.2);text-decoration:none;"><i class="bi bi-pencil"></i> Edit</a>
+        <?php endif; ?>
+        <?php if (Auth::can('service', 'delete')): ?>
+        <form method="POST" action="?page=service&action=delete" style="display:inline;" onsubmit="return confirm('Delete <?= htmlspecialchars(addslashes($record['service_no'])) ?> permanently?');">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= $record['id'] ?>">
+            <button type="submit" class="sd-btn sd-btn-del pin-protect"><i class="bi bi-trash"></i> Delete</button>
+        </form>
+        <?php endif; ?>
+    </div>
 </div>

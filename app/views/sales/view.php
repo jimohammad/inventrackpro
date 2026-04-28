@@ -15,7 +15,7 @@ $hasBalance = $sale['balance'] > 0.001;
         <?= ucfirst($sale['status']) ?>
     </span>
     <div class="ms-auto d-flex gap-2">
-        <a href="?page=sales&action=print&id=<?= $sale['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+        <a href="?page=sales&action=print&id=<?= $sale['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
         <a href="?page=sales&action=print&id=<?= $sale['id'] ?>&autopdf=1" target="_blank" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">

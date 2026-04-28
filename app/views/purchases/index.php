@@ -96,7 +96,22 @@
                         <td class="text-end" style="color:<?= $p['balance']>0?'var(--warning)':'var(--success)' ?>;"><?= APP_CURRENCY ?> <?= number_format($p['balance'], DECIMAL_PLACES) ?></td>
                         <td><span class="badge badge-<?= $p['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($p['status']) ?></span></td>
                         <td>
-                            <a href="?page=purchases&action=detail&id=<?= $p['id'] ?>" class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;"><i class="bi bi-eye"></i></a>
+                            <div class="d-flex gap-1">
+                                <a href="?page=purchases&action=detail&id=<?= $p['id'] ?>" class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <?php if (Auth::can('purchases','delete') && $p['status'] !== 'cancelled'): ?>
+                                <form method="POST" action="?page=purchases&action=cancel" style="display:inline;"
+                                      onsubmit="return confirm('Cancel this purchase? Stock and linked payments will be reversed.');">
+                                    <?= Auth::csrfField() ?>
+                                    <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                                    <button type="submit" class="btn btn-sm pin-protect"
+                                            style="background:rgba(239,68,68,0.15);color:#dc2626;border:none;" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>

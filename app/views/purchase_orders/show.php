@@ -7,6 +7,13 @@ $statusConfig = match($po['status']) {
     'cancelled' => ['label'=>'Cancelled',          'bg'=>'#f1f5f9','color'=>'#94a3b8'],
     default     => ['label'=>ucfirst($po['status']),'bg'=>'#f1f5f9','color'=>'#64748b'],
 };
+
+$paidAccountName = '—';
+if (!empty($po['account_id'])) {
+    foreach (($accounts ?? []) as $acc) {
+        if ((int)$acc['id'] === (int)$po['account_id']) { $paidAccountName = $acc['name']; break; }
+    }
+}
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -35,6 +42,7 @@ $statusConfig = match($po['status']) {
                 <p style="color:#64748b;font-size:0.85rem;margin-bottom:18px;">This will deduct <strong><?= number_format($po['subtotal_kwd'], DECIMAL_PLACES) ?> KWD</strong> from the selected account and mark the PO as paid.</p>
                 <form method="POST" action="?page=purchaseorders&action=markPaid">
                     <?= Auth::csrfField() ?>
+                    <input type="hidden" name="po_markpaid_nonce" value="<?= htmlspecialchars($poMarkPaidNonce ?? '') ?>">
                     <input type="hidden" name="id" value="<?= $po['id'] ?>">
                     <label style="font-size:0.78rem;font-weight:700;color:#64748b;display:block;margin-bottom:6px;">Pay From Account <span style="color:#dc2626;">*</span></label>
                     <select name="account_id" required
@@ -204,6 +212,12 @@ $statusConfig = match($po['status']) {
                 <div style="display:flex;justify-content:space-between;padding:4px 0;">
                     <span style="color:#94a3b8;font-size:0.78rem;">Paid in KWD</span>
                     <span style="color:#10b981;font-weight:600;font-size:0.82rem;"><?= number_format($po['paid_kwd'], DECIMAL_PLACES) ?> KWD</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;">
+                    <span style="color:#94a3b8;font-size:0.78rem;">Paid From</span>
+                    <span style="font-weight:700;font-size:0.82rem;color:#1e293b;">
+                        <?= ($po['paid_kwd'] ?? 0) > 0 ? htmlspecialchars($paidAccountName) : '—' ?>
+                    </span>
                 </div>
             </div>
         </div>

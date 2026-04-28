@@ -253,18 +253,22 @@ function openScanMode(itemId, name, qty, count) {
 
 function submitScan() {
     var input = document.getElementById('spScanInput');
-    var imei  = input.value.trim().replace(/\D/g, '');
+    var imei  = input.value.trim().toUpperCase();
+    // Pure-digit IMEI: strip spaces; alphanumeric serial: keep as-is
+    if (/^\d[\d\s]*$/.test(imei)) imei = imei.replace(/\s/g, '');
     input.value = '';
     input.focus();
 
     if (!imei || !spItemId) return;
+    if (!/^[A-Z0-9\/\-]+$/.test(imei)) { showScanMsg('err', 'Invalid characters in serial'); return; }
 
-    var minLen = (spItemName.toLowerCase().indexOf('h40') !== -1) ? 13 : 15;
+    var isNumeric = /^\d+$/.test(imei);
+    var minLen = isNumeric ? ((spItemName.toLowerCase().indexOf('h40') !== -1) ? 13 : 15) : 6;
     if (imei.length < minLen) {
-        showScanMsg('err', 'Too short (' + imei.length + ' digits) — need ' + minLen);
+        showScanMsg('err', 'Too short (' + imei.length + ' chars) — need ' + minLen);
         return;
     }
-    if (!luhn(imei)) {
+    if (isNumeric && !luhn(imei)) {
         showScanMsg('err', 'Invalid IMEI — check digit failed');
         return;
     }
@@ -370,12 +374,16 @@ function validatePaste() {
     var seen   = {};
 
     lines.forEach(function(line) {
-        var imei = line.replace(/\D/g, '').trim();
-        if (!imei) return;
+        var imei = line.trim().toUpperCase();
+        if (/^\d[\d\s]*$/.test(imei)) imei = imei.replace(/\s/g, '');
+        if (!imei || !/^[A-Z0-9\/\-]+$/.test(imei)) return;
 
-        if (imei.length < minLen) {
-            errors.push({ imei: imei, reason: 'Too short (' + imei.length + ' digits, need ' + minLen + ')' });
-        } else if (!luhn(imei)) {
+        var isNumeric  = /^\d+$/.test(imei);
+        var serialMin  = isNumeric ? minLen : 6;
+
+        if (imei.length < serialMin) {
+            errors.push({ imei: imei, reason: 'Too short (' + imei.length + ' chars, need ' + serialMin + ')' });
+        } else if (isNumeric && !luhn(imei)) {
             errors.push({ imei: imei, reason: 'Invalid IMEI (check digit failed)' });
         } else if (seen[imei]) {
             errors.push({ imei: imei, reason: 'Duplicate in list' });

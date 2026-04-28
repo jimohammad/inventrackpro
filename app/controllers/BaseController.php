@@ -9,13 +9,10 @@ require_once __DIR__ . '/../../config/app.php';
  */
 abstract class BaseController {
 
-    /** Settings cache — loaded once per request, shared by all controllers */
-    private static ?array $settingsCache = null;
+    private static ?array $settingsCache  = null;
+    private static ?array $accountsCache  = null;
+    private static ?array $warehousesCache = null;
 
-    /**
-     * Get all app settings as key→value array.
-     * Cached in memory after first call — only 1 DB query per request.
-     */
     public static function getSettings(): array {
         if (self::$settingsCache === null) {
             $db   = Database::getInstance();
@@ -26,6 +23,29 @@ abstract class BaseController {
             }
         }
         return self::$settingsCache;
+    }
+
+    /** Active accounts — cached once per request (near-static table). */
+    public static function getAccounts(): array {
+        if (self::$accountsCache === null) {
+            $db = Database::getInstance();
+            self::$accountsCache = $db->fetchAll(
+                "SELECT id, name, type, current_balance, is_default, sort_order
+                 FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+            );
+        }
+        return self::$accountsCache;
+    }
+
+    /** Active warehouses — cached once per request (rarely changes). */
+    public static function getWarehouses(): array {
+        if (self::$warehousesCache === null) {
+            $db = Database::getInstance();
+            self::$warehousesCache = $db->fetchAll(
+                "SELECT id, name, is_default FROM warehouses WHERE is_active = 1 ORDER BY name ASC"
+            );
+        }
+        return self::$warehousesCache;
     }
 
     public function __construct() {

@@ -12,7 +12,6 @@ class ServiceController extends BaseController {
             0 => ['label' => 'Received',   'icon' => 'bi-inbox',        'color' => '#f59e0b'],
             1 => ['label' => 'In Service', 'icon' => 'bi-tools',        'color' => '#3b82f6'],
             2 => ['label' => 'Repaired',   'icon' => 'bi-check-circle', 'color' => '#22c55e'],
-            3 => ['label' => 'Replaced',   'icon' => 'bi-arrow-repeat', 'color' => '#8b5cf6'],
             4 => ['label' => 'Delivered',  'icon' => 'bi-bag-check',    'color' => '#10b981'],
         ];
     }
@@ -81,7 +80,8 @@ class ServiceController extends BaseController {
                 SUM(status = 'Pending') as pending,
                 SUM(status = 'In Progress') as in_progress,
                 SUM(status = 'Completed') as completed,
-                SUM(status = 'Replaced') as replaced
+                SUM(status = 'Replaced') as replaced,
+                SUM(device_stage = 4) as delivered
              FROM service_records WHERE warehouse_id = ?",
             [$whId]
         );
@@ -216,6 +216,65 @@ class ServiceController extends BaseController {
         );
 
         $this->flash('success', "Stage updated to {$stages[$stage]['label']}");
+        $this->redirect('?page=service&action=detail&id=' . $id);
+    }
+
+    public function edit(): void {
+        Auth::authorize('service', 'edit');
+
+        $id = $this->inputInt('id', 0, 'get');
+        $record = $this->db->fetchOne(
+            "SELECT * FROM service_records WHERE id = ? AND warehouse_id = ?",
+            [$id, Auth::warehouseId()]
+        );
+        if (!$record) { $this->flash('error', 'Service record not found'); $this->redirect('?page=service'); return; }
+
+        $parties   = $this->db->fetchAll("SELECT id, name, phone FROM parties WHERE is_active = 1 ORDER BY name");
+        $pageTitle = 'Edit ' . $record['service_no'];
+        $page      = 'service';
+
+        ob_start();
+        include __DIR__ . '/../views/service/edit.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function update(): void {
+        Auth::authorize('service', 'edit');
+        if (!$this->isPost()) { $this->redirect('?page=service'); return; }
+
+        $id = $this->inputInt('id');
+        $record = $this->db->fetchOne("SELECT * FROM service_records WHERE id = ? AND warehouse_id = ?", [$id, Auth::warehouseId()]);
+        if (!$record) { $this->flash('error', 'Service record not found'); $this->redirect('?page=service'); return; }
+
+        $this->db->execute(
+            "UPDATE service_records SET
+                imei = ?, device_brand = ?, device_model = ?,
+                party_id = ?, customer_name = ?, customer_phone = ?,
+                fault_category = ?, fault_description = ?,
+                technician_name = ?, repair_cost = ?,
+                received_date = ?, notes = ?
+             WHERE id = ? AND warehouse_id = ?",
+            [
+                trim($this->input('imei')),
+                $this->input('device_brand'),
+                $this->input('device_model'),
+                $this->inputInt('party_id') ?: null,
+                $this->input('customer_name'),
+                $this->input('customer_phone'),
+                $this->input('fault_category'),
+                $this->input('fault_description'),
+                $this->input('technician_name'),
+                $this->inputFloat('repair_cost'),
+                $this->input('received_date') ?: date('Y-m-d'),
+                $this->input('notes'),
+                $id,
+                Auth::warehouseId(),
+            ]
+        );
+
+        $this->logActivity('update_service', 'service', $id, "Updated {$record['service_no']}");
+        $this->flash('success', "Service {$record['service_no']} updated.");
         $this->redirect('?page=service&action=detail&id=' . $id);
     }
 

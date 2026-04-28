@@ -105,7 +105,7 @@
                                    class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                <a href="?page=sales&action=print&id=<?= $s['id'] ?>"
+                                <a href="?page=sales&action=print&id=<?= $s['id'] ?>&autoprint=1"
                                    target="_blank"
                                    class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:var(--success);border:none;" title="Print">
                                     <i class="bi bi-printer"></i>

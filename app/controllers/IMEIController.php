@@ -24,7 +24,7 @@ class IMEIController extends BaseController {
         ];
 
         $imeis      = $this->imeiModel->getAll($filters);
-        $warehouses = $this->itemModel->getWarehouses();
+        $warehouses = self::getWarehouses();
         $pageTitle  = 'IMEI History';
         $page       = 'imei';
 
@@ -80,7 +80,7 @@ class IMEIController extends BaseController {
 
         if (!$this->isPost()) { echo json_encode(['error' => 'POST required']); return; }
 
-        $imei    = trim($this->input('imei'));
+        $imei    = strtoupper(trim($this->input('imei')));
         $itemId  = $this->inputInt('item_id');
         $whId    = Auth::warehouseId();
 
@@ -89,21 +89,22 @@ class IMEIController extends BaseController {
             return;
         }
 
-        // Validate IMEI is numeric and minimum length
-        if (!ctype_digit($imei)) {
-            echo json_encode(['error' => 'IMEI must contain digits only']);
+        // Allow phone IMEIs (digits only) and laptop/device serials (alphanumeric + / -)
+        if (!preg_match('/^[A-Z0-9\\/\\-]+$/i', $imei)) {
+            echo json_encode(['error' => 'Serial contains invalid characters']);
             return;
         }
 
         $db = Database::getInstance();
 
-        // Get item name to determine required IMEI length
-        $itemRow = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$itemId]);
+        // Min length: 6 for serials, 13-15 for numeric IMEIs
+        $isNumeric = ctype_digit($imei);
+        $itemRow  = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$itemId]);
         $itemName = strtolower($itemRow['name'] ?? '');
-        $minLen = (strpos($itemName, 'h40') !== false) ? 13 : 15;
+        $minLen   = $isNumeric ? ((strpos($itemName, 'h40') !== false) ? 13 : 15) : 6;
 
         if (strlen($imei) < $minLen) {
-            echo json_encode(['error' => "IMEI too short (" . strlen($imei) . " digits) — need at least {$minLen}"]);
+            echo json_encode(['error' => "Serial too short (" . strlen($imei) . " chars) — need at least {$minLen}"]);
             return;
         }
 
@@ -251,14 +252,21 @@ class IMEIController extends BaseController {
         $db->beginTransaction();
         try {
             foreach ($lines as $raw_imei) {
-                $imei = preg_replace('/\D/', '', trim($raw_imei));
-                if (!$imei) continue;
+                $imei = strtoupper(trim($raw_imei));
+                // For pure-digit IMEIs strip whitespace only; for alphanumeric serials keep as-is
+                if (ctype_digit(str_replace([' '], '', $imei))) {
+                    $imei = preg_replace('/\s/', '', $imei);
+                }
+                if (!$imei || !preg_match('/^[A-Z0-9\\/\\-]+$/', $imei)) continue;
 
-                if (strlen($imei) < $minLen) {
-                    $skipped[] = ['imei' => $imei, 'reason' => 'Too short (' . strlen($imei) . ' digits, need ' . $minLen . ')'];
+                $isNumericSerial = ctype_digit($imei);
+                $serialMinLen    = $isNumericSerial ? $minLen : 6;
+
+                if (strlen($imei) < $serialMinLen) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Too short (' . strlen($imei) . ' chars, need ' . $serialMinLen . ')'];
                     continue;
                 }
-                if (!$this->luhn($imei)) {
+                if ($isNumericSerial && !$this->luhn($imei)) {
                     $skipped[] = ['imei' => $imei, 'reason' => 'Invalid IMEI (check digit failed)'];
                     continue;
                 }
@@ -322,7 +330,7 @@ class IMEIController extends BaseController {
     public function lookupImei(): void {
         header('Content-Type: application/json');
 
-        $imei = trim($this->input('imei', '', 'get'));
+        $imei = strtoupper(trim($this->input('imei', '', 'get')));
         if (!$imei) { echo json_encode(['found' => false]); return; }
 
         $db = Database::getInstance();
@@ -508,5 +516,262 @@ class IMEIController extends BaseController {
         include __DIR__ . '/../views/imei/lifecycle.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Stock Audit — admin tool to reconcile IMEI count vs stock count.
+     * Lists items where IMEI != stock for current warehouse.
+     * Admin opens an item, scans physically present phones, system marks
+     * unscanned IMEIs as 'transferred' so counts realign.
+     */
+    public function audit(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=imei');
+            return;
+        }
+
+        $db   = Database::getInstance();
+        $whId = Auth::warehouseId();
+
+        $itemId = $this->inputInt('item_id', 0, 'get');
+
+        // Single-item reconciliation page
+        if ($itemId) {
+            $item = $db->fetchOne(
+                "SELECT i.id, i.name, i.sku, i.has_imei,
+                        COALESCE(s.quantity, 0) as stock,
+                        (SELECT COUNT(*) FROM imei_records ir
+                         WHERE ir.item_id = i.id AND ir.warehouse_id = ? AND ir.status IN ('in_stock','returned')) as imei_count
+                 FROM items i
+                 LEFT JOIN stock s ON s.item_id = i.id AND s.warehouse_id = ?
+                 WHERE i.id = ?",
+                [$whId, $whId, $itemId]
+            );
+            if (!$item) { $this->flash('error', 'Item not found.'); $this->redirect('?page=imei&action=audit'); return; }
+
+            $imeis = $db->fetchAll(
+                "SELECT id, imei, status, updated_at
+                 FROM imei_records
+                 WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')
+                 ORDER BY id ASC",
+                [$itemId, $whId]
+            );
+
+            $pageTitle = 'Audit: ' . $item['name'];
+            $page      = 'imei';
+
+            ob_start();
+            include __DIR__ . '/../views/imei/audit_item.php';
+            $content = ob_get_clean();
+            include __DIR__ . '/../views/layout.php';
+            return;
+        }
+
+        // List all items with IMEI != stock mismatch in this warehouse
+        $mismatches = $db->fetchAll(
+            "SELECT i.id, i.name, i.sku,
+                    COALESCE(s.quantity, 0) as stock,
+                    (SELECT COUNT(*) FROM imei_records ir
+                     WHERE ir.item_id = i.id AND ir.warehouse_id = ? AND ir.status IN ('in_stock','returned')) as imei_count
+             FROM items i
+             LEFT JOIN stock s ON s.item_id = i.id AND s.warehouse_id = ?
+             WHERE i.is_active = 1 AND i.has_imei = 1
+             HAVING imei_count != stock
+             ORDER BY ABS(imei_count - stock) DESC, i.name ASC",
+            [$whId, $whId]
+        );
+
+        $warehouses = self::getWarehouses();
+        $currentWh  = null;
+        foreach ($warehouses as $w) { if ((int)$w['id'] === $whId) { $currentWh = $w; break; } }
+
+        $pageTitle = 'Stock Audit — IMEI Reconciliation';
+        $page      = 'imei';
+
+        ob_start();
+        include __DIR__ . '/../views/imei/audit.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * AJAX scan during audit — returns whether IMEI is in this warehouse's in_stock pool
+     */
+    public function auditScan(): void {
+        if (!Auth::isAdmin()) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'msg' => 'Admin only.']);
+            return;
+        }
+        header('Content-Type: application/json');
+
+        $imei   = trim($this->input('imei', '', 'get'));
+        $itemId = (int) $this->input('item_id', 0, 'get');
+        $whId   = Auth::warehouseId();
+
+        if (!$imei || !$itemId) { echo json_encode(['ok' => false, 'msg' => 'Missing parameters.']); return; }
+
+        $db  = Database::getInstance();
+        $rec = $db->fetchOne(
+            "SELECT id, status, warehouse_id, item_id FROM imei_records WHERE imei = ?",
+            [$imei]
+        );
+
+        if (!$rec)                                                { echo json_encode(['ok' => false, 'code' => 'not_found', 'msg' => 'Not in system']); return; }
+        if ((int)$rec['item_id'] !== $itemId)                     { echo json_encode(['ok' => false, 'code' => 'wrong_item', 'msg' => 'Different item']); return; }
+        if (!in_array($rec['status'], ['in_stock','returned']))   { echo json_encode(['ok' => false, 'code' => 'wrong_status', 'msg' => 'Status: ' . $rec['status']]); return; }
+        if ((int)$rec['warehouse_id'] !== $whId)                  { echo json_encode(['ok' => false, 'code' => 'wrong_wh', 'msg' => 'Different warehouse']); return; }
+
+        echo json_encode(['ok' => true, 'id' => (int)$rec['id'], 'msg' => '✓']);
+    }
+
+    /**
+     * Admin: Delete all in_stock + returned IMEI records for an item in current warehouse.
+     * Use to wipe and re-scan from scratch. Sold/transferred/defective records are preserved (history).
+     */
+    public function clearItemImeis(): void {
+        if (!Auth::isAdmin()) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'msg' => 'Admin only.']);
+            return;
+        }
+        if (!$this->isPost()) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'msg' => 'POST required.']);
+            return;
+        }
+        header('Content-Type: application/json');
+
+        $itemId = $this->inputInt('item_id');
+        $whId   = Auth::warehouseId();
+        if (!$itemId) { echo json_encode(['ok' => false, 'msg' => 'Missing item_id.']); return; }
+
+        $db = Database::getInstance();
+
+        // Count first for the response
+        $row = $db->fetchOne(
+            "SELECT COUNT(*) as c FROM imei_records
+             WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
+            [$itemId, $whId]
+        );
+        $count = (int)($row['c'] ?? 0);
+        if ($count === 0) { echo json_encode(['ok' => true, 'deleted' => 0, 'msg' => 'Nothing to delete.']); return; }
+
+        try {
+            $db->execute(
+                "DELETE FROM imei_records
+                 WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
+                [$itemId, $whId]
+            );
+            $this->logActivity('clear_imeis', 'imei_records', $itemId,
+                "Cleared {$count} in_stock/returned IMEIs for item #{$itemId} in warehouse #{$whId}");
+            echo json_encode(['ok' => true, 'deleted' => $count, 'msg' => "Deleted {$count} IMEI(s)."]);
+        } catch (Exception $e) {
+            echo json_encode(['ok' => false, 'msg' => 'Failed: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Register a new IMEI inline during audit (when physical phone is found but IMEI not in system).
+     */
+    public function auditRegister(): void {
+        if (!Auth::isAdmin()) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'msg' => 'Admin only.']);
+            return;
+        }
+        header('Content-Type: application/json');
+
+        $imei   = trim($this->input('imei'));
+        $itemId = (int) $this->input('item_id');
+        $whId   = Auth::warehouseId();
+
+        if (!$imei || !$itemId) { echo json_encode(['ok' => false, 'msg' => 'Missing parameters.']); return; }
+        if (!preg_match('/^[A-Z0-9\\/\\-]+$/i', $imei)) { echo json_encode(['ok' => false, 'msg' => 'Invalid characters.']); return; }
+
+        $db = Database::getInstance();
+
+        // Block if IMEI already exists anywhere
+        $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id FROM imei_records WHERE imei = ?", [$imei]);
+        if ($existing) {
+            echo json_encode(['ok' => false, 'msg' => 'IMEI already exists in system (status: ' . $existing['status'] . ').']);
+            return;
+        }
+
+        $db->beginTransaction();
+        try {
+            $newId = $db->insert(
+                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at)
+                 VALUES (?, ?, ?, 'in_stock', ?, NOW())",
+                [$imei, $itemId, $whId, 'Registered during stock audit on ' . date('Y-m-d H:i')]
+            );
+            $db->commit();
+            $this->logActivity('audit_register_imei', 'imei_records', $newId, "Audit-registered IMEI {$imei} for item #{$itemId}");
+            echo json_encode(['ok' => true, 'id' => $newId, 'imei' => $imei, 'msg' => '✓ Registered']);
+        } catch (Exception $e) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'msg' => 'Failed: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Submit audit — mark all unscanned IMEIs (for this item+warehouse) as 'transferred'.
+     */
+    public function auditSubmit(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=imei');
+            return;
+        }
+        if (!$this->isPost()) { $this->redirect('?page=imei&action=audit'); return; }
+
+        $itemId       = $this->inputInt('item_id');
+        $whId         = Auth::warehouseId();
+        $scannedRaw   = $this->input('scanned_imeis');
+        $scanned      = array_values(array_filter(array_map('trim', explode("\n", $scannedRaw))));
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            // Get all current in_stock IMEIs for this item+warehouse
+            $current = $db->fetchAll(
+                "SELECT id, imei FROM imei_records
+                 WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
+                [$itemId, $whId]
+            );
+
+            $scannedSet = array_flip($scanned);
+            $toMark = [];
+            foreach ($current as $row) {
+                if (!isset($scannedSet[$row['imei']])) {
+                    $toMark[] = (int)$row['id'];
+                }
+            }
+
+            $markedCount = 0;
+            if (!empty($toMark)) {
+                $placeholders = implode(',', array_fill(0, count($toMark), '?'));
+                $note = 'Auto-marked transferred during stock audit on ' . date('Y-m-d H:i') . ' by user ' . (Auth::id() ?: 'admin');
+                $db->execute(
+                    "UPDATE imei_records
+                     SET status = 'transferred',
+                         notes = CONCAT_WS(' | ', notes, ?)
+                     WHERE id IN ($placeholders)",
+                    array_merge([$note], $toMark)
+                );
+                $markedCount = count($toMark);
+            }
+
+            $db->commit();
+            $this->logActivity('audit_imei', 'imei_records', $itemId,
+                "Audit item #{$itemId}: scanned " . count($scanned) . ", marked {$markedCount} as transferred");
+            $this->flash('success', "Audit complete. Scanned: " . count($scanned) . ". Marked transferred: {$markedCount}.");
+        } catch (Exception $e) {
+            $db->rollback();
+            $this->flash('error', 'Audit failed: ' . $e->getMessage());
+        }
+
+        $this->redirect('?page=imei&action=audit');
     }
 }

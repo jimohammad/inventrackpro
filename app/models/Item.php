@@ -59,7 +59,7 @@ class Item extends BaseModel {
         $params = array_merge($params, [$like, $like, $like]);
         return $this->db->fetchAll(
             "SELECT i.id, i.name, i.sku, i.barcode, i.sale_price, i.purchase_price,
-                    i.has_imei, i.unit, i.category_id,
+                    i.has_imei, COALESCE(i.imei_optional, 0) as imei_optional, i.unit, i.category_id,
                     COALESCE(c.name, '') as category_name,
                     COALESCE(SUM(s.quantity), 0) as stock
              FROM items i

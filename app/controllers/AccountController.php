@@ -12,7 +12,7 @@ class AccountController extends BaseController {
 
         // Recent transfers
         $transfers = $db->fetchAll(
-            "SELECT t.*, 
+            "SELECT t.*,
                     fa.name as from_name, fa.type as from_type,
                     ta.name as to_name,   ta.type as to_type,
                     u.name  as created_by_name
@@ -24,6 +24,97 @@ class AccountController extends BaseController {
              LIMIT 50"
         );
 
+        // Account transaction ledger
+        $selectedAccountId = (int)($this->input('account_id', 0, 'get'));
+        $selectedAccount   = null;
+        $accountTxns       = [];
+
+        // One-time token to prevent double-submit transfers
+        $_SESSION['account_transfer_nonce'] = bin2hex(random_bytes(16));
+        $accountTransferNonce               = $_SESSION['account_transfer_nonce'];
+
+        if ($selectedAccountId) {
+            $selectedAccount = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$selectedAccountId]);
+            if ($selectedAccount) {
+                // Payments linked to this account
+                $payments = $db->fetchAll(
+                    "SELECT 'payment' as txn_type, p.id, p.payment_no as ref_no,
+                            p.date,
+                            CASE WHEN p.payment_type = 'out' THEN -p.amount ELSE p.amount END as amount,
+                            CONCAT(UPPER(p.ref_type), ' / ', UPPER(p.payment_type)) as note,
+                            COALESCE(pa.name, '—') as party,
+                            NULL as invoice_ref
+                     FROM payments p
+                     LEFT JOIN parties pa ON pa.id = p.party_id
+                     WHERE p.account_id = ? AND p.ref_type != 'discount'
+                     ORDER BY p.date DESC, p.id DESC
+                     LIMIT 200",
+                    [$selectedAccountId]
+                );
+
+                // Expenses from this account
+                $expenses = $db->fetchAll(
+                    "SELECT 'expense' as txn_type, e.id, e.expense_no as ref_no,
+                            e.date, e.amount, e.description as note,
+                            COALESCE(ec.name, '—') as party,
+                            NULL as invoice_ref
+                     FROM expenses e
+                     LEFT JOIN expense_categories ec ON ec.id = e.category_id
+                     WHERE e.account_id = ?
+                     ORDER BY e.date DESC, e.id DESC
+                     LIMIT 200",
+                    [$selectedAccountId]
+                );
+
+                // Transfers involving this account
+                $txnTransfers = $db->fetchAll(
+                    "SELECT 'transfer' as txn_type, t.id,
+                            t.transfer_no as ref_no, t.date,
+                            CASE WHEN t.from_account_id = ? THEN -t.amount ELSE t.amount END as amount,
+                            t.notes as note,
+                            CASE WHEN t.from_account_id = ? THEN ta.name ELSE fa.name END as party,
+                            NULL as invoice_ref
+                     FROM account_transfers t
+                     JOIN accounts fa ON fa.id = t.from_account_id
+                     JOIN accounts ta ON ta.id = t.to_account_id
+                     WHERE t.from_account_id = ? OR t.to_account_id = ?
+                     ORDER BY t.date DESC, t.id DESC
+                     LIMIT 200",
+                    [$selectedAccountId, $selectedAccountId, $selectedAccountId, $selectedAccountId]
+                );
+
+                // PO payments not yet in payments table (historical + any without payment record)
+                $poPayments = $db->fetchAll(
+                    "SELECT 'po_payment' as txn_type, po.id,
+                            po.po_no as ref_no, po.date,
+                            -po.paid_kwd as amount,
+                            CONCAT(po.currency, ' @ ', po.exchange_rate) as note,
+                            p.name as party,
+                            NULL as invoice_ref
+                     FROM purchase_orders po
+                     JOIN parties p ON p.id = po.party_id
+                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
+                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
+                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
+                        AND pay3.party_id = po.party_id
+                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
+                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
+                     WHERE po.account_id = ? AND po.paid_kwd > 0
+                      AND po.status NOT IN ('cancelled')
+                      AND pay.id IS NULL
+                      AND pay2.id IS NULL
+                      AND pay3.id IS NULL
+                     ORDER BY po.date DESC, po.id DESC
+                     LIMIT 200",
+                    [$selectedAccountId]
+                );
+
+                $accountTxns = array_merge($payments, $expenses, $txnTransfers, $poPayments);
+                usort($accountTxns, fn($a, $b) => strcmp($b['date'] . $b['id'], $a['date'] . $a['id']));
+                $accountTxns = array_slice($accountTxns, 0, 200);
+            }
+        }
+
         $pageTitle = 'Accounts';
         $page      = 'accounts';
 
@@ -33,14 +124,95 @@ class AccountController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    /**
+     * Admin/authorized tool: rebuild accounts.current_balance from ledger tables.
+     * Uses accounts.opening_balance as baseline.
+     *
+     * NOTE: Manual "Adjust Balance" changes are NOT separately stored, so future recalcs will
+     * override them. Use Adjust Balance only for permanent corrections, and recalc only when
+     * you want the ledger to be the source of truth.
+     */
+    public function recalcBalance(): void {
+        Auth::authorize('settings', 'edit');
+
+        if (!$this->isPost()) {
+            $this->redirect('?page=accounts');
+        }
+
+        $accountId = $this->inputInt('account_id');
+        if ($accountId <= 0) {
+            $this->flash('error', 'Invalid account.');
+            $this->redirect('?page=accounts');
+        }
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $acc = $db->fetchOne("SELECT * FROM accounts WHERE id = ? FOR UPDATE", [$accountId]);
+            if (!$acc) {
+                throw new Exception('Account not found.');
+            }
+
+            $opening = (float)($acc['opening_balance'] ?? 0);
+
+            $payRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(CASE WHEN payment_type='out' THEN -amount ELSE amount END),0) as net
+                 FROM payments
+                 WHERE account_id = ? AND ref_type != 'discount'",
+                [$accountId]
+            );
+            $paymentsNet = (float)($payRow['net'] ?? 0);
+
+            $expRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(amount),0) as total
+                 FROM expenses
+                 WHERE account_id = ?",
+                [$accountId]
+            );
+            $expensesTotal = (float)($expRow['total'] ?? 0);
+
+            $trRow = $db->fetchOne(
+                "SELECT
+                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE to_account_id = ?),0) as in_total,
+                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE from_account_id = ?),0) as out_total",
+                [$accountId, $accountId]
+            );
+            $transferNet = (float)($trRow['in_total'] ?? 0) - (float)($trRow['out_total'] ?? 0);
+
+            $newBalance = round($opening + $paymentsNet - $expensesTotal + $transferNet, 3);
+            $oldBalance = (float)($acc['current_balance'] ?? 0);
+
+            $db->execute("UPDATE accounts SET current_balance = ? WHERE id = ?", [$newBalance, $accountId]);
+            $db->commit();
+
+            $this->logActivity(
+                'recalc_account_balance',
+                'accounts',
+                $accountId,
+                "Recalculated {$acc['name']} from ledger: old=" . number_format($oldBalance, 3) . " new=" . number_format($newBalance, 3)
+            );
+
+            $this->flash(
+                'success',
+                "Recalculated {$acc['name']}. Old: " . APP_CURRENCY . " " . number_format($oldBalance, 3) .
+                " → New: " . APP_CURRENCY . " " . number_format($newBalance, 3)
+            );
+        } catch (Exception $e) {
+            $db->rollback();
+            $this->flash('error', 'Recalculate failed: ' . $e->getMessage());
+        }
+
+        $this->redirect('?page=accounts&account_id=' . $accountId);
+    }
+
     public function store(): void {
         Auth::authorize('settings', 'add');
         if (!$this->isPost()) { $this->redirect('?page=accounts'); }
 
         $db = Database::getInstance();
         $db->insert(
-            "INSERT INTO accounts (name, type, current_balance) VALUES (?,?,?)",
-            [$this->input('name'), $this->input('type'), $this->inputFloat('opening_balance')]
+            "INSERT INTO accounts (name, type, gl_code, current_balance) VALUES (?,?,?,?)",
+            [$this->input('name'), $this->input('type'), $this->input('gl_code') ?: null, $this->inputFloat('opening_balance')]
         );
 
         $this->flash('success', 'Account created.');
@@ -52,6 +224,14 @@ class AccountController extends BaseController {
         if (!$this->isPost()) { $this->redirect('?page=accounts'); }
 
         $db     = Database::getInstance();
+        $postedNonce = isset($_POST['account_transfer_nonce']) ? trim((string)$_POST['account_transfer_nonce']) : '';
+        $sessNonce   = $_SESSION['account_transfer_nonce'] ?? '';
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This transfer was already submitted or expired. Please check transfer history before trying again.');
+            $this->redirect('?page=accounts');
+        }
+        unset($_SESSION['account_transfer_nonce']);
+
         $fromId = $this->inputInt('from_account_id');
         $toId   = $this->inputInt('to_account_id');
         $amount = $this->inputFloat('amount');

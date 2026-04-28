@@ -100,10 +100,10 @@ body {
 
 <div class="wrap">
     <div class="receipt-header">
-        <div class="company-name"><?= htmlspecialchars($settings['company_name'] ?? APP_NAME) ?></div>
+        <div class="company-name"><?= htmlspecialchars((string)($settings['company_name'] ?? APP_NAME)) ?></div>
         <div class="company-info">
-            <?= nl2br(htmlspecialchars($settings['company_address'] ?? '')) ?><br>
-            <?= htmlspecialchars($settings['company_phone'] ?? '') ?>
+            <?= nl2br(htmlspecialchars((string)($settings['company_address'] ?? ''))) ?><br>
+            <?= htmlspecialchars((string)($settings['company_phone'] ?? '')) ?>
         </div>
     </div>
 
@@ -122,18 +122,18 @@ body {
         <div class="amount-value"><?= APP_CURRENCY ?> <?= number_format($payment['amount'], DECIMAL_PLACES) ?></div>
     </div>
 
-    <div class="receipt-row"><span class="lbl">Receipt No</span><span class="val"><?= $payment['payment_no'] ?></span></div>
-    <div class="receipt-row"><span class="lbl">Date</span><span class="val"><?= date('d M Y', strtotime($payment['date'])) ?></span></div>
-    <div class="receipt-row"><span class="lbl">Party</span><span class="val"><?= htmlspecialchars($payment['party_name']) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Receipt No</span><span class="val"><?= htmlspecialchars((string)($payment['payment_no'] ?? '')) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Date</span><span class="val"><?= date('d M Y', strtotime($payment['date'] ?? 'now')) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Party</span><span class="val"><?= htmlspecialchars((string)($payment['party_name'] ?? '—')) ?></span></div>
     <?php if (!empty($payment['phone_no'])): ?>
-    <div class="receipt-row"><span class="lbl">Phone</span><span class="val"><?= htmlspecialchars($payment['phone_no']) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Phone</span><span class="val"><?= htmlspecialchars((string)$payment['phone_no']) ?></span></div>
     <?php endif; ?>
-    <div class="receipt-row"><span class="lbl">Account</span><span class="val"><?= htmlspecialchars($payment['account_name']) ?></span></div>
-    <?php if ($payment['cheque_no']): ?>
-    <div class="receipt-row"><span class="lbl">Cheque No</span><span class="val"><?= htmlspecialchars($payment['cheque_no']) ?></span></div>
+    <div class="receipt-row"><span class="lbl">Account</span><span class="val"><?= htmlspecialchars((string)($payment['account_name'] ?? '—')) ?></span></div>
+    <?php if (!empty($payment['cheque_no'])): ?>
+    <div class="receipt-row"><span class="lbl">Cheque No</span><span class="val"><?= htmlspecialchars((string)$payment['cheque_no']) ?></span></div>
     <?php endif; ?>
-    <?php if ($payment['notes']): ?>
-    <div class="receipt-row"><span class="lbl">Notes</span><span class="val"><?= htmlspecialchars($payment['notes']) ?></span></div>
+    <?php if (!empty($payment['notes'])): ?>
+    <div class="receipt-row"><span class="lbl">Notes</span><span class="val"><?= htmlspecialchars((string)$payment['notes']) ?></span></div>
     <?php endif; ?>
 
     <div style="margin-top:14px;padding-top:12px;border-top:2px dashed #e5e7eb;">
@@ -154,7 +154,7 @@ body {
     </div>
 
     <div class="footer">
-        <p><?= htmlspecialchars($settings['invoice_footer'] ?? 'Thank you for your business!') ?></p>
+        <p><?= htmlspecialchars((string)($settings['invoice_footer'] ?? 'Thank you for your business!')) ?></p>
         <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?></p>
     </div>
 </div>

@@ -83,6 +83,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 
 <form method="POST" action="?page=returns&action=store" id="retForm">
     <?= Auth::csrfField() ?>
+    <input type="hidden" name="return_form_nonce" value="<?= htmlspecialchars($returnFormNonce ?? '') ?>">
     <input type="hidden" name="print_mode" id="retPrintMode" value="0">
 
 <div class="sale-wrap">
@@ -574,13 +575,20 @@ function saveRetImeiModal() {
 }
 
 document.getElementById('retForm').addEventListener('submit', function(e) {
+    // Client-side submit lock (server also validates one-time nonce)
+    if (this.dataset.submitting === '1') { e.preventDefault(); return; }
+
     if (!document.getElementById('retPartyId').value) { e.preventDefault(); alert('Please select a customer.'); return; }
     let hasItem = false;
     document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
         const rid = tr.dataset.rowId;
         if (rid && document.getElementById('rItemId_' + rid)?.value) hasItem = true;
     });
-    if (!hasItem) { e.preventDefault(); alert('Please add at least one item.'); }
+    if (!hasItem) { e.preventDefault(); alert('Please add at least one item.'); return; }
+
+    if (e.defaultPrevented) return;
+    this.dataset.submitting = '1';
+    this.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => { btn.disabled = true; });
 });
 
 // ── QUICK SCAN ──

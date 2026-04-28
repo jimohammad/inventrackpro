@@ -355,6 +355,7 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
 
 <form method="POST" action="?page=sales&action=store" id="saleForm">
     <?= Auth::csrfField() ?>
+    <input type="hidden" name="sale_form_nonce" value="<?= htmlspecialchars($saleFormNonce ?? '') ?>">
     <input type="hidden" name="payment_mode" id="paymentMode" value="credit">
     <input type="hidden" name="print_mode" id="salePrintMode" value="0">
     <input type="hidden" name="tax" value="0">
@@ -529,7 +530,12 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
         </button>
         <button type="submit" class="btn-print-sale"
             onclick="document.getElementById('salePrintMode').value='1'">
-            <i class="bi bi-printer"></i> Print & Save
+            <i class="bi bi-printer"></i> Save &amp; Print A4
+        </button>
+        <button type="submit" class="btn-print-sale"
+            style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 2px 8px rgba(124,58,237,.4);"
+            onclick="document.getElementById('salePrintMode').value='2'">
+            <i class="bi bi-receipt"></i> Save &amp; Thermal
         </button>
     </div>
 
@@ -1093,8 +1099,21 @@ function saveImeiModal() {
     closeImeiModal();
 }
 
+// ═══ PREVENT ACCIDENTAL FORM SUBMIT ON ENTER ═══
+// Barcode scanners send Enter after each scan; block it from all text inputs
+// except the scan bar (which has its own inline onkeydown → scanImeiToRow)
+document.getElementById('saleForm').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
+        !['submit','hidden','button'].includes(e.target.type)) {
+        e.preventDefault();
+    }
+});
+
 // ═══ FORM VALIDATION ═══
 document.getElementById('saleForm').addEventListener('submit', function(e) {
+    // Client-side submit lock (server also validates one-time nonce)
+    if (this.dataset.submitting === '1') { e.preventDefault(); return; }
+
     if (!document.getElementById('partyIdInput').value) {
         e.preventDefault(); alert('Please select a customer.'); document.getElementById('partySearch').focus(); return;
     }
@@ -1123,6 +1142,10 @@ document.getElementById('saleForm').addEventListener('submit', function(e) {
             alert('One or more items are priced below the minimum catalog price. You can only increase the price, not decrease it. Fix the prices marked in red.');
         }
     }
+
+    if (e.defaultPrevented) return;
+    this.dataset.submitting = '1';
+    this.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => { btn.disabled = true; });
 });
 
 // ═══ SCAN-FIRST IMEI ═══
@@ -1131,7 +1154,7 @@ let scanCount = 0;
 function scanImeiToRow() {
     const input = document.getElementById('imeiScanBar');
     const msg   = document.getElementById('scanBarMsg');
-    const imei  = input.value.trim();
+    const imei  = input.value.trim().toUpperCase();
     if (!imei) return;
 
     input.value = '';

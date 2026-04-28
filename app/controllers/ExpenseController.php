@@ -24,9 +24,13 @@ class ExpenseController extends BaseController {
         $summary    = $this->expenseModel->getSummaryByCategory($filters['from_date'], $filters['to_date']);
         $totalAmt   = array_sum(array_column($expenses, 'amount'));
         $db         = Database::getInstance();
-        $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts   = self::getAccounts();
         $pageTitle  = 'Expenses';
         $page       = 'expenses';
+
+        // One-time token to prevent double-submit bulk expense save
+        $_SESSION['expense_form_nonce'] = bin2hex(random_bytes(16));
+        $expenseFormNonce               = $_SESSION['expense_form_nonce'];
 
         ob_start();
         include __DIR__ . '/../views/expenses/index.php';
@@ -37,6 +41,14 @@ class ExpenseController extends BaseController {
     public function store(): void {
         Auth::authorize('expenses', 'add');
         if (!$this->isPost()) { $this->redirect('?page=expenses'); }
+
+        $postedNonce = isset($_POST['expense_form_nonce']) ? trim((string)$_POST['expense_form_nonce']) : '';
+        $sessNonce   = $_SESSION['expense_form_nonce'] ?? '';
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This expense form was already submitted or expired. Please check Expenses list before trying again.');
+            $this->redirect('?page=expenses');
+        }
+        unset($_SESSION['expense_form_nonce']);
 
         $date      = $this->input('date') ?: date('Y-m-d');
         $accountId = $this->inputInt('account_id');
@@ -106,7 +118,7 @@ class ExpenseController extends BaseController {
         if (!$expense) { $this->flash('error', 'Expense not found.'); $this->redirect('?page=expenses'); }
 
         $categories = $this->expenseModel->getCategories();
-        $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts   = self::getAccounts();
         $pageTitle  = 'Edit Expense: ' . $expense['expense_no'];
         $page       = 'expenses';
 

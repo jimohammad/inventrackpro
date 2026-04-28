@@ -155,19 +155,31 @@ class Sale extends BaseModel {
                 ]
             );
 
+            // Snapshot purchase prices once before the loop (locks COGS at sale time)
+            $itemIds    = array_unique(array_column($data['items'], 'item_id'));
+            $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+            $costMap    = [];
+            foreach ($this->db->fetchAll(
+                "SELECT id, purchase_price FROM items WHERE id IN ($placeholders)", $itemIds
+            ) as $row) {
+                $costMap[(int)$row['id']] = (float)$row['purchase_price'];
+            }
+
             // Insert each sale item
             foreach ($data['items'] as $item) {
                 $lineDisc  = (float) ($item['discount'] ?? 0);
                 $lineTotal = ((float)$item['unit_price'] * (int)$item['quantity']) - $lineDisc;
+                $costPrice = $costMap[(int)$item['item_id']] ?? 0;
 
                 $saleItemId = $this->db->insert(
-                    "INSERT INTO sale_items (sale_id, item_id, quantity, unit_price, discount, total)
-                     VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO sale_items (sale_id, item_id, quantity, unit_price, cost_price, discount, total)
+                     VALUES (?,?,?,?,?,?,?)",
                     [
                         $saleId,
                         $item['item_id'],
                         (int) $item['quantity'],
                         (float) $item['unit_price'],
+                        $costPrice,
                         $lineDisc,
                         $lineTotal,
                     ]
@@ -230,7 +242,7 @@ class Sale extends BaseModel {
             }
 
             $this->db->commit();
-            return ['success' => true, 'id' => (int) $saleId, 'invoice_no' => $invoiceNo];
+            return ['success' => true, 'id' => (int) $saleId, 'invoice_no' => $invoiceNo, 'grand_total' => $grandTotal];
 
         } catch (Exception $e) {
             $this->db->rollback();

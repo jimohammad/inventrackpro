@@ -39,7 +39,7 @@ class LandedCostController extends BaseController {
              WHERE p.status != 'cancelled'
              ORDER BY p.date DESC, p.id DESC LIMIT 100"
         );
-        $accounts  = $db->fetchAll("SELECT * FROM accounts WHERE is_active=1 ORDER BY sort_order ASC, name ASC");
+        $accounts  = self::getAccounts();
         $nextNo    = $this->nextShipmentNo();
 
         $pageTitle = 'New Shipment';

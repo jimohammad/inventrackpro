@@ -4,6 +4,11 @@ require_once __DIR__ . '/BaseModel.php';
 
 class Payment extends BaseModel {
     protected string $table = 'payments';
+    private string $lastError = '';
+
+    public function getLastError(): string {
+        return $this->lastError;
+    }
 
     public function getAll(array $filters = []): array {
         $where  = "WHERE 1=1";
@@ -68,12 +73,18 @@ class Payment extends BaseModel {
     // Create a standalone payment (not attached to invoice)
     // AUDIT FIX F1: FOR UPDATE prevents duplicate payment numbers under concurrency
     public function nextPaymentNo(): string {
-        $last = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $num  = $last ? (int) substr($last['payment_no'], 4) : 0;
+        $row = $this->db->fetchOne(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(payment_no, 5) AS UNSIGNED)), 0) AS max_no
+             FROM payments
+             WHERE payment_no LIKE 'PAY-%'
+             FOR UPDATE"
+        );
+        $num = (int)($row['max_no'] ?? 0);
         return 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
     }
 
     public function createStandalone(array $data): int|false {
+        $this->lastError = '';
         $this->db->beginTransaction();
         try {
             // AUDIT FIX F1: Use shared method with FOR UPDATE
@@ -83,26 +94,40 @@ class Payment extends BaseModel {
             $partyId     = (int)   $data['party_id'];
             $paymentType = $data['payment_type'] ?? 'in';
 
-            $id = $this->db->insert(
-                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, warehouse_id, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [
-                    $payNo,
-                    $data['ref_type'] ?? 'sale',
-                    $data['ref_id'] ?? 0,
-                    $partyId,
-                    $data['phone_no'] ?? null,
-                    $paymentType,
-                    $data['account_id'],
-                    $totalAmount,
-                    $data['payment_method'] ?? 'cash',
-                    $data['cheque_no'] ?? null,
-                    $data['date'] ?? date('Y-m-d'),
-                    $data['notes'] ?? null,
-                    Auth::warehouseId(),
-                    Auth::id(),
-                ]
-            );
+            $id = false;
+            for ($attempt = 1; $attempt <= 3; $attempt++) {
+                try {
+                    $id = $this->db->insert(
+                        "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, warehouse_id, created_by)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [
+                            $payNo,
+                            $data['ref_type'] ?? 'sale',
+                            $data['ref_id'] ?? 0,
+                            $partyId,
+                            $data['phone_no'] ?? null,
+                            $paymentType,
+                            $data['account_id'],
+                            $totalAmount,
+                            $data['payment_method'] ?? 'cash',
+                            $data['cheque_no'] ?? null,
+                            $data['date'] ?? date('Y-m-d'),
+                            $data['notes'] ?? null,
+                            Auth::warehouseId(),
+                            Auth::id(),
+                        ]
+                    );
+                    break;
+                } catch (Exception $e) {
+                    $isDuplicatePayNo = str_contains($e->getMessage(), "Duplicate entry")
+                        && str_contains($e->getMessage(), "payment_no");
+                    if (!$isDuplicatePayNo || $attempt === 3) {
+                        throw $e;
+                    }
+                    // Regenerate and retry in rare race/legacy numbering collisions.
+                    $payNo = $this->nextPaymentNo();
+                }
+            }
 
             // Update account balance: IN adds, OUT subtracts
             if ($paymentType === 'in') {
@@ -168,8 +193,137 @@ class Payment extends BaseModel {
 
         } catch (Exception $e) {
             $this->db->rollback();
-            error_log("Payment createStandalone failed: " . $e->getMessage());
+            $this->lastError = $e->getMessage();
+            error_log("Payment createStandalone failed: " . $this->lastError);
             return false;
+        }
+    }
+
+    /**
+     * Delete a standalone payment and reverse its effects (account + FIFO invoice allocation).
+     * Uses LIFO on purchases/sales to undo createStandalone FIFO — correct when removing a mistaken
+     * duplicate soon after entry; may be wrong if many later payments interleaved (admin use only).
+     */
+    public function deleteWithReversal(int $id): bool {
+        $this->lastError = '';
+        $this->db->beginTransaction();
+        try {
+            $pay = $this->db->fetchOne('SELECT * FROM payments WHERE id = ? FOR UPDATE', [$id]);
+            if (!$pay) {
+                $this->db->rollback();
+                $this->lastError = 'Payment not found.';
+                return false;
+            }
+            if (($pay['ref_type'] ?? '') === 'discount') {
+                throw new Exception('Discount-linked payments must be removed from the Discounts module.');
+            }
+
+            $amount    = (float) $pay['amount'];
+            $type      = $pay['payment_type'] ?? 'in';
+            $accId     = (int) $pay['account_id'];
+            $partyId   = (int) ($pay['party_id'] ?? 0);
+            $whId      = (int) ($pay['warehouse_id'] ?? 0);
+
+            if ($type === 'in') {
+                $this->db->execute(
+                    'UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?',
+                    [$amount, $accId]
+                );
+            } else {
+                $this->db->execute(
+                    'UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?',
+                    [$amount, $accId]
+                );
+            }
+
+            if ($partyId > 0 && $whId > 0) {
+                if ($type === 'in') {
+                    $this->reverseFifoSaleApplications($partyId, $whId, $amount);
+                } else {
+                    $this->reverseFifoPurchaseApplications($partyId, $whId, $amount);
+                }
+            }
+
+            $this->db->execute('DELETE FROM payments WHERE id = ?', [$id]);
+            $this->db->commit();
+            return true;
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->lastError = $e->getMessage();
+            error_log('Payment deleteWithReversal failed: ' . $this->lastError);
+            return false;
+        }
+    }
+
+    /** Undo OUT payment FIFO against purchases (newest paid rows first). */
+    private function reverseFifoPurchaseApplications(int $partyId, int $warehouseId, float $amount): void {
+        $remaining = $amount;
+        $rows      = $this->db->fetchAll(
+            "SELECT id, paid_amount, balance
+             FROM purchases
+             WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
+             ORDER BY date DESC, id DESC",
+            [$partyId, $warehouseId]
+        );
+        foreach ($rows as $row) {
+            if ($remaining < 0.001) {
+                break;
+            }
+            $paid = (float) $row['paid_amount'];
+            $take = min($remaining, $paid);
+            if ($take < 0.001) {
+                continue;
+            }
+            $newPaid = round($paid - $take, 3);
+            $newBal  = round((float) $row['balance'] + $take, 3);
+            $status  = 'confirmed';
+            if ($newPaid > 0.001) {
+                $status = ($newBal < 0.001) ? 'paid' : 'partial';
+            }
+            $this->db->execute(
+                'UPDATE purchases SET paid_amount = ?, balance = ?, status = ? WHERE id = ?',
+                [$newPaid, $newBal, $status, $row['id']]
+            );
+            $remaining -= $take;
+        }
+        if ($remaining > 0.001) {
+            throw new Exception('Could not reverse full purchase allocation; aborting delete.');
+        }
+    }
+
+    /** Undo IN payment FIFO against sales (newest paid rows first). */
+    private function reverseFifoSaleApplications(int $partyId, int $warehouseId, float $amount): void {
+        $remaining = $amount;
+        $rows      = $this->db->fetchAll(
+            "SELECT id, paid_amount, balance
+             FROM sales
+             WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
+             ORDER BY date DESC, id DESC",
+            [$partyId, $warehouseId]
+        );
+        foreach ($rows as $row) {
+            if ($remaining < 0.001) {
+                break;
+            }
+            $paid = (float) $row['paid_amount'];
+            $take = min($remaining, $paid);
+            if ($take < 0.001) {
+                continue;
+            }
+            $newPaid = round($paid - $take, 3);
+            $newBal  = round((float) $row['balance'] + $take, 3);
+            $status  = 'confirmed';
+            if ($newPaid > 0.001) {
+                $status = ($newBal < 0.001) ? 'paid' : 'partial';
+            }
+            $this->db->execute(
+                'UPDATE sales SET paid_amount = ?, balance = ?, status = ? WHERE id = ?',
+                [$newPaid, $newBal, $status, $row['id']]
+            );
+            $remaining -= $take;
+        }
+        if ($remaining > 0.001) {
+            throw new Exception('Could not reverse full sale allocation; aborting delete.');
         }
     }
 

@@ -67,8 +67,8 @@ class PurchaseOrderController extends BaseController {
         $suppliers  = $this->db->fetchAll(
             "SELECT id, name FROM parties WHERE type IN ('supplier','both') AND is_active = 1 ORDER BY name"
         );
-        $warehouses = $this->db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name");
-        $accounts   = $this->db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $warehouses = self::getWarehouses();
+        $accounts   = self::getAccounts();
         $nextPoNo   = $this->nextPoNo();
 
         $pageTitle = 'New Purchase Order';
@@ -166,11 +166,20 @@ class PurchaseOrderController extends BaseController {
                 );
             }
 
-            // Deduct paid amount from selected account
+            // Deduct paid amount from selected account and record payment
             if ($paidKwd > 0 && $accountId) {
                 $this->db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
                     [$paidKwd, $accountId]
+                );
+                $lastPay = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                $payNum  = $lastPay ? (int) substr($lastPay['payment_no'], 4) : 0;
+                $payNo   = 'PAY-' . str_pad($payNum + 1, 6, '0', STR_PAD_LEFT);
+                $this->db->insert(
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [$payNo, 'purchase_order', $poId, $this->inputInt('party_id'), 'out', $accountId, $paidKwd, 'bank',
+                     $this->input('date') ?: date('Y-m-d'), $warehouseId, Auth::id()]
                 );
             }
 
@@ -212,7 +221,14 @@ class PurchaseOrderController extends BaseController {
             [$id]
         );
 
-        $accounts = $this->db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts = self::getAccounts();
+
+        // One-time token to prevent double "Mark as Paid"
+        if (empty($_SESSION['po_markpaid_nonce']) || !is_array($_SESSION['po_markpaid_nonce'])) {
+            $_SESSION['po_markpaid_nonce'] = [];
+        }
+        $_SESSION['po_markpaid_nonce'][$id] = bin2hex(random_bytes(16));
+        $poMarkPaidNonce = $_SESSION['po_markpaid_nonce'][$id];
 
         $pageTitle = 'PO — ' . $po['po_no'];
         $page      = 'purchaseorders';
@@ -233,6 +249,16 @@ class PurchaseOrderController extends BaseController {
         }
         $id        = $this->inputInt('id');
         $accountId = $this->inputInt('account_id');
+
+        $postedNonce = isset($_POST['po_markpaid_nonce']) ? trim((string)$_POST['po_markpaid_nonce']) : '';
+        $sessNonce   = $_SESSION['po_markpaid_nonce'][$id] ?? '';
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This PO payment request was already submitted or expired. Please refresh the page and check the PO status.');
+            $this->redirect('?page=purchaseorders&action=show&id=' . $id);
+            return;
+        }
+        unset($_SESSION['po_markpaid_nonce'][$id]);
+
         $po = $this->db->fetchOne("SELECT * FROM purchase_orders WHERE id = ?", [$id]);
 
         if (!$po || $po['status'] !== 'draft') {
@@ -263,6 +289,15 @@ class PurchaseOrderController extends BaseController {
                 $this->db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
                     [$deductAmount, $accountId]
+                );
+                $lastPay = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                $payNum  = $lastPay ? (int) substr($lastPay['payment_no'], 4) : 0;
+                $payNo   = 'PAY-' . str_pad($payNum + 1, 6, '0', STR_PAD_LEFT);
+                $this->db->insert(
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [$payNo, 'purchase_order', $id, $po['party_id'], 'out', $accountId, $deductAmount, 'bank',
+                     date('Y-m-d'), $po['warehouse_id'], Auth::id()]
                 );
             }
             $this->db->commit();
@@ -364,6 +399,47 @@ class PurchaseOrderController extends BaseController {
             $this->db->execute(
                 "UPDATE purchase_orders SET status='converted', converted_to=? WHERE id=?",
                 [$purchaseId, $id]
+            );
+
+            // Migrate any existing PO-payment rows to ref_type='purchase' so party balance counts them.
+            // (Fix B inserts payment rows with ref_type='purchase_order' at PO save/markPaid time.)
+            $this->db->execute(
+                "UPDATE payments SET ref_type='purchase', ref_id=? WHERE ref_type='purchase_order' AND ref_id=?",
+                [$purchaseId, $id]
+            );
+
+            // Safety net: if PO had paid_kwd > 0 but no payment row exists yet (legacy PO before Fix B),
+            // insert one now so the supplier balance reflects the payment.
+            if ($paid > 0) {
+                $hasPayment = $this->db->fetchOne(
+                    "SELECT id FROM payments WHERE ref_type='purchase' AND ref_id=?",
+                    [$purchaseId]
+                );
+                if (!$hasPayment) {
+                    $last  = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                    $num   = $last ? (int) substr($last['payment_no'], 4) : 0;
+                    $payNo = 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
+                    $accId = (int)($po['account_id'] ?? 0) ?: (int)($this->db->fetchOne("SELECT id FROM accounts WHERE is_active=1 ORDER BY sort_order LIMIT 1")['id'] ?? 0);
+                    $this->db->insert(
+                        "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        [$payNo, 'purchase', $purchaseId, $po['party_id'], 'out', $accId, $paid, 'bank', date('Y-m-d'), $po['warehouse_id'], Auth::id()]
+                    );
+                }
+            }
+
+            // IMPORTANT: Purchases list/detail relies on purchases.paid_amount/balance/status.
+            // After migrating/inserting payment rows, sync purchase header from its payments.
+            $paidSumRow = $this->db->fetchOne(
+                "SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE ref_type='purchase' AND ref_id=?",
+                [$purchaseId]
+            );
+            $paidSum = (float)($paidSumRow['total'] ?? 0);
+            $newBalance = max(0, (float)$subtotal - $paidSum);
+            $newStatus  = $newBalance < 0.001 ? 'paid' : ($paidSum > 0 ? 'partial' : 'confirmed');
+            $this->db->execute(
+                "UPDATE purchases SET paid_amount=?, balance=?, status=? WHERE id=?",
+                [round($paidSum, 3), round($newBalance, 3), $newStatus, $purchaseId]
             );
 
             $this->db->commit();
@@ -473,8 +549,8 @@ class PurchaseOrderController extends BaseController {
              ORDER BY poi.id", [$id]
         );
 
-        $warehouses = $this->db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1");
-        $accounts   = $this->db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $warehouses = self::getWarehouses();
+        $accounts   = self::getAccounts();
         $pageTitle  = 'Edit: ' . $po['po_no'];
         $page       = 'purchaseorders';
 
@@ -595,6 +671,23 @@ class PurchaseOrderController extends BaseController {
                 $this->db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
                     [$paidKwd, $newAccountId]
+                );
+            }
+
+            // Sync payments audit record — delete old, insert fresh if paid
+            $this->db->execute(
+                "DELETE FROM payments WHERE ref_type = 'purchase_order' AND ref_id = ?",
+                [$id]
+            );
+            if ($paidKwd > 0 && $newAccountId) {
+                $lastPay = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                $payNum  = $lastPay ? (int) substr($lastPay['payment_no'], 4) : 0;
+                $payNo   = 'PAY-' . str_pad($payNum + 1, 6, '0', STR_PAD_LEFT);
+                $this->db->insert(
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [$payNo, 'purchase_order', $id, $po['party_id'], 'out', $newAccountId, $paidKwd, 'bank',
+                     $this->input('date') ?: $po['date'], $po['warehouse_id'], Auth::id()]
                 );
             }
 

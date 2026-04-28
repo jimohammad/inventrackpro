@@ -5,9 +5,16 @@
         <p class="page-subtitle">All payment transactions</p>
     </div>
     <?php if (Auth::can('payments','add')): ?>
-    <a href="?page=payments&action=create" class="btn btn-primary">
-        <i class="bi bi-plus-lg me-1"></i> New Payment
-    </a>
+    <div style="display:flex;gap:8px;">
+        <a href="?page=payments&action=receive"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(16,185,129,.35);">
+            <i class="bi bi-arrow-down-circle-fill"></i> Receive Payment
+        </a>
+        <a href="?page=payments&action=pay"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(239,68,68,.35);">
+            <i class="bi bi-arrow-up-circle-fill"></i> Make Payment
+        </a>
+    </div>
     <?php endif; ?>
 </div>
 
@@ -132,7 +139,7 @@
                         <td><small class="text-muted"><?= htmlspecialchars($p['created_by_name'] ?? '—') ?></small></td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>" target="_blank"
+                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autoprint=1" target="_blank"
                                    class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:var(--success);border:none;" title="Print">
                                     <i class="bi bi-printer"></i>
                                 </a>
@@ -149,6 +156,16 @@
                                    class="btn btn-sm pin-protect" style="background:rgba(245,158,11,0.15);color:#d97706;border:none;" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
+                                <?php endif; ?>
+                                <?php if (Auth::can('payments','delete') && ($p['ref_type'] ?? '') !== 'discount'): ?>
+                                <form method="POST" action="?page=payments&action=delete" style="display:inline;"
+                                      onsubmit="return confirm('Delete this payment permanently? Account and invoice balances will be reversed.');">
+                                    <?= Auth::csrfField() ?>
+                                    <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                                    <button type="submit" class="btn btn-sm pin-protect" style="background:rgba(239,68,68,0.15);color:#dc2626;border:none;" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
                                 <?php endif; ?>
                             </div>
                         </td>

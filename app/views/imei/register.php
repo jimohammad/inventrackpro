@@ -21,6 +21,12 @@
 .ir-stock-badge { font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:10px; }
 .ir-stock-ok { background:rgba(34,197,94,.1);color:#16a34a; }
 .ir-imei-badge { font-size:.68rem;font-weight:700;color:var(--primary); }
+.ir-clear-btn {
+    background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#dc2626;
+    border-radius:6px;padding:3px 7px;font-size:.68rem;cursor:pointer;font-weight:600;
+    margin-top:4px;display:inline-flex;align-items:center;gap:3px;transition:all .15s;
+}
+.ir-clear-btn:hover { background:rgba(239,68,68,.16); }
 
 /* Scanner */
 .ir-scanner { display:none;margin-top:16px; }
@@ -93,6 +99,11 @@
                 <div class="ir-item-badge">
                     <span class="ir-stock-badge ir-stock-ok">Stock: <?= $it['stock'] ?></span>
                     <span class="ir-imei-badge" id="irBadge_<?= $it['id'] ?>"><?= $it['imei_count'] ?> IMEI</span>
+                    <?php if (Auth::isAdmin() && (int)$it['imei_count'] > 0): ?>
+                    <button type="button" class="ir-clear-btn" onclick="event.stopPropagation();clearItemImeis(<?= $it['id'] ?>, '<?= htmlspecialchars(addslashes($it['name'])) ?>', <?= (int)$it['imei_count'] ?>)" title="Delete all in_stock/returned IMEIs for this item (admin)">
+                        <i class="bi bi-trash3"></i> Clear
+                    </button>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -262,4 +273,46 @@ document.addEventListener('click', function(e) {
         document.getElementById('scanInput').focus();
     }
 });
+
+// Admin: clear all in_stock + returned IMEIs for an item, then user can rescan from scratch
+// Gated by admin PIN (requirePin from layout.php)
+function clearItemImeis(itemId, itemName, currentCount) {
+    var msg = 'Delete ALL ' + currentCount + ' in-stock IMEIs for "' + itemName + '" in this warehouse?\n\n' +
+              'Sold/transferred/defective records are kept. You can re-scan from scratch after this.\n\n' +
+              'This cannot be undone.';
+    if (!confirm(msg)) return;
+
+    requirePin(function() {
+        var fd = new FormData();
+        fd.append('item_id', itemId);
+        fd.append('csrf_token', '<?= Auth::csrfToken() ?>');
+
+        fetch('?page=imei&action=clearItemImeis', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d.ok) { alert('Failed: ' + d.msg); return; }
+                var badge = document.getElementById('irBadge_' + itemId);
+                if (badge) badge.textContent = '0 IMEI';
+                var card = document.getElementById('irItem_' + itemId);
+                if (card) {
+                    var btn = card.querySelector('.ir-clear-btn');
+                    if (btn) btn.remove();
+                }
+                if (scanItemId === itemId) {
+                    scanTotal    = 0;
+                    localSeq     = 0;
+                    localScanned = {};
+                    scanQueue    = [];
+                    document.getElementById('scanCount').textContent = 0;
+                    document.getElementById('scannedList').innerHTML = '';
+                    document.getElementById('scanMsg').className = 'ir-msg ok';
+                    document.getElementById('scanMsg').textContent = d.msg + ' — start scanning from fresh.';
+                    document.getElementById('scanInput').focus();
+                } else {
+                    alert(d.msg);
+                }
+            })
+            .catch(function() { alert('Network error.'); });
+    });
+}
 </script>

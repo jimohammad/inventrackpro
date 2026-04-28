@@ -49,6 +49,7 @@ class ItemController extends BaseController {
             'model'          => $this->input('model'),
             'unit'           => $this->input('unit'),
             'has_imei'       => $this->inputInt('has_imei'),
+            'imei_optional'  => $this->inputInt('imei_optional'),
             'purchase_price' => $this->inputFloat('purchase_price'),
             'price_aed'      => $this->inputFloat('price_aed'),
             'price_usd'      => $this->inputFloat('price_usd'),
@@ -98,6 +99,7 @@ class ItemController extends BaseController {
             'model'          => $this->input('model'),
             'unit'           => $this->input('unit'),
             'has_imei'       => $this->inputInt('has_imei'),
+            'imei_optional'  => $this->inputInt('imei_optional'),
             'purchase_price' => $this->inputFloat('purchase_price'),
             'price_aed'      => $this->inputFloat('price_aed'),
             'price_usd'      => $this->inputFloat('price_usd'),
@@ -117,7 +119,7 @@ class ItemController extends BaseController {
         Auth::authorize('inventory', 'view');
 
         $db         = Database::getInstance();
-        $warehouses = $this->itemModel->getWarehouses();
+        $warehouses = self::getWarehouses();
         // Always filter by session warehouse — strict separation
         $whId       = Auth::warehouseId();
 

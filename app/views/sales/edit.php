@@ -129,12 +129,27 @@
                         </tr>
                     </thead>
                     <tbody id="itemsTbody">
-                        <?php foreach ($editSale['items'] as $i => $item): ?>
+                        <?php foreach ($editSale['items'] as $i => $item):
+                            $imeiCount = !empty($item['imei_list']) ? count(explode('||', $item['imei_list'])) : 0;
+                            $needsImei = !empty($item['has_imei']) && $imeiCount < (int)$item['quantity'];
+                        ?>
                         <tr id="row_<?= $item['id'] ?>">
                             <td class="text-muted row-num"><?= $i+1 ?></td>
                             <td>
                                 <span class="fw-semibold"><?= htmlspecialchars($item['item_name']) ?></span>
                                 <?php if ($item['sku']): ?><br><small class="text-muted"><?= $item['sku'] ?></small><?php endif; ?>
+                                <?php if (!empty($item['has_imei'])): ?>
+                                    <?php if ($needsImei): ?>
+                                    <br><a href="?page=sales&action=scanItemImeis&id=<?= $editSale['id'] ?>&sale_item_id=<?= $item['id'] ?>"
+                                          style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:700;color:#d97706;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);padding:2px 8px;border-radius:5px;text-decoration:none;margin-top:4px;">
+                                        <i class="bi bi-exclamation-triangle-fill"></i> Scan IMEIs (<?= $imeiCount ?>/<?= $item['quantity'] ?>)
+                                    </a>
+                                    <?php else: ?>
+                                    <br><span style="display:inline-flex;align-items:center;gap:4px;font-size:.7rem;font-weight:700;color:#16a34a;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);padding:2px 8px;border-radius:5px;margin-top:4px;">
+                                        <i class="bi bi-check-circle-fill"></i> <?= $imeiCount ?> IMEI<?= $imeiCount !== 1 ? 's' : '' ?>
+                                    </span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                                 <input type="hidden" name="items[<?= $item['id'] ?>][sale_item_id]" value="<?= $item['id'] ?>">
                                 <input type="hidden" name="items[<?= $item['id'] ?>][deleted]" id="del_<?= $item['id'] ?>" value="0">
                             </td>
@@ -170,11 +185,11 @@
                     </tfoot>
                 </table>
 
-                <!-- Add new item row -->
-                <div class="add-row-strip" onclick="addNewItemRow()">
+                <!-- Add new item — redirect to dedicated page with IMEI scan -->
+                <a class="add-row-strip" href="?page=sales&action=addItem&id=<?= $editSale['id'] ?>" style="text-decoration:none;">
                     <span class="plus-c"><i class="bi bi-plus"></i></span>
-                    Click to add another item
-                </div>
+                    Add another item (with IMEI scan)
+                </a>
             </div>
         </div>
     </div>

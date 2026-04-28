@@ -34,8 +34,8 @@ class SettingsController extends BaseController {
             $this->redirect('?page=settings');
         }
 
-        $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
-        $warehouses = $db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1");
+        $accounts   = self::getAccounts();
+        $warehouses = self::getWarehouses();
         $pageTitle  = 'Settings';
         $page       = 'settings';
 

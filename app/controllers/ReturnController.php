@@ -38,9 +38,13 @@ class ReturnController extends BaseController {
         Auth::authorize('returns', 'add');
         $db         = Database::getInstance();
         $parties    = []; // Loaded via AJAX search
-        $warehouses = $this->itemModel->getWarehouses();
+        $warehouses = self::getWarehouses();
         $pageTitle  = 'New Return';
         $page       = 'returns';
+
+        // One-time token to prevent double-submit duplicate returns
+        $_SESSION['return_form_nonce'] = bin2hex(random_bytes(16));
+        $returnFormNonce               = $_SESSION['return_form_nonce'];
 
         ob_start();
         include __DIR__ . '/../views/returns/create.php';
@@ -54,6 +58,14 @@ class ReturnController extends BaseController {
         if (!$this->isPost()) {
             $this->redirect('?page=returns&action=create');
         }
+
+        $postedNonce = isset($_POST['return_form_nonce']) ? trim((string)$_POST['return_form_nonce']) : '';
+        $sessNonce   = $_SESSION['return_form_nonce'] ?? '';
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This return form was already submitted or expired. Please check Returns list before trying again.');
+            $this->redirect('?page=returns');
+        }
+        unset($_SESSION['return_form_nonce']);
 
         $rawItems = $_POST['items'] ?? [];
         $items    = [];

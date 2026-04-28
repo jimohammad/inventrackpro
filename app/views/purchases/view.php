@@ -5,6 +5,21 @@
         <span class="page-title"><?= $purchase['invoice_no'] ?></span>
         <span class="badge ms-2 badge-<?= $purchase['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($purchase['status']) ?></span>
     </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+        <a href="?page=purchases&action=print&id=<?= $purchase['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-printer me-1"></i> Print
+        </a>
+        <?php if (Auth::can('purchases','delete') && ($purchase['status'] ?? '') !== 'cancelled'): ?>
+        <form method="POST" action="?page=purchases&action=cancel" style="display:inline;"
+              onsubmit="return confirm('Cancel this purchase? Stock and linked payments will be reversed.');">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$purchase['id'] ?>">
+            <button type="submit" class="btn btn-sm btn-outline-danger pin-protect">
+                <i class="bi bi-trash me-1"></i> Delete
+            </button>
+        </form>
+        <?php endif; ?>
+    </div>
     <?php
     $db2 = Database::getInstance();
     $imeiItemCount = (int)($db2->fetchOne(

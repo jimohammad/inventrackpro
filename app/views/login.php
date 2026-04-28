@@ -85,8 +85,8 @@
         </div>
 
         <?php if (!empty($error)): ?>
-            <div class="alert alert-danger mb-3">
-                <i class="bi bi-exclamation-circle me-2"></i><?= htmlspecialchars($error) ?>
+            <div class="alert alert-danger" role="alert">
+                <?= htmlspecialchars($error) ?>
             </div>
         <?php endif; ?>
 

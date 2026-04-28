@@ -249,9 +249,9 @@ class ReportController extends BaseController {
             [$fromDate, $toDate]
         )['revenue'];
 
-        // Cost of goods (purchase price * qty sold)
+        // Cost of goods — uses cost_price locked at sale time (falls back to current purchase_price for pre-migration rows)
         $cogs = $this->db->fetchOne(
-            "SELECT COALESCE(SUM(si.quantity * i.purchase_price),0) as cost
+            "SELECT COALESCE(SUM(si.quantity * IF(si.cost_price > 0, si.cost_price, i.purchase_price)),0) as cost
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
              JOIN sales s ON s.id = si.sale_id
@@ -272,7 +272,7 @@ class ReportController extends BaseController {
         $dailyData = $this->db->fetchAll(
             "SELECT s.date,
                     SUM(s.grand_total) as revenue,
-                    SUM(si.quantity * i.purchase_price) as cost
+                    SUM(si.quantity * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) as cost
              FROM sales s
              JOIN sale_items si ON si.sale_id = s.id
              JOIN items i ON i.id = si.item_id
@@ -739,7 +739,7 @@ class ReportController extends BaseController {
         $db   = $this->db;
 
         // All accounts with their recorded current balance
-        $accounts = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts = self::getAccounts();
 
         $results = [];
         foreach ($accounts as $acc) {
@@ -829,7 +829,7 @@ class ReportController extends BaseController {
         $this->authorizeReport('rpt_account_stmt');
 
         $db       = Database::getInstance();
-        $accounts = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts = self::getAccounts();
 
         $accountId = $this->inputInt('account_id', 0, 'get');
         $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
@@ -960,7 +960,7 @@ class ReportController extends BaseController {
 
         $db         = Database::getInstance();
         $categories = $db->fetchAll("SELECT * FROM expense_categories ORDER BY name");
-        $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+        $accounts   = self::getAccounts();
 
         $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
@@ -1213,7 +1213,7 @@ class ReportController extends BaseController {
         // ── ASSETS ──
 
         // 1. Cash & Bank accounts
-        $accounts = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY type, name");
+        $accounts = self::getAccounts();
         $totalCash = 0;
         foreach ($accounts as $a) $totalCash += (float)$a['current_balance'];
 

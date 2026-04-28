@@ -19,6 +19,8 @@
     transition:all 0.15s;position:relative;
 }
 .acc-row:hover{box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left-width:4px;}
+.acc-row.active{box-shadow:0 0 0 2px var(--acc-color,var(--primary));border-left-width:4px;background:rgba(99,102,241,0.03);}
+a.acc-row-link{text-decoration:none;display:contents;}
 .acc-row-top{display:flex;align-items:center;gap:8px;}
 .acc-row-icon{
     width:24px;height:24px;border-radius:6px;
@@ -129,10 +131,12 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
         $isPos = $acc['current_balance'] >= 0;
         $totalBal += (float)$acc['current_balance'];
     ?>
-    <div class="acc-row" style="--acc-color:<?= $color ?>;">
+    <?php $isActive = ($selectedAccountId === (int)$acc['id']); ?>
+    <a href="?page=accounts<?= $isActive ? '' : '&account_id=' . $acc['id'] ?>" style="text-decoration:none;color:inherit;">
+    <div class="acc-row <?= $isActive ? 'active' : '' ?>" style="--acc-color:<?= $color ?>;cursor:pointer;">
         <div class="acc-row-del">
             <form method="POST" action="?page=accounts&action=delete" style="display:inline;"
-                  onsubmit="return confirm('Delete this account?')">
+                  onsubmit="event.stopPropagation();return confirm('Delete this account?')">
                 <?= Auth::csrfField() ?>
                 <input type="hidden" name="id" value="<?= $acc['id'] ?>">
                 <button type="submit" title="Delete"><i class="bi bi-trash3"></i></button>
@@ -144,13 +148,19 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
             </div>
             <div class="acc-row-info">
                 <div class="acc-row-name"><?= htmlspecialchars($acc['name']) ?><?= $acc['is_default'] ? ' <span style="color:var(--primary);font-size:0.6rem;">✦</span>' : '' ?></div>
-                <div class="acc-row-type"><?= ucfirst(str_replace('_',' ',$acc['type'])) ?></div>
+                <div class="acc-row-type">
+                    <?php if (!empty($acc['gl_code'])): ?>
+                    <span style="font-family:monospace;background:rgba(99,102,241,0.1);color:#6366f1;padding:1px 5px;border-radius:4px;font-size:0.6rem;font-weight:700;margin-right:4px;"><?= htmlspecialchars($acc['gl_code']) ?></span>
+                    <?php endif; ?>
+                    <?= ucfirst(str_replace('_',' ',$acc['type'])) ?>
+                </div>
             </div>
         </div>
         <div class="acc-row-bal <?= $isPos ? 'pos' : 'neg' ?>">
             <?= APP_CURRENCY ?> <?= number_format($acc['current_balance'], DECIMAL_PLACES) ?>
         </div>
     </div>
+    </a>
     <?php endforeach; ?>
     <?php if (!empty($accounts)): ?>
     <div class="acc-total-bar" style="grid-column:1/-1;">
@@ -159,6 +169,77 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     </div>
     <?php endif; ?>
 </div>
+
+<!-- Account Transactions Panel -->
+<?php if ($selectedAccount): ?>
+<?php
+    $txnIn  = array_sum(array_map(fn($t) => $t['amount'] > 0 ? $t['amount'] : 0, $accountTxns));
+    $txnOut = array_sum(array_map(fn($t) => $t['amount'] < 0 ? abs($t['amount']) : 0, $accountTxns));
+?>
+<div class="hist-card" style="margin-bottom:24px;">
+    <div class="hist-head" style="background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.03));">
+        <span>
+            <i class="bi bi-clock-history" style="color:var(--primary);"></i>
+            <?= htmlspecialchars($selectedAccount['name']) ?> — Transactions
+            <span style="font-size:.72rem;font-weight:500;color:var(--text-muted);margin-left:6px;">(last 200)</span>
+        </span>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <span style="font-size:.78rem;"><span style="color:#10b981;font-weight:700;">↑ IN <?= APP_CURRENCY ?> <?= number_format($txnIn, DECIMAL_PLACES) ?></span>&nbsp;&nbsp;<span style="color:#ef4444;font-weight:700;">↓ OUT <?= APP_CURRENCY ?> <?= number_format($txnOut, DECIMAL_PLACES) ?></span></span>
+            <?php if (Auth::can('settings','edit')): ?>
+            <form method="POST" action="?page=accounts&action=recalcBalance" style="display:inline;"
+                  onsubmit="return confirm('Recalculate this account balance from ledger?\\n\\nThis sets current_balance = opening_balance + payments - expenses + transfers.\\n\\nNote: Manual Adjust Balance changes are not stored separately and may be overridden by recalculation.');">
+                <?= Auth::csrfField() ?>
+                <input type="hidden" name="account_id" value="<?= (int)$selectedAccount['id'] ?>">
+                <button type="submit" class="btn btn-sm btn-outline-primary pin-protect" style="font-size:.78rem;">
+                    <i class="bi bi-arrow-repeat me-1"></i> Recalculate
+                </button>
+            </form>
+            <?php endif; ?>
+            <a href="?page=accounts" style="font-size:.78rem;color:var(--text-muted);text-decoration:none;" title="Close">✕ Close</a>
+        </div>
+    </div>
+    <?php if (empty($accountTxns)): ?>
+    <div class="hist-empty"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>No transactions found for this account.</div>
+    <?php else: ?>
+    <table class="hist-tbl">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Reference</th>
+                <th>Type</th>
+                <th>Party / Description</th>
+                <th style="text-align:right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($accountTxns as $txn):
+            $isCredit = (float)$txn['amount'] > 0;
+            $typeLabel = match($txn['txn_type']) {
+                'payment'    => ['label'=>'Payment',    'color'=>'#10b981', 'bg'=>'rgba(16,185,129,.1)',  'icon'=>'bi-cash'],
+                'expense'    => ['label'=>'Expense',    'color'=>'#ef4444', 'bg'=>'rgba(239,68,68,.1)',   'icon'=>'bi-receipt'],
+                'transfer'   => ['label'=>'Transfer',   'color'=>'#6366f1', 'bg'=>'rgba(99,102,241,.1)',  'icon'=>'bi-arrow-left-right'],
+                'po_payment' => ['label'=>'PO Payment', 'color'=>'#f59e0b', 'bg'=>'rgba(245,158,11,.1)', 'icon'=>'bi-box-arrow-in-down'],
+                default      => ['label'=>$txn['txn_type'], 'color'=>'#6b7280', 'bg'=>'rgba(107,114,128,.1)', 'icon'=>'bi-circle'],
+            };
+        ?>
+        <tr>
+            <td style="color:var(--text-muted);font-size:.8rem;white-space:nowrap;"><?= date('d M Y', strtotime($txn['date'])) ?></td>
+            <td><span class="trf-no"><?= htmlspecialchars($txn['ref_no'] ?: '—') ?></span><?php if (!empty($txn['invoice_ref'])): ?><br><span style="font-size:.7rem;color:var(--text-muted);"><?= htmlspecialchars($txn['invoice_ref']) ?></span><?php endif; ?></td>
+            <td><span style="background:<?= $typeLabel['bg'] ?>;color:<?= $typeLabel['color'] ?>;padding:3px 9px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;"><i class="bi <?= $typeLabel['icon'] ?> me-1"></i><?= $typeLabel['label'] ?></span></td>
+            <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= htmlspecialchars($txn['party'] . ($txn['note'] ? ' — ' . $txn['note'] : '')) ?>">
+                <?= htmlspecialchars($txn['party']) ?>
+                <?php if ($txn['note']): ?><br><span style="font-size:.72rem;color:var(--text-muted);"><?= htmlspecialchars($txn['note']) ?></span><?php endif; ?>
+            </td>
+            <td style="text-align:right;font-weight:800;font-size:.9rem;color:<?= (float)$txn['amount'] >= 0 ? '#10b981' : '#ef4444' ?>;white-space:nowrap;">
+                <?= (float)$txn['amount'] >= 0 ? '+' : '' ?><?= APP_CURRENCY ?> <?= number_format(abs((float)$txn['amount']), DECIMAL_PLACES) ?>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- Adjust Balance Panel -->
 <div class="acc-panel" id="adjustPanel" style="display:none;">
@@ -229,6 +310,10 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                     </select>
                 </div>
                 <div class="acc-field">
+                    <label>GL Code <span style="color:var(--text-muted);font-weight:400;">(e.g. 1001)</span></label>
+                    <input type="text" name="gl_code" placeholder="e.g. 1001" maxlength="10" style="font-family:monospace;">
+                </div>
+                <div class="acc-field">
                     <label>Opening Balance</label>
                     <input type="number" name="opening_balance" step="0.001" value="0.000" placeholder="0.000">
                 </div>
@@ -250,6 +335,7 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     <div class="acc-panel-body">
         <form method="POST" action="?page=accounts&action=transfer">
             <?= Auth::csrfField() ?>
+            <input type="hidden" name="account_transfer_nonce" value="<?= htmlspecialchars($accountTransferNonce ?? '') ?>">
             <div class="acc-form-row" style="grid-template-columns:1fr 60px 1fr 160px 200px;">
 
                 <div class="acc-field acc-field-green">

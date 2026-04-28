@@ -1,104 +1,61 @@
-# ============================================================
-# InvenTrack Pro — Security + Performance
-# ============================================================
+# InvenTrack Pro — minimal secure profile
 
-# ── GZIP Compression ─────────────────────────────────────────
+# Compression
 <IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/html text/plain text/css
-    AddOutputFilterByType DEFLATE application/javascript application/json
-    AddOutputFilterByType DEFLATE application/x-font-ttf font/opentype
-    AddOutputFilterByType DEFLATE image/svg+xml
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
 </IfModule>
 
-# ── Browser Caching for static assets ────────────────────────
+# Caching
 <IfModule mod_expires.c>
     ExpiresActive On
-    # CSS and JavaScript — 1 week
-    ExpiresByType text/css                  "access plus 1 week"
-    ExpiresByType application/javascript    "access plus 1 week"
-    # Images — 1 month
-    ExpiresByType image/png                 "access plus 1 month"
-    ExpiresByType image/jpg                 "access plus 1 month"
-    ExpiresByType image/jpeg                "access plus 1 month"
-    ExpiresByType image/gif                 "access plus 1 month"
-    ExpiresByType image/svg+xml             "access plus 1 month"
-    ExpiresByType image/webp                "access plus 1 month"
-    ExpiresByType image/x-icon              "access plus 1 year"
-    # Fonts — 1 month
-    ExpiresByType font/woff2               "access plus 1 month"
-    ExpiresByType font/woff                "access plus 1 month"
-    ExpiresByType application/font-woff    "access plus 1 month"
+    ExpiresByType text/css "access plus 1 week"
+    ExpiresByType application/javascript "access plus 1 week"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpg "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/gif "access plus 1 month"
+    ExpiresByType image/svg+xml "access plus 1 month"
+    ExpiresByType image/webp "access plus 1 month"
+    ExpiresByType image/x-icon "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 month"
+    ExpiresByType font/woff "access plus 1 month"
 </IfModule>
 
-# ── Cache-Control headers ─────────────────────────────────────
 <IfModule mod_headers.c>
-    # Static assets — cache aggressively
     <FilesMatch "\.(css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf)$">
         Header set Cache-Control "public, max-age=604800, immutable"
     </FilesMatch>
-    # HTML/PHP — never cache (dynamic)
     <FilesMatch "\.(php|html)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
     </FilesMatch>
-</IfModule>
 
-# ── Keep-Alive connections ────────────────────────────────────
-<IfModule mod_headers.c>
-    Header set Connection keep-alive
-</IfModule>
-
-# ── Security headers ──────────────────────────────────────────
-<IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; frame-ancestors 'self';"
 </IfModule>
 
-# ── Security: block sensitive files ──────────────────────────
+# Deny direct access to sensitive paths
+RedirectMatch 403 ^/(config|app|backups|database|cron|api/v1|graphify-out|\.claude|\.idea|\.vscode|\.vs)(/.*)?$
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^\.git - [F,L]
+    RewriteRule ^\.git(/.*)?$ - [F,L]
     RewriteRule ^\.env - [F,L]
     RewriteRule ^\.gitignore - [F,L]
+    RewriteRule ^\.user(\.ini)?$ - [F,L]
 </IfModule>
 
-<IfModule mod_authz_core.c>
-    <DirectoryMatch "^/.*/\.(git|svn|hg)">
-        Require all denied
-    </DirectoryMatch>
-</IfModule>
-
-RedirectMatch 403 ^/config(/.*)?$
-RedirectMatch 403 ^/app(/.*)?$
-RedirectMatch 403 ^/backups(/.*)?$
-RedirectMatch 403 ^/database(/.*)?$
-
-<FilesMatch "^\.env">
+<FilesMatch "^\.env|^\.ht|^\.user\.ini$|^user\.ini$|^\.user$|\.sql$|\.php\.bak$|\.php\.old$|\.php\.swp$|\.php~$|\.log$|\.bak$|\.old$|\.swp$|~$|\.(md|markdown|code-workspace|yml|yaml|toml|lock)$|^(composer\.json|composer\.lock|package\.json|package-lock\.json|yarn\.lock)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
     <IfModule !mod_authz_core.c>
         Order Allow,Deny
         Deny from all
-    </IfModule>
-</FilesMatch>
-
-<FilesMatch "\.sql$">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Order Allow,Deny
-        Deny from all
-    </IfModule>
-</FilesMatch>
-
-<FilesMatch "\.php\.bak$|\.php\.old$|\.log$">
-    <IfModule mod_authz_core.c>
-        Require all denied
     </IfModule>
 </FilesMatch>
 

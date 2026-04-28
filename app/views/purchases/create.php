@@ -84,6 +84,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 
 <form method="POST" action="?page=purchases&action=store" id="purForm">
     <?= Auth::csrfField() ?>
+    <input type="hidden" name="purchase_form_nonce" value="<?= htmlspecialchars($purchaseFormNonce ?? '') ?>">
     <input type="hidden" name="tax" value="0">
     <input type="hidden" name="paid_amount" id="purPaidHidden" value="0">
     <input type="hidden" name="payment_method" value="cash">

@@ -118,6 +118,20 @@
                                 </label>
                             </div>
                         </div>
+                        <!-- IMEI Optional Toggle (for laptops/serials where scanning is optional) -->
+                        <div class="col-12" id="imeiOptionalRow" style="<?= ($item['has_imei'] ?? 1) ? '' : 'display:none' ?>">
+                            <div style="display:flex;align-items:center;gap:14px;background:rgba(251,191,36,0.06);border:1.5px solid rgba(251,191,36,0.3);border-radius:12px;padding:14px 18px;">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" name="imei_optional" value="1"
+                                        id="imeiOptionalCheck" <?= !empty($item['imei_optional']) ? 'checked' : '' ?>
+                                        style="width:3.2rem;height:1.7rem;cursor:pointer;">
+                                </div>
+                                <label for="imeiOptionalCheck" style="cursor:pointer;margin:0;">
+                                    <span style="font-weight:600;color:var(--text-main);font-size:0.95rem;">IMEI / Serial Optional</span>
+                                    <small style="display:block;color:var(--text-muted);font-size:0.78rem;margin-top:2px;">Allow sale without scanning serial (e.g. laptops)</small>
+                                </label>
+                            </div>
+                        </div>
                         <?php if (isset($editMode)): ?>
                         <div class="col-12">
                             <div class="form-check form-switch">
@@ -142,3 +156,14 @@
         </form>
     </div>
 </div>
+<script>
+document.getElementById('hasImeiCheck').addEventListener('change', function() {
+    var row = document.getElementById('imeiOptionalRow');
+    if (this.checked) {
+        row.style.display = '';
+    } else {
+        row.style.display = 'none';
+        document.getElementById('imeiOptionalCheck').checked = false;
+    }
+});
+</script>

@@ -8,14 +8,24 @@
         color:<?= $isIn ? '#059669' : '#dc2626' ?>;">
         <?= $isIn ? 'Payment In' : 'Payment Out' ?>
     </span>
-    <div class="ms-auto d-flex gap-2">
-        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+    <div class="ms-auto d-flex flex-wrap gap-2 justify-content-end align-items-center" style="row-gap:8px;">
+        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
         <?php if (Auth::can('payments','edit')): ?>
         <a href="?page=payments&action=edit&id=<?= $payment['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
+        <?php endif; ?>
+        <?php if (Auth::can('payments','delete') && ($payment['ref_type'] ?? '') !== 'discount'): ?>
+        <form method="POST" action="?page=payments&action=delete" style="display:inline;"
+              onsubmit="return confirm('Delete this payment permanently? Account and invoice balances will be reversed.');">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$payment['id'] ?>">
+            <button type="submit" class="btn btn-sm btn-outline-danger pin-protect">
+                <i class="bi bi-trash me-1"></i> Delete
+            </button>
+        </form>
         <?php endif; ?>
     </div>
 </div>

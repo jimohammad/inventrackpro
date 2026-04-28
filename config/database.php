@@ -114,18 +114,15 @@ class Database {
         ]));
     }
 
-    /**
-     * Check if connection is still alive, reconnect if not
-     */
-    private function ensureConnected(): void {
-        try {
-            // Ping the server with a lightweight query
-            $this->pdo->query('SELECT 1');
-        } catch (PDOException $e) {
-            error_log("DB connection lost, reconnecting... " . $e->getMessage());
-            $this->pdo = null;
+    /** Reconnect only on MySQL "gone away" (2006) or "lost connection" (2013) */
+    private function reconnectIfNeeded(PDOException $e): void {
+        $code = $e->errorInfo[1] ?? 0;
+        if (in_array($code, [2006, 2013])) {
+            error_log("DB connection lost ({$code}), reconnecting...");
             $this->connect();
+            return;
         }
+        throw $e;
     }
 
     public static function getInstance(): Database {
@@ -136,15 +133,20 @@ class Database {
     }
 
     public function getConnection(): PDO {
-        $this->ensureConnected();
         return $this->pdo;
     }
 
     public function query(string $sql, array $params = []): PDOStatement {
-        $this->ensureConnected();
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt;
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt;
+        } catch (PDOException $e) {
+            $this->reconnectIfNeeded($e);
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt;
+        }
     }
 
     public function fetchOne(string $sql, array $params = []): array|false {
@@ -165,8 +167,12 @@ class Database {
     }
 
     public function beginTransaction(): void {
-        $this->ensureConnected();
-        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->beginTransaction();
+        } catch (PDOException $e) {
+            $this->reconnectIfNeeded($e);
+            $this->pdo->beginTransaction();
+        }
     }
 
     public function commit(): void {

@@ -7,7 +7,7 @@
 .customer-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
 .customer-search-wrap{position:relative;flex:1;min-width:220px;max-width:340px;}
 .customer-search-wrap .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;}
-.customer-search-wrap input{width:100%;padding:9px 12px 9px 36px;border:2px solid #e0e7ff;border-radius:10px;font-size:0.875rem;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
+.customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #e0e7ff;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
 .customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
 .inv-meta{display:flex;gap:20px;align-items:center;margin-left:auto;flex-wrap:wrap;}

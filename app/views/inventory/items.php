@@ -8,11 +8,18 @@
 
 <div class="card">
     <div class="card-body p-0">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;position:relative;">
-            <i class="bi bi-search" style="color:#6366f1;font-size:1rem;"></i>
-            <input type="text" id="itemSearchBox" placeholder="Search items to edit — type name or SKU..."
-                   style="flex:1;border:none;outline:none;font-size:0.9rem;color:var(--text-main);background:transparent;"
-                   autocomplete="off">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;position:relative;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:240px;">
+                <i class="bi bi-search" style="color:#6366f1;font-size:1rem;"></i>
+                <input type="text" id="itemSearchBox" placeholder="Search items to edit — type name or SKU..."
+                       style="flex:1;border:none;outline:none;font-size:0.9rem;color:var(--text-main);background:transparent;"
+                       autocomplete="off">
+            </div>
+
+            <label style="display:flex;align-items:center;gap:8px;margin-left:auto;font-weight:700;color:#334155;font-size:0.85rem;user-select:none;">
+                <input type="checkbox" id="inStockOnly" checked style="width:16px;height:16px;accent-color:#6366f1;">
+                In Stock only
+            </label>
         </div>
         <table class="table mb-0" id="itemsTable">
             <thead>
@@ -32,7 +39,7 @@
                 <tr><td colspan="8" class="text-center text-muted py-5"><i class="bi bi-box-seam fs-2 d-block mb-2"></i>No items yet</td></tr>
                 <?php else: ?>
                 <?php foreach ($items as $idx => $it): ?>
-                <tr>
+                <tr data-stock="<?= (int)($it['total_stock'] ?? 0) ?>">
                     <td style="text-align:center;color:var(--text-muted);font-size:0.8rem;"><?= $idx + 1 ?></td>
                     <td class="fw-semibold"><?= htmlspecialchars($it['name']) ?></td>
                     <td><?= htmlspecialchars($it['category_name'] ?? '—') ?></td>
@@ -63,12 +70,20 @@
     </div>
 </div>
 <script>
-document.getElementById('itemSearchBox').addEventListener('input', function() {
-    var q = this.value.toLowerCase().trim();
+function applyItemsFilter() {
+    var q = (document.getElementById('itemSearchBox')?.value || '').toLowerCase().trim();
+    var inStockOnly = !!document.getElementById('inStockOnly')?.checked;
     var rows = document.querySelectorAll('#itemsTable tbody tr');
     rows.forEach(function(row) {
         var text = row.textContent.toLowerCase();
-        row.style.display = (!q || text.includes(q)) ? '' : 'none';
+        var stock = parseInt(row.dataset.stock || '0', 10) || 0;
+        var okSearch = (!q || text.includes(q));
+        var okStock  = (!inStockOnly || stock > 0);
+        row.style.display = (okSearch && okStock) ? '' : 'none';
     });
-});
+}
+
+document.getElementById('itemSearchBox')?.addEventListener('input', applyItemsFilter);
+document.getElementById('inStockOnly')?.addEventListener('change', applyItemsFilter);
+applyItemsFilter();
 </script>

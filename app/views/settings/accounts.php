@@ -126,8 +126,9 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     $typeColors = ['cash' => '#10b981', 'bank' => '#3b82f6', 'mobile_wallet' => '#8b5cf6', 'other' => '#f59e0b'];
     $typeIcons  = ['cash' => 'bi-cash-stack', 'bank' => 'bi-bank', 'mobile_wallet' => 'bi-phone', 'other' => 'bi-wallet2'];
     foreach ($accounts as $acc):
-        $color = $typeColors[$acc['type']] ?? '#6366f1';
-        $icon  = $typeIcons[$acc['type']] ?? 'bi-wallet2';
+        $accType = $acc['normalized_type'] ?? $acc['type'];
+        $color = $typeColors[$accType] ?? '#6366f1';
+        $icon  = $typeIcons[$accType] ?? 'bi-wallet2';
         $isPos = $acc['current_balance'] >= 0;
         $totalBal += (float)$acc['current_balance'];
     ?>
@@ -152,7 +153,7 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                     <?php if (!empty($acc['gl_code'])): ?>
                     <span style="font-family:monospace;background:rgba(99,102,241,0.1);color:#6366f1;padding:1px 5px;border-radius:4px;font-size:0.6rem;font-weight:700;margin-right:4px;"><?= htmlspecialchars($acc['gl_code']) ?></span>
                     <?php endif; ?>
-                    <?= ucfirst(str_replace('_',' ',$acc['type'])) ?>
+                    <?= ucfirst(str_replace('_',' ',$accType)) ?>
                 </div>
             </div>
         </div>

@@ -35,7 +35,7 @@
     <?php endif; ?>
 
     <link rel="preload" href="assets/css/layout.css?v=20260425" as="style">
-    <link rel="preload" href="assets/js/app.js?v=20260425" as="script">
+    <link rel="preload" href="assets/js/app.js?v=20260430" as="script">
     <link rel="stylesheet" href="assets/css/layout.css?v=20260425">
 </head>
 <body>
@@ -201,9 +201,14 @@
     <a href="?page=landedcost" class="sidebar-link <?= ($page ?? '') === 'landedcost' ? 'active' : '' ?>">
         <i class="bi bi-calculator"></i> Landed Cost
     </a>
-    <a href="?page=discounts" class="sidebar-link <?= ($page ?? '') === 'discounts' ? 'active' : '' ?>">
-        <i class="bi bi-tag"></i> Discounts
-    </a>
+    <div class="sidebar-link-wrap">
+        <a href="?page=discounts" class="sidebar-link <?= ($page ?? '') === 'discounts' ? 'active' : '' ?>">
+            <i class="bi bi-tag"></i> Discounts
+        </a>
+        <?php if (Auth::can('settings', 'add')): ?>
+        <a href="?page=discounts&new=1" class="quick-add-btn" title="New Discount">+</a>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
 
     <?php if (Auth::can('reports', 'view')): ?>
@@ -260,6 +265,7 @@
         <div style="display:flex;align-items:center;gap:5px;font-size:0.72rem;color:#475569;" class="d-none d-lg-flex">
             <span style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#818cf8;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+S</span>Sale
             <span style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#34d399;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+P</span>Purchase
+            <span style="background:rgba(14,165,233,0.12);border:1px solid rgba(14,165,233,0.25);color:#38bdf8;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+A</span>Accounts
             <span style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#fbbf24;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+E</span>Expense
             <span style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);color:#60a5fa;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+I/O</span>Payment
         </div>
@@ -352,7 +358,7 @@
 <?php if (isset($page) && $page === 'reports'): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <?php endif; ?>
-<script src="assets/js/app.js?v=20260425"></script>
+<script src="assets/js/app.js?v=20260430"></script>
 
 <?php if (isset($extraJs)): ?>
 <script><?= $extraJs ?></script>

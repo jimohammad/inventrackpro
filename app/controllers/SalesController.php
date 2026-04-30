@@ -58,6 +58,7 @@ class SalesController extends BaseController {
         $last       = $db->fetchOne("SELECT invoice_no FROM sales ORDER BY id DESC LIMIT 1");
         $lastNum    = $last ? (int) substr($last['invoice_no'], strlen(SALE_PREFIX)) : 0;
         $nextInv    = SALE_PREFIX . str_pad($lastNum + 1, 6, '0', STR_PAD_LEFT);
+        $saleDraft  = $this->consumeSaleDraft();
         $pageTitle  = 'New Sale';
         $page       = 'sales';
 
@@ -69,6 +70,83 @@ class SalesController extends BaseController {
         include __DIR__ . '/../views/sales/create.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    private function saveSaleDraftFromPost(): void {
+        $rawItems = $_POST['items'] ?? [];
+        $items    = [];
+        foreach ($rawItems as $row) {
+            $itemId = (int)($row['item_id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+            $items[] = [
+                'item_id'    => $itemId,
+                'quantity'   => (int)($row['quantity'] ?? 0),
+                'unit_price' => (float)($row['unit_price'] ?? 0),
+                'discount'   => (float)($row['discount'] ?? 0),
+                'imeis'      => (string)($row['imeis'] ?? ''),
+            ];
+        }
+
+        $_SESSION['sale_create_draft'] = [
+            'party_id'     => (int)($_POST['party_id'] ?? 0),
+            'warehouse_id' => (int)($_POST['warehouse_id'] ?? 0),
+            'date'         => (string)($_POST['date'] ?? date('Y-m-d')),
+            'discount'     => (float)($_POST['discount'] ?? 0),
+            'items'        => $items,
+        ];
+    }
+
+    private function consumeSaleDraft(): ?array {
+        $draft = $_SESSION['sale_create_draft'] ?? null;
+        unset($_SESSION['sale_create_draft']);
+        if (!is_array($draft)) {
+            return null;
+        }
+
+        $db = Database::getInstance();
+        $partyId = (int)($draft['party_id'] ?? 0);
+        if ($partyId > 0) {
+            $party = $db->fetchOne(
+                "SELECT id, name, phone, credit_limit FROM parties WHERE id = ?",
+                [$partyId]
+            );
+            if ($party) {
+                $draft['party'] = $party;
+                $bal = $db->fetchOne(
+                    "SELECT
+                        p.opening_balance
+                        + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
+                        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
+                        - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
+                        as net_balance
+                     FROM parties p WHERE p.id = ?",
+                    [$partyId]
+                );
+                $draft['party']['balance'] = (float)($bal['net_balance'] ?? 0);
+            }
+        }
+
+        $itemIds = array_values(array_unique(array_filter(array_map(
+            static fn($r) => (int)($r['item_id'] ?? 0),
+            $draft['items'] ?? []
+        ))));
+        if (!empty($itemIds)) {
+            $ph = implode(',', array_fill(0, count($itemIds), '?'));
+            $rows = $db->fetchAll("SELECT id, name FROM items WHERE id IN ({$ph})", $itemIds);
+            $nameMap = [];
+            foreach ($rows as $r) {
+                $nameMap[(int)$r['id']] = $r['name'];
+            }
+            foreach ($draft['items'] as &$item) {
+                $iid = (int)($item['item_id'] ?? 0);
+                $item['item_name'] = $nameMap[$iid] ?? ('Item #' . $iid);
+            }
+            unset($item);
+        }
+
+        return $draft;
     }
 
     // Save new sale
@@ -136,6 +214,7 @@ class SalesController extends BaseController {
                 $totalAfterInvoice = $outstandingTotal + $newTotal;
 
                 if ($totalAfterInvoice > $creditLimit) {
+                    $this->saveSaleDraftFromPost();
                     $this->flash('error',
                         "{$name}'s credit limit is " . APP_CURRENCY . " " . number_format($creditLimit, DECIMAL_PLACES) .
                         ". Current outstanding: " . APP_CURRENCY . " " . number_format($outstandingTotal, DECIMAL_PLACES) .
@@ -221,6 +300,7 @@ class SalesController extends BaseController {
         }
 
         if ($hasError || empty($items)) {
+            $this->saveSaleDraftFromPost();
             if (!$hasError) $this->flash('error', 'Please add at least one item.');
             $this->redirect('?page=sales&action=create');
         }
@@ -271,6 +351,7 @@ class SalesController extends BaseController {
             }
             $this->redirect('?page=sales&action=detail&id=' . $result['id']);
         } else {
+            $this->saveSaleDraftFromPost();
             $this->flash('error', 'Failed to save sale: ' . $result['error']);
             $this->redirect('?page=sales&action=create');
         }
@@ -896,13 +977,20 @@ class SalesController extends BaseController {
     public function searchParties(): void {
         header('Content-Type: application/json');
         $q = trim($_GET['q'] ?? '');
+        $type = trim((string)($_GET['type'] ?? 'customer'));
 
         if (strlen($q) < 1) {
             echo json_encode([]);
             return;
         }
 
-        $parties = $this->partyModel->search($q, 'customer');
+        // Allow supplier/customer searches from other modules (purchase/returns/sales).
+        $allowedTypes = ['all', 'customer', 'supplier', 'both'];
+        if (!in_array($type, $allowedTypes, true)) {
+            $type = 'customer';
+        }
+
+        $parties = $this->partyModel->search($q, $type);
         echo json_encode($parties);
     }
 

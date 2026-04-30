@@ -535,6 +535,137 @@ class PurchaseController extends BaseController {
         echo json_encode(['ok' => true, 'imei' => $imei, 'scanned' => $scanned, 'qty' => $qty]);
     }
 
+    // AJAX: bulk-save many IMEIs from paste with duplicate validation
+    public function imeiScanBulk(): void {
+        Auth::authorize('purchases', 'edit');
+        header('Content-Type: application/json');
+
+        if (!$this->isPost()) { echo json_encode(['ok' => false, 'msg' => 'POST required.']); return; }
+
+        $purchaseId = $this->inputInt('purchase_id', 0, 'post');
+        $itemId     = $this->inputInt('item_id',     0, 'post');
+        $raw        = (string) $this->input('imeis', '', 'post');
+
+        if (!$purchaseId || !$itemId || $raw === '') {
+            echo json_encode(['ok' => false, 'msg' => 'Missing data.']); return;
+        }
+
+        $db = Database::getInstance();
+
+        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
+        if (!$purchase) { echo json_encode(['ok' => false, 'msg' => 'Purchase not found.']); return; }
+        $warehouseId = $purchase['warehouse_id'] ?? null;
+
+        $item = $db->fetchOne(
+            "SELECT pi.quantity,
+                    (SELECT COUNT(*) FROM imei_records WHERE purchase_id=? AND item_id=?) AS scanned
+             FROM purchase_items pi
+             WHERE pi.purchase_id=? AND pi.item_id=?",
+            [$purchaseId, $itemId, $purchaseId, $itemId]
+        );
+        if (!$item) { echo json_encode(['ok' => false, 'msg' => 'Item not in this purchase.']); return; }
+
+        $qty       = (int) $item['quantity'];
+        $scanned   = (int) $item['scanned'];
+        $remaining = max(0, $qty - $scanned);
+
+        // Parse — split on newlines, commas, semicolons, whitespace fences
+        $tokens  = preg_split('/[\r\n,;\s]+/', $raw);
+        $skipped = [];
+        $clean   = [];
+        $seen    = [];
+
+        foreach ($tokens as $tok) {
+            $imei = strtoupper(trim((string) $tok));
+            if ($imei === '') continue;
+            if (!preg_match('/^\d{15,18}$/', $imei)) {
+                $skipped[] = ['imei' => $imei, 'reason' => 'Must be 15–18 digits'];
+                continue;
+            }
+            if (isset($seen[$imei])) {
+                $skipped[] = ['imei' => $imei, 'reason' => 'Duplicate in list'];
+                continue;
+            }
+            $seen[$imei] = true;
+            $clean[]     = $imei;
+        }
+
+        if (empty($clean)) {
+            echo json_encode([
+                'ok'      => true,
+                'saved'   => 0,
+                'skipped' => $skipped,
+                'scanned' => $scanned,
+                'qty'     => $qty,
+                'msg'     => 'No valid IMEIs to import.',
+            ]);
+            return;
+        }
+
+        // Bulk-fetch existing records for all candidates (single query)
+        $placeholders = implode(',', array_fill(0, count($clean), '?'));
+        $existingRows = $db->fetchAll(
+            "SELECT imei, item_id, purchase_id FROM imei_records WHERE imei IN ($placeholders)",
+            $clean
+        );
+        $existingMap = [];
+        foreach ($existingRows as $row) {
+            $existingMap[$row['imei']] = $row;
+        }
+
+        $savedCount = 0;
+        $db->beginTransaction();
+        try {
+            foreach ($clean as $imei) {
+                if (isset($existingMap[$imei])) {
+                    $ex = $existingMap[$imei];
+                    if ((int)$ex['purchase_id'] === $purchaseId && (int)$ex['item_id'] === $itemId) {
+                        $skipped[] = ['imei' => $imei, 'reason' => 'Already scanned in this purchase'];
+                    } else {
+                        $skipped[] = ['imei' => $imei, 'reason' => 'Exists in another record'];
+                    }
+                    continue;
+                }
+
+                if ($remaining <= 0) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Exceeds remaining quantity'];
+                    continue;
+                }
+
+                $db->insert(
+                    "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status) VALUES (?,?,?,?,'in_stock')",
+                    [$imei, $itemId, $warehouseId, $purchaseId]
+                );
+                $savedCount++;
+                $remaining--;
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('imeiScanBulk error: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Database error during bulk import.']);
+            return;
+        }
+
+        $totalScanned = (int) $db->fetchOne(
+            "SELECT COUNT(*) AS c FROM imei_records WHERE purchase_id=? AND item_id=?",
+            [$purchaseId, $itemId]
+        )['c'];
+
+        if ($savedCount > 0) {
+            $this->logActivity('imei_bulk_scan_purchase', 'imei_records', $purchaseId,
+                "Bulk imported {$savedCount} IMEI(s) for item #{$itemId} on purchase #{$purchaseId}; skipped " . count($skipped));
+        }
+
+        echo json_encode([
+            'ok'      => true,
+            'saved'   => $savedCount,
+            'skipped' => $skipped,
+            'scanned' => $totalScanned,
+            'qty'     => $qty,
+        ]);
+    }
+
     // AJAX: delete last scanned IMEI (undo)
     public function imeiScanDelete(): void {
         Auth::authorize('purchases', 'edit');

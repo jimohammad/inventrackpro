@@ -33,8 +33,27 @@ abstract class BaseController {
                 "SELECT id, name, type, current_balance, is_default, sort_order
                  FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
             );
+            foreach (self::$accountsCache as &$acc) {
+                $acc['normalized_type'] = self::normalizeAccountType(
+                    (string)($acc['type'] ?? ''),
+                    (string)($acc['name'] ?? '')
+                );
+            }
+            unset($acc);
         }
         return self::$accountsCache;
+    }
+
+    /**
+     * Normalize legacy/special account names into behavior types used by payment flows.
+     */
+    protected static function normalizeAccountType(string $type, string $name = ''): string {
+        $normalized = strtolower(trim($type));
+        $nameKey    = strtolower(trim($name));
+        if ($nameKey === 'wamd cbk') {
+            return 'bank';
+        }
+        return $normalized !== '' ? $normalized : 'cash';
     }
 
     /** Active warehouses — cached once per request (rarely changes). */

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Receipt <?= $payment['payment_no'] ?></title>
+<?php $thermal = isset($_GET['thermal']); ?>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -11,7 +12,7 @@ body {
     font-size: 12px;
     color: #000;
     background: #fff;
-    padding: 20px 4px;
+    padding: <?= $thermal ? '8px 2px' : '20px 4px' ?>;
 }
 
 .no-print {
@@ -29,20 +30,20 @@ body {
 .no-print button.edit-btn  { background: #f59e0b; }
 
 .wrap {
-    max-width: 480px;
+    max-width: <?= $thermal ? '72mm' : '480px' ?>;
     margin: 0 auto;
-    padding: 16px 6px;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    padding: <?= $thermal ? '8px 3px' : '16px 6px' ?>;
+    border: <?= $thermal ? 'none' : '1px solid #e5e7eb' ?>;
+    border-radius: <?= $thermal ? '0' : '10px' ?>;
 }
 
 .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
 .company-name { font-size: 18px; font-weight: 800; color: #1e3a5f; }
-.company-info { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.6; }
+.company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
 
 .receipt-title {
     text-align: center;
-    font-size: 13px; font-weight: 800;
+    font-size: <?= $thermal ? '12px' : '13px' ?>; font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 2px;
     color: #6366f1;
@@ -83,7 +84,11 @@ body {
     body { padding: 0; background: #fff; }
     .no-print { display: none !important; }
     .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
+    <?php if ($thermal): ?>
+    @page { size: 72mm auto; margin: 2mm; }
+    <?php else: ?>
     @page { margin: 8mm 3mm 8mm 3mm; }
+    <?php endif; ?>
 }
 </style>
 </head>
@@ -91,6 +96,11 @@ body {
 
 <div class="no-print">
     <button onclick="window.print()"><i>⎙</i> Print</button>
+    <?php if (!$thermal): ?>
+    <button onclick="window.location='?page=payments&action=print&id=<?= (int)$payment['id'] ?>&autoprint=1&thermal=1'" style="background:#059669;color:#fff;"><b>🖨 Thermal</b></button>
+    <?php else: ?>
+    <button onclick="window.location='?page=payments&action=print&id=<?= (int)$payment['id'] ?>'" style="background:#6366f1;color:#fff;"><b>⬚ A4</b></button>
+    <?php endif; ?>
     <button onclick="exportPDF()" style="background:#dc2626;color:#fff;"><b>⤓ PDF</b></button>
     <?php if (Auth::can('payments','edit')): ?>
     <button class="edit-btn" onclick="window.location='?page=payments&action=edit&id=<?= $payment['id'] ?>'"><i>✎</i> Edit</button>
@@ -170,7 +180,7 @@ function exportPDF() {
         filename: '<?= $payment['payment_no'] ?>.pdf',
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        jsPDF: { unit: 'mm', format: '<?= $thermal ? 'a7' : 'a4' ?>', orientation: 'portrait' }
     }).from(document.querySelector('.wrap')).save().then(function() {
         btn.disabled = false;
         btn.innerHTML = '<b>⤓ PDF</b>';

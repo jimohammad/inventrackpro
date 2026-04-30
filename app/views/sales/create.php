@@ -52,9 +52,10 @@
     color:#6366f1; font-size:1rem; z-index:2; pointer-events:none;
 }
 .customer-search-wrap input {
-    width:100%; padding:9px 12px 9px 36px;
-    border:2px solid #e0e7ff; border-radius:10px;
-    font-size:0.875rem; color:#1a1a2e; background:#fafbff;
+    width:100%; padding:11px 12px 11px 40px;
+    border:2px solid #94a3b8; border-radius:10px;
+    min-height:44px;
+    font-size:1.02rem; font-weight:600; color:#1a1a2e; background:#fafbff;
     transition:all 0.2s; outline:none;
 }
 .customer-search-wrap input:focus {
@@ -99,10 +100,10 @@
     display:flex; align-items:center; gap:6px;
 }
 table.items-tbl {
-    width:100%; border-collapse:collapse; font-size:0.83rem;
+    width:100%; border-collapse:collapse; font-size:0.9rem;
 }
 table.items-tbl th {
-    padding:9px 10px; font-size:0.7rem; font-weight:700;
+    padding:9px 10px; font-size:0.74rem; font-weight:700;
     text-transform:uppercase; letter-spacing:0.5px;
     color:#64748b; background:#f8fafc;
     border-bottom:2px solid #e2e8f0;
@@ -116,7 +117,7 @@ table.items-tbl tbody tr { background:#fff; transition:background 0.1s; }
 table.items-tbl tbody tr:hover { background:#f8faff; }
 table.items-tbl input, table.items-tbl select {
     border:none; outline:none; background:transparent;
-    width:100%; font-size:0.83rem; color:#1e293b; padding:3px;
+    width:100%; font-size:0.88rem; color:#1e293b; padding:3px;
 }
 table.items-tbl input:focus {
     background:#eff6ff; border-radius:4px; outline:none;
@@ -135,7 +136,7 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
     background:linear-gradient(135deg,#eff6ff,#e0e7ff);
     border:1px solid #c7d2fe; color:#6366f1;
     border-radius:7px; padding:4px 8px;
-    font-size:0.75rem; cursor:pointer;
+    font-size:0.79rem; cursor:pointer;
     display:inline-flex; align-items:center; gap:3px;
     font-weight:600; transition:all 0.15s;
     white-space:nowrap;
@@ -150,28 +151,48 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
     border-color:#6ee7b7; color:#059669;
 }
 
-/* Scan-first IMEI bar */
+/* Scan-first IMEI bar — padding + field width match .customer-bar / .customer-search-wrap */
 .scan-bar {
-    display:flex; align-items:center; gap:10px;
-    padding:10px 16px;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:14px 20px;
     background:linear-gradient(135deg,#eff6ff,#e0e7ff);
     border:1px solid #c7d2fe; border-top:none;
 }
-.scan-bar-icon { color:#6366f1; font-size:1.1rem; flex-shrink:0; }
+.scan-bar-wrap {
+    position:relative; flex:1; min-width:480px; max-width:760px;
+}
+.scan-bar-wrap .scan-bar-inner-icon {
+    position:absolute; left:12px; top:50%; transform:translateY(-50%);
+    color:#6366f1; font-size:1rem; z-index:2; pointer-events:none;
+}
 .scan-bar-input {
-    flex:1; padding:9px 14px; border:2px solid #6366f1; border-radius:8px;
-    font-size:1rem; font-family:monospace; letter-spacing:1px;
-    background:#fff; color:#1e293b; outline:none;
+    width:100%; padding:11px 16px 11px 40px;
+    border:2px solid #94a3b8; border-radius:10px; min-height:44px;
+    font-size:1rem; font-family:monospace; letter-spacing:0.5px;
+    background:#fafbff; color:#1e293b; outline:none;
+    transition:all 0.2s;
 }
-.scan-bar-input:focus { box-shadow:0 0 0 3px rgba(99,102,241,0.2); }
+.scan-bar-input:focus {
+    border-color:#6366f1; background:#fff;
+    box-shadow:0 0 0 3px rgba(99,102,241,0.1);
+}
 .scan-bar-input::placeholder { font-family:inherit; font-size:0.82rem; letter-spacing:normal; color:#94a3b8; }
-.scan-bar-msg {
-    font-size:0.78rem; font-weight:600; min-width:140px; text-align:center;
-    padding:4px 10px; border-radius:6px;
+.scan-bar-meta {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    margin-left:auto; min-width:0;
 }
-.scan-bar-msg.ok { background:#d1fae5; color:#065f46; }
-.scan-bar-msg.err { background:#fee2e2; color:#991b1b; }
-.scan-bar-count { font-size:0.75rem; color:#6366f1; font-weight:700; white-space:nowrap; }
+.scan-bar-msg {
+    font-size:0.78rem; font-weight:600; text-align:left;
+    padding:4px 0; border-radius:6px; min-height:1.25em;
+}
+.scan-bar-msg.ok { background:transparent; color:#065f46; }
+.scan-bar-msg.err { background:transparent; color:#991b1b; }
+.scan-bar-count {
+    font-size:0.75rem; color:#6366f1; font-weight:700; white-space:nowrap;
+}
+@media (max-width: 640px) {
+    .scan-bar-wrap { min-width:0; max-width:100%; flex:1 1 100%; }
+}
 
 /* Add row strip */
 
@@ -213,7 +234,7 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
 .totals-row {
     display:flex; justify-content:space-between; align-items:center;
     padding:6px 0; border-bottom:1px solid #e8edf5;
-    font-size:0.85rem; color:#64748b;
+    font-size:0.9rem; color:#64748b;
 }
 .totals-row:last-child { border-bottom:none; }
 .totals-row.grand {
@@ -419,36 +440,16 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
         <div id="afterSalePreview" style="display:none;font-size:0.75rem;color:#7c3aed;font-weight:600;padding:5px 20px 8px;background:#f5f3ff;"></div>
     </div>
 
-    <!-- IMEI SCAN BAR -->
+    <!-- IMEI SCAN BAR (aligned with customer row: same inset + icon-inside field) -->
     <div class="scan-bar">
-        <span class="scan-bar-icon"><i class="bi bi-upc-scan"></i></span>
-        <input type="text" class="scan-bar-input" id="imeiScanBar" placeholder="Scan IMEI barcode — auto-adds item with price" autocomplete="off"
-               onkeydown="if(event.key==='Enter'){event.preventDefault();scanImeiToRow();}">
-        <span class="scan-bar-msg" id="scanBarMsg"></span>
-        <span class="scan-bar-count" id="scanBarCount">0 scanned</span>
-    </div>
-
-    <!-- Unregistered IMEI item picker (shown when scanned IMEI is not in DB) -->
-    <div id="unregPicker" style="display:none;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:10px;">
-        <div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-            <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;"></i>
-            IMEI <span id="unregImeiDisplay" style="font-family:monospace;font-size:.85rem;background:#fef3c7;padding:1px 6px;border-radius:4px;"></span>
-            not registered — select which item this phone is:
+        <div class="scan-bar-wrap">
+            <i class="bi bi-upc-scan scan-bar-inner-icon" aria-hidden="true"></i>
+            <input type="text" class="scan-bar-input" id="imeiScanBar" placeholder="Scan IMEI barcode — auto-adds item with price" autocomplete="off"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();scanImeiToRow();}">
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-            <div style="position:relative;flex:1;">
-                <input type="text" id="unregItemSearch"
-                       placeholder="Type item name to search..."
-                       autocomplete="off"
-                       oninput="searchUnregItem(this.value)"
-                       style="width:100%;padding:8px 12px;border:1.5px solid #f59e0b;border-radius:8px;font-size:.85rem;outline:none;background:#fff;">
-                <div id="unregItemDropdown"
-                     style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:200px;overflow-y:auto;margin-top:2px;"></div>
-            </div>
-            <button type="button" onclick="cancelUnreg()"
-                    style="padding:8px 14px;background:#fff;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:#6b7280;white-space:nowrap;">
-                <i class="bi bi-x"></i> Cancel
-            </button>
+        <div class="scan-bar-meta">
+            <span class="scan-bar-msg" id="scanBarMsg"></span>
+            <span class="scan-bar-count" id="scanBarCount">0 scanned</span>
         </div>
     </div>
 
@@ -456,10 +457,10 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
     <div class="items-card">
         <div class="items-card-header">
             <span><i class="bi bi-grid-3x3-gap-fill"></i> Items</span>
-            <span style="font-size:0.75rem;color:#94a3b8;font-weight:400;">
+            <span style="font-size:0.8rem;color:#94a3b8;font-weight:400;">
                 <span id="totalQtyBadge" style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:20px;font-weight:700;">0 items</span>
                 <?php if (in_array(Auth::role(), ['cashier','viewer'])): ?>
-                <span style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;margin-left:6px;">
+                <span style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);padding:2px 10px;border-radius:20px;font-size:0.76rem;font-weight:600;margin-left:6px;">
                     <i class="bi bi-shield-check me-1"></i>Min price protected
                 </span>
                 <?php endif; ?>
@@ -502,7 +503,7 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
             <!-- No payment at sale — collect via Payments page -->
             <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;">
                 <i class="bi bi-info-circle" style="color:#6366f1;"></i>
-                <span style="font-size:0.78rem;color:#64748b;">Payment will be collected separately via <strong>Payments</strong> page after saving this invoice.</span>
+                <span style="font-size:0.82rem;color:#64748b;">Payment will be collected separately via <strong>Payments</strong> page after saving this invoice.</span>
             </div>
             <input type="hidden" name="paid_amount" value="0">
         </div>
@@ -604,13 +605,71 @@ let warehouseId    = document.getElementById('warehouseSelect').value;
 let payMode        = 'credit';
 let activeImeis    = [];
 let currentItemName = '';
+const saleDraft = <?= json_encode($saleDraft ?? null, JSON_UNESCAPED_UNICODE) ?>;
 
 // ═══ INIT ═══
 document.addEventListener('DOMContentLoaded', () => {
     addRow(true); addRow(true);
+    restoreSaleDraft();
     document.getElementById('partySearch').focus();
     setInterval(updateClock, 1000);
 });
+
+function restoreSaleDraft() {
+    if (!saleDraft || !Array.isArray(saleDraft.items) || !saleDraft.items.length) return;
+
+    // Reset auto-created blank rows before restoring draft items.
+    const body = document.getElementById('itemsBody');
+    body.innerHTML = '';
+    imeiData = {};
+    rowCount = 0;
+
+    if (saleDraft.warehouse_id) {
+        const whEl = document.getElementById('warehouseSelect');
+        whEl.value = String(saleDraft.warehouse_id);
+        warehouseId = whEl.value;
+    }
+    if (saleDraft.date) {
+        const dateEl = document.querySelector('input[name="date"]');
+        if (dateEl) dateEl.value = saleDraft.date;
+    }
+    if (typeof saleDraft.discount !== 'undefined') {
+        document.getElementById('discountInput').value = parseFloat(saleDraft.discount || 0).toFixed(3);
+    }
+
+    saleDraft.items.forEach(item => {
+        addRow(true);
+        const rid = 'row_' + rowCount;
+        const imeiList = String(item.imeis || '').split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+
+        document.querySelector('#' + rid + ' .item-search').value = item.item_name || ('Item #' + item.item_id);
+        document.getElementById('itemId_' + rid).value = item.item_id || '';
+        document.getElementById('qty_' + rid).value = item.quantity || '';
+        document.getElementById('price_' + rid).value = (parseFloat(item.unit_price || 0)).toFixed(3);
+        document.getElementById('disc_' + rid).value = (parseFloat(item.discount || 0)).toFixed(3);
+        document.getElementById('imeiInput_' + rid).value = imeiList.join('\n');
+        imeiData[rid] = imeiList;
+        if (imeiList.length > 0) updateImeiBtn(rid);
+        calcRow(rid);
+    });
+
+    // Keep one clean row available after restored lines.
+    addRow(true);
+
+    if (saleDraft.party && saleDraft.party.id) {
+        selectParty({
+            id: saleDraft.party.id,
+            name: saleDraft.party.name || ('Customer #' + saleDraft.party.id),
+            phone: saleDraft.party.phone || '',
+            balance: saleDraft.party.balance || 0,
+            credit_limit: saleDraft.party.credit_limit || 0
+        });
+    } else if (saleDraft.party_id) {
+        document.getElementById('partyIdInput').value = String(saleDraft.party_id);
+    }
+
+    calcTotals();
+}
 
 function updateClock() {
     const now = new Date();
@@ -1168,10 +1227,10 @@ function scanImeiToRow() {
 
             if (!data.found) {
                 if (data.accepted) {
-                    // IMEI not in DB — let user pick item manually
-                    openUnregPicker(data.imei || imei);
-                    msg.className = 'scan-bar-msg';
-                    msg.textContent = '';
+                    // IMEI not in DB — notification only (no item picker)
+                    msg.className = 'scan-bar-msg err';
+                    msg.textContent = 'IMEI not registered in system';
+                    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
                 } else {
                     msg.className = 'scan-bar-msg err';
                     msg.textContent = data.message || 'IMEI not found';
@@ -1269,112 +1328,4 @@ function updateImeiBtn(rid) {
         btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + count;
     }
 }
-
-// ── Unregistered IMEI picker ──────────────────────────────────────────
-var _unregImei      = null;
-var _unregTimer     = null;
-
-function openUnregPicker(imei) {
-    _unregImei = imei;
-    document.getElementById('unregImeiDisplay').textContent = imei;
-    document.getElementById('unregItemSearch').value        = '';
-    document.getElementById('unregItemDropdown').style.display = 'none';
-    document.getElementById('unregItemDropdown').innerHTML  = '';
-    document.getElementById('unregPicker').style.display   = 'block';
-    document.getElementById('unregPicker').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    setTimeout(() => document.getElementById('unregItemSearch').focus(), 150);
-}
-
-function cancelUnreg() {
-    _unregImei = null;
-    document.getElementById('unregPicker').style.display = 'none';
-    document.getElementById('imeiScanBar').focus();
-}
-
-function searchUnregItem(q) {
-    clearTimeout(_unregTimer);
-    const dd = document.getElementById('unregItemDropdown');
-    if (q.trim().length < 1) { dd.style.display = 'none'; return; }
-    _unregTimer = setTimeout(() => {
-        const whId = document.getElementById('warehouseId')?.value || 0;
-        fetch('?page=sales&action=searchItems&q=' + encodeURIComponent(q) + '&warehouse_id=' + whId)
-            .then(r => r.json())
-            .then(items => {
-                if (!items.length) {
-                    dd.innerHTML = '<div style="padding:10px 14px;font-size:.82rem;color:#6b7280;">No items found</div>';
-                } else {
-                    dd.innerHTML = items.map(it =>
-                        `<div onclick="selectUnregItem(${it.id},'${(it.name+'').replace(/'/g,"\\'")}',${parseFloat(it.sale_price)||0},${it.has_imei||0})"
-                              style="padding:9px 14px;font-size:.83rem;cursor:pointer;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;"
-                              onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
-                            <span style="font-weight:600;">${it.name}</span>
-                            <span style="color:#6b7280;font-size:.78rem;">Stock: ${it.stock ?? 0}</span>
-                        </div>`
-                    ).join('');
-                }
-                dd.style.display = 'block';
-            })
-            .catch(() => { dd.style.display = 'none'; });
-    }, 220);
-}
-
-function selectUnregItem(itemId, itemName, salePrice, hasImei) {
-    if (!_unregImei) return;
-    const imei = _unregImei;
-
-    // Hide picker
-    document.getElementById('unregPicker').style.display = 'none';
-    _unregImei = null;
-
-    // Find existing row for this item, or use empty row, or add new
-    let targetRid = null;
-    document.querySelectorAll('#itemsBody tr').forEach(tr => {
-        const rid = tr.dataset.rowId;
-        if (!targetRid && document.getElementById('itemId_' + rid)?.value == itemId) targetRid = rid;
-    });
-
-    if (!targetRid) {
-        let emptyRid = null;
-        document.querySelectorAll('#itemsBody tr').forEach(tr => {
-            const rid = tr.dataset.rowId;
-            if (!emptyRid && !document.getElementById('itemId_' + rid)?.value) emptyRid = rid;
-        });
-        if (!emptyRid) {
-            addRow();
-            const all = document.querySelectorAll('#itemsBody tr');
-            emptyRid = all[all.length - 1].dataset.rowId;
-        }
-        targetRid = emptyRid;
-        document.querySelector('#' + targetRid + ' .item-search').value = itemName;
-        document.getElementById('itemId_'   + targetRid).value = itemId;
-        document.getElementById('hasImei_'  + targetRid).value = hasImei;
-        document.getElementById('price_'    + targetRid).value = salePrice.toFixed(3);
-        document.getElementById('minPrice_' + targetRid).value = salePrice.toFixed(3);
-        document.getElementById('qty_'      + targetRid).value = 1;
-        addRow(); // blank row for next entry
-    }
-
-    if (!imeiData[targetRid]) imeiData[targetRid] = [];
-    imeiData[targetRid].push(imei);
-    document.getElementById('qty_'       + targetRid).value = imeiData[targetRid].length;
-    document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
-    updateImeiBtn(targetRid);
-    calcRow(targetRid);
-
-    scanCount++;
-    document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
-    const msg = document.getElementById('scanBarMsg');
-    msg.className   = 'scan-bar-msg ok';
-    msg.textContent = itemName.substring(0, 25);
-    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 2000);
-    calcTotals();
-    document.getElementById('imeiScanBar').focus();
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', e => {
-    if (!e.target.closest('#unregPicker')) {
-        document.getElementById('unregItemDropdown').style.display = 'none';
-    }
-});
 </script>

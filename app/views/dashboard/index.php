@@ -141,8 +141,9 @@ function money($val) {
                 ?>
                 <?php foreach ($accounts as $acc):
                     $totalBal += (float)$acc['current_balance'];
-                    $icon  = $typeIcons[$acc['type']]  ?? 'bi-wallet2';
-                    $color = $typeColors[$acc['type']] ?? '#8b5cf6';
+                    $accType = $acc['normalized_type'] ?? $acc['type'];
+                    $icon  = $typeIcons[$accType]  ?? 'bi-wallet2';
+                    $color = $typeColors[$accType] ?? '#8b5cf6';
                     $bal   = (float)$acc['current_balance'];
                 ?>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 8px;border-radius:4px;"

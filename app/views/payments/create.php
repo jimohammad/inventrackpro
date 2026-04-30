@@ -217,7 +217,7 @@
                     <label>Account <span id="acctTypeBadge" style="font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:5px;display:none;text-transform:uppercase;letter-spacing:.4px;"></span></label>
                     <select name="account_id" id="accountSelect" required onchange="onAccountChange()">
                         <?php foreach ($accounts as $acc): ?>
-                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['type']) ?>"><?= htmlspecialchars($acc['name']) ?></option>
+                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"><?= htmlspecialchars($acc['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -260,6 +260,9 @@
             </button>
             <button type="submit" class="pf-btn print" onclick="document.getElementById('printMode').value='1'">
                 <i class="bi bi-printer"></i> Save &amp; Print
+            </button>
+            <button type="submit" class="pf-btn print" style="background:linear-gradient(135deg,#059669,#047857);" onclick="document.getElementById('printMode').value='2'">
+                <i class="bi bi-receipt"></i> Save &amp; Thermal
             </button>
         </div>
     </form>
@@ -366,6 +369,12 @@ document.addEventListener('DOMContentLoaded', function() {
             $p.on('select2:select', function() { showPartyBalance(); });
             $p.on('select2:clear',  function() { document.getElementById('partyBal').classList.remove('show'); });
             if ($p.val()) showPartyBalance();
+            <?php if ($isReceive): ?>
+            // Default cursor focus on customer field for faster entry (receive mode only).
+            setTimeout(function() {
+                $p.select2('open');
+            }, 120);
+            <?php endif; ?>
         }
     }, 50);
 });

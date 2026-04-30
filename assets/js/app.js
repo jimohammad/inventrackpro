@@ -27,6 +27,7 @@ document.addEventListener('keydown', function(e) {
     const key = e.key.toLowerCase();
     if (key === 's') { e.preventDefault(); window.location.href = '?page=sales&action=create'; }
     if (key === 'p') { e.preventDefault(); window.location.href = '?page=purchases&action=create'; }
+    if (key === 'a') { e.preventDefault(); window.location.href = '?page=accounts'; }
     if (key === 'e') { e.preventDefault(); window.location.href = '?page=expenses&new=1'; }
     if (key === 'i') { e.preventDefault(); window.location.href = '?page=payments&action=create&type=in'; }
     if (key === 'o') { e.preventDefault(); window.location.href = '?page=payments&action=create&type=out'; }

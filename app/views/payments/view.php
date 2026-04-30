@@ -12,6 +12,9 @@
         <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
+        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1&thermal=1" target="_blank" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-receipt me-1"></i> Thermal
+        </a>
         <?php if (Auth::can('payments','edit')): ?>
         <a href="?page=payments&action=edit&id=<?= $payment['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit

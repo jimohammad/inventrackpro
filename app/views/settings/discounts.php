@@ -1,155 +1,193 @@
-<!-- Customer Discounts -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Customer Discounts</h1>
-        <p class="page-subtitle">Give discount to a customer — deducts from their outstanding balance</p>
+<style>
+.disc-page { display:flex; flex-direction:column; gap:14px; }
+.disc-hero {
+    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:16px 18px; border:1px solid #dbe3f4; border-radius:14px;
+    background:linear-gradient(135deg,#eef2ff,#f8faff 55%, #ecfeff);
+}
+.disc-hero h1 { margin:0; font-size:1.35rem; font-weight:800; color:#1e3a5f; }
+.disc-hero p { margin:2px 0 0; color:#64748b; font-size:.86rem; }
+.disc-btn-primary {
+    border:none; border-radius:10px; padding:9px 14px; font-size:.84rem; font-weight:700;
+    color:#fff; background:linear-gradient(135deg,#6366f1,#4f46e5); box-shadow:0 6px 18px rgba(79,70,229,.28);
+}
+.disc-btn-primary:hover { filter:brightness(.98); transform:translateY(-1px); }
+
+.disc-card {
+    border:1px solid #dbe3f4; border-radius:14px; overflow:hidden; background:#fff;
+    box-shadow:0 6px 18px rgba(2,6,23,.04);
+}
+.disc-card-head {
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:11px 16px; border-bottom:1px solid #e8eefb;
+    background:linear-gradient(135deg,#f8faff,#eef3ff);
+}
+.disc-card-title { font-size:.86rem; font-weight:800; color:#334155; letter-spacing:.2px; }
+.disc-card-sub { font-size:.74rem; color:#64748b; font-weight:600; }
+
+.disc-form-wrap { padding:16px; background:#fbfdff; }
+.disc-label { font-size:.72rem; font-weight:700; text-transform:uppercase; color:#475569; letter-spacing:.4px; margin-bottom:5px; }
+.disc-form-wrap .form-control, .disc-form-wrap .form-select, .disc-form-wrap .input-group-text {
+    border-radius:10px; border:1.6px solid #cbd5e1; min-height:36px; font-size:.84rem;
+}
+.disc-form-wrap .form-control:focus, .disc-form-wrap .form-select:focus {
+    border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.12);
+}
+
+.disc-table-wrap { padding:0; }
+#discountTable thead th {
+    background:#f8fafc; color:#64748b; font-size:.72rem; text-transform:uppercase; letter-spacing:.45px;
+    border-bottom:1.5px solid #e2e8f0; padding:.68rem .7rem;
+}
+#discountTable tbody td { padding:.65rem .7rem; font-size:.84rem; vertical-align:middle; }
+#discountTable tbody tr:hover { background:#f8fbff; }
+.disc-no { font-weight:700; color:#4f46e5; }
+.disc-amt { font-weight:800; color:#059669; }
+.disc-general { color:#94a3b8; font-style:italic; }
+.disc-muted { color:#64748b; font-size:.8rem; }
+
+.disc-act { display:inline-flex; gap:6px; }
+.disc-act .btn {
+    border:none; width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:8px; padding:0;
+}
+.disc-edit  { background:rgba(245,158,11,.14); color:#b45309; }
+.disc-print { background:rgba(16,185,129,.14); color:#047857; }
+.disc-del   { background:rgba(239,68,68,.14); color:#dc2626; }
+</style>
+
+<?php $openNewDiscount = isset($_GET['new']) && $_GET['new'] === '1'; ?>
+
+<div class="disc-page">
+    <div class="disc-hero">
+        <div>
+            <h1>Customer Discounts</h1>
+            <p>Give discounts and automatically reduce outstanding customer balances.</p>
+        </div>
+        <button id="toggleDiscountForm" class="disc-btn-primary" type="button">
+            <i class="bi bi-plus-lg me-1"></i> New Discount
+        </button>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="document.getElementById('discountForm').style.display = document.getElementById('discountForm').style.display === 'none' ? 'block' : 'none'">
-        <i class="bi bi-plus-lg me-1"></i> New Discount
-    </button>
-</div>
 
-<!-- New Discount Form -->
-<div class="card mb-4" id="discountForm" style="display:none;border-radius:12px;border:2px solid #c7d2fe;">
-    <div class="card-header" style="background:linear-gradient(135deg,#eff6ff,#f0f4ff);padding:12px 20px;font-weight:700;font-size:0.9rem;">
-        <i class="bi bi-tag me-2" style="color:#6366f1;"></i> Give Discount
-    </div>
-    <div class="card-body" style="padding:20px;">
-        <form method="POST" action="?page=discounts&action=store">
-            <?= Auth::csrfField() ?>
-            <div class="row g-3">
-                <!-- Date -->
-                <div class="col-md-2">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Date</label>
-                    <input type="date" name="date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
-                </div>
-
-                <!-- Customer -->
-                <div class="col-md-2">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Customer <span class="text-danger">*</span></label>
-                    <select name="party_id" class="form-select form-select-sm" required>
-                        <option value="">Select customer...</option>
-                        <?php foreach ($parties as $p): ?>
-                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Item (optional) -->
-                <div class="col-md-2">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Item <small class="text-muted">(optional)</small></label>
-                    <select name="item_id" class="form-select form-select-sm">
-                        <option value="">General</option>
-                        <?php foreach ($items as $it): ?>
-                        <option value="<?= $it['id'] ?>"><?= htmlspecialchars($it['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <!-- Per Piece -->
-                <div class="col-md-1">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Per Piece</label>
-                    <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0" placeholder="0.000"
-                           oninput="calcDiscTotal()" style="font-weight:600;">
-                </div>
-
-                <!-- Qty -->
-                <div class="col-md-1">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Qty</label>
-                    <input type="number" id="discQty" class="form-control form-control-sm" min="1" value="1"
-                           oninput="calcDiscTotal()" style="font-weight:600;text-align:center;">
-                </div>
-
-                <!-- Total Amount -->
-                <div class="col-md-2">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Total <span class="text-danger">*</span></label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text" style="font-weight:700;"><?= APP_CURRENCY ?></span>
-                        <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000"
-                               style="font-weight:700;color:#10b981;">
+    <div class="disc-card" id="discountForm" style="display:<?= $openNewDiscount ? 'block' : 'none' ?>;">
+        <div class="disc-card-head">
+            <span class="disc-card-title"><i class="bi bi-tag me-2" style="color:#6366f1;"></i>Give Discount</span>
+            <span class="disc-card-sub">Quick formula: per piece × qty = total</span>
+        </div>
+        <div class="disc-form-wrap">
+            <form method="POST" action="?page=discounts&action=store">
+                <?= Auth::csrfField() ?>
+                <div class="row g-3">
+                    <div class="col-md-2">
+                        <label class="disc-label">Date</label>
+                        <input type="date" name="date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="disc-label">Customer <span class="text-danger">*</span></label>
+                        <select name="party_id" class="form-select form-select-sm" required>
+                            <option value="">Select customer...</option>
+                            <?php foreach ($parties as $p): ?>
+                            <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="disc-label">Item <small class="text-muted" style="text-transform:none;">(optional)</small></label>
+                        <select name="item_id" class="form-select form-select-sm">
+                            <option value="">General</option>
+                            <?php foreach ($items as $it): ?>
+                            <option value="<?= $it['id'] ?>"><?= htmlspecialchars($it['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="disc-label">Per Piece</label>
+                        <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0" placeholder="0.000" style="font-weight:700;">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="disc-label">Qty</label>
+                        <input type="number" id="discQty" class="form-control form-control-sm" min="1" value="1" style="font-weight:700;text-align:center;">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="disc-label">Total <span class="text-danger">*</span></label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text" style="font-weight:800;"><?= APP_CURRENCY ?></span>
+                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:800;color:#059669;">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="disc-label">Reason</label>
+                        <input type="text" name="reason" class="form-control form-control-sm" placeholder="e.g. Price adjustment">
                     </div>
                 </div>
-
-                <!-- Reason -->
-                <div class="col-md-2">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Reason</label>
-                    <input type="text" name="reason" class="form-control form-control-sm" placeholder="e.g. Price adjustment">
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="disc-btn-primary"><i class="bi bi-check-lg me-1"></i> Apply Discount</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelDiscountForm">Cancel</button>
                 </div>
-            </div>
-
-            <div class="d-flex gap-2 mt-3">
-                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i> Apply Discount</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('discountForm').style.display='none'">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Discounts Table -->
-<div class="card" style="border-radius:12px;">
-    <div class="card-header" style="padding:10px 20px;font-weight:700;font-size:0.88rem;">
-        <i class="bi bi-list-check me-2" style="color:#6366f1;"></i> Discount History
-        <span style="font-size:0.75rem;color:var(--text-muted);margin-left:8px;">(<?= count($discounts) ?> records)</span>
-    </div>
-    <div class="card-body p-0">
-        <?php if (empty($discounts)): ?>
-        <div class="text-center text-muted py-5">
-            <i class="bi bi-tag fs-2 d-block mb-2" style="opacity:0.3;"></i>
-            No discounts given yet
+            </form>
         </div>
-        <?php else: ?>
-        <table class="table mb-0" id="discountTable">
-            <thead>
-                <tr>
-                    <th>Disc #</th>
-                    <th>Date</th>
-                    <th>Customer</th>
-                    <th>Item</th>
-                    <th class="text-center">Amount</th>
-                    <th>Reason</th>
-                    <th>By</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($discounts as $d): ?>
-                <tr>
-                    <td style="font-weight:600;color:#6366f1;"><?= $d['discount_no'] ?></td>
-                    <td><?= date('d M Y', strtotime($d['date'])) ?></td>
-                    <td style="font-weight:500;"><?= htmlspecialchars($d['party_name']) ?></td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);">
-                        <?= $d['item_name'] ? htmlspecialchars($d['item_name']) : '<span style="color:#94a3b8;">General</span>' ?>
-                    </td>
-                    <td class="text-center" style="font-weight:700;color:#10b981;">
-                        <?= APP_CURRENCY ?> <?= number_format($d['amount'], DECIMAL_PLACES) ?>
-                    </td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);"><?= htmlspecialchars($d['reason'] ?? '—') ?></td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);"><?= htmlspecialchars($d['created_by_name'] ?? '—') ?></td>
-                    <td>
-                        <div class="d-flex gap-1">
-                            <a href="?page=discounts&action=edit&id=<?= $d['id'] ?>"
-                               class="btn btn-sm pin-protect" style="background:rgba(245,158,11,0.12);color:#d97706;border:none;" title="Edit">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" target="_blank"
-                               class="btn btn-sm" style="background:rgba(16,185,129,0.12);color:#10b981;border:none;" title="Print">
-                                <i class="bi bi-printer"></i>
-                            </a>
-                            <form method="POST" action="?page=discounts&action=delete" style="display:inline;">
-                                <?= Auth::csrfField() ?>
-                                <input type="hidden" name="id" value="<?= $d['id'] ?>">
-                                <button type="submit" class="btn btn-sm pin-protect" style="background:rgba(239,68,68,0.12);color:#ef4444;border:none;" title="Reverse & Delete"
-                                        onclick="return confirm('Reverse this discount? KWD <?= number_format($d['amount'], DECIMAL_PLACES) ?> will be added back to customer balance.')">
-                                    <i class="bi bi-trash3"></i>
-                                </button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-        <?php endif; ?>
+    </div>
+
+    <div class="disc-card">
+        <div class="disc-card-head">
+            <span class="disc-card-title"><i class="bi bi-list-check me-2" style="color:#6366f1;"></i>Discount History</span>
+            <span class="disc-card-sub"><?= count($discounts) ?> records</span>
+        </div>
+        <div class="disc-table-wrap">
+            <?php if (empty($discounts)): ?>
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-tag fs-2 d-block mb-2" style="opacity:.3;"></i>
+                No discounts given yet
+            </div>
+            <?php else: ?>
+            <table class="table mb-0" id="discountTable">
+                <thead>
+                    <tr>
+                        <th>Disc #</th>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Item</th>
+                        <th class="text-center">Amount</th>
+                        <th>Reason</th>
+                        <th>By</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($discounts as $d): ?>
+                    <tr>
+                        <td class="disc-no"><?= $d['discount_no'] ?></td>
+                        <td><?= date('d M Y', strtotime($d['date'])) ?></td>
+                        <td style="font-weight:600;"><?= htmlspecialchars($d['party_name']) ?></td>
+                        <td class="disc-muted">
+                            <?= $d['item_name'] ? htmlspecialchars($d['item_name']) : '<span class="disc-general">General</span>' ?>
+                        </td>
+                        <td class="text-center disc-amt"><?= APP_CURRENCY ?> <?= number_format($d['amount'], DECIMAL_PLACES) ?></td>
+                        <td class="disc-muted"><?= htmlspecialchars($d['reason'] ?? '—') ?></td>
+                        <td class="disc-muted"><?= htmlspecialchars($d['created_by_name'] ?? '—') ?></td>
+                        <td>
+                            <div class="disc-act">
+                                <a href="?page=discounts&action=edit&id=<?= $d['id'] ?>" class="btn disc-edit pin-protect" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" target="_blank" class="btn disc-print" title="Print">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                                <form method="POST" action="?page=discounts&action=delete" style="display:inline;" class="discount-delete-form" data-amount="<?= number_format($d['amount'], DECIMAL_PLACES) ?>">
+                                    <?= Auth::csrfField() ?>
+                                    <input type="hidden" name="id" value="<?= $d['id'] ?>">
+                                    <button type="submit" class="btn disc-del pin-protect" title="Reverse & Delete">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -158,7 +196,7 @@ $(document).ready(function() {
     $('#discountTable').DataTable({
         pageLength: 25,
         order: [],
-        language: { search: '', searchPlaceholder: 'Search...' }
+        language: { search: '', searchPlaceholder: 'Search discount no, customer, reason...' }
     });
 });
 
@@ -168,4 +206,34 @@ function calcDiscTotal() {
     var total = perPiece * qty;
     document.getElementById('discTotalAmt').value = total > 0 ? total.toFixed(3) : '';
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var formWrap = document.getElementById('discountForm');
+    var toggleBtn = document.getElementById('toggleDiscountForm');
+    var cancelBtn = document.getElementById('cancelDiscountForm');
+    var perPiece = document.getElementById('discPerPiece');
+    var qty = document.getElementById('discQty');
+
+    function toggleDiscountForm(forceOpen) {
+        if (forceOpen === true) {
+            formWrap.style.display = 'block';
+            return;
+        }
+        formWrap.style.display = formWrap.style.display === 'none' ? 'block' : 'none';
+    }
+
+    toggleBtn.addEventListener('click', function() { toggleDiscountForm(); });
+    cancelBtn.addEventListener('click', function() { formWrap.style.display = 'none'; });
+    perPiece.addEventListener('input', calcDiscTotal);
+    qty.addEventListener('input', calcDiscTotal);
+
+    document.querySelectorAll('.discount-delete-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            var amount = form.getAttribute('data-amount') || '0.000';
+            if (!confirm('Reverse this discount? ' + '<?= APP_CURRENCY ?> ' + amount + ' will be added back to customer balance.')) {
+                e.preventDefault();
+            }
+        });
+    });
+});
 </script>

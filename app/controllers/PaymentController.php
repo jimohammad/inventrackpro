@@ -21,8 +21,11 @@ class PaymentController extends BaseController {
     private function derivePaymentMethod(int $accountId, string $chequeNo): string {
         if ($chequeNo !== '') return 'cheque';
         if (!$accountId)      return 'cash';
-        $row = Database::getInstance()->fetchOne("SELECT type FROM accounts WHERE id = ?", [$accountId]);
-        $type = $row['type'] ?? 'cash';
+        $row = Database::getInstance()->fetchOne("SELECT type, name FROM accounts WHERE id = ?", [$accountId]);
+        $type = self::normalizeAccountType(
+            (string)($row['type'] ?? ''),
+            (string)($row['name'] ?? '')
+        );
         // Map account.type -> payments.payment_method enum values
         $map = [
             'cash'          => 'cash',
@@ -249,9 +252,12 @@ class PaymentController extends BaseController {
 
         if ($id) {
             $this->logActivity('create_payment', 'payments', (int)$id);
-            $printMode = $this->input('print_mode') === '1';
-            if ($printMode) {
-                $this->redirect("?page=payments&action=print&id={$id}");
+            $printMode = (string)($this->input('print_mode') ?? '');
+            if ($printMode === '1') {
+                $this->redirect("?page=payments&action=print&id={$id}&autoprint=1");
+            }
+            if ($printMode === '2') {
+                $this->redirect("?page=payments&action=print&id={$id}&autoprint=1&thermal=1");
             }
             $this->flash('success', 'Payment recorded successfully.');
         } else {

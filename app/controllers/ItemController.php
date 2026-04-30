@@ -127,7 +127,7 @@ class ItemController extends BaseController {
         $params = $whId ? [$whId] : [];
 
         $stockList = $db->fetchAll(
-            "SELECT i.name, i.sku, i.brand, i.model, i.has_imei, i.min_stock,
+            "SELECT i.name, i.sku, i.brand, i.model, i.has_imei, i.min_stock, i.sale_price,
                     w.name as warehouse_name, s.quantity
              FROM stock s
              JOIN items i ON i.id = s.item_id

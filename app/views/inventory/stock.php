@@ -26,6 +26,16 @@
             </div>
         </div>
 
+        <div style="min-width:170px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+                <i class="bi bi-funnel me-1"></i>Filter
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;font-weight:700;user-select:none;">
+                <input type="checkbox" id="stockInOnly" checked style="width:16px;height:16px;accent-color:#6366f1;">
+                In Stock only
+            </label>
+        </div>
+
     </div>
 </div>
 
@@ -36,6 +46,7 @@
                 <tr>
                     <th class="th-blue" style="width:40px;">#</th>
                     <th class="th-blue">Item</th>
+                    <th class="th-blue text-end">Selling Price</th>
                     <th class="th-blue text-center">Quantity</th>
                     <th class="th-blue text-center">Min Stock</th>
                     <th class="th-blue">Status</th>
@@ -47,9 +58,12 @@
                 <?php else: ?>
                 <?php foreach ($stockList as $i => $s): ?>
                 <?php $isLow = (int)$s['quantity'] <= (int)$s['min_stock'] && (int)$s['min_stock'] > 0; ?>
-                <tr>
+                <tr data-qty="<?= (int)($s['quantity'] ?? 0) ?>">
                     <td style="text-align:center;color:var(--text-muted);font-size:0.8rem;"><?= $i + 1 ?></td>
                     <td class="fw-semibold"><?= htmlspecialchars($s['name']) ?></td>
+                    <td class="text-end fw-semibold">
+                        <?= APP_CURRENCY ?> <?= number_format((float)($s['sale_price'] ?? 0), DECIMAL_PLACES) ?>
+                    </td>
                     <td class="text-center">
                         <span class="fw-bold" style="font-size:1rem;color:<?= $isLow ? 'var(--danger)' : 'var(--success)' ?>;">
                             <?= $s['quantity'] ?>
@@ -71,12 +85,20 @@
     </div>
 </div>
 <script>
-document.getElementById('stockSearch').addEventListener('input', function() {
-    const q = this.value.toLowerCase().trim();
+function applyStockFilter() {
+    const q = (document.getElementById('stockSearch')?.value || '').toLowerCase().trim();
+    const inOnly = !!document.getElementById('stockInOnly')?.checked;
     const rows = document.querySelectorAll('#stockTable tbody tr');
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = (!q || text.includes(q)) ? '' : 'none';
+        const qty  = parseInt(row.dataset.qty || '0', 10) || 0;
+        const okSearch = (!q || text.includes(q));
+        const okStock  = (!inOnly || qty > 0);
+        row.style.display = (okSearch && okStock) ? '' : 'none';
     });
-});
+}
+
+document.getElementById('stockSearch')?.addEventListener('input', applyStockFilter);
+document.getElementById('stockInOnly')?.addEventListener('change', applyStockFilter);
+applyStockFilter();
 </script>

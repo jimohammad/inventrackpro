@@ -23,6 +23,13 @@ class ExpenseController extends BaseController {
         $categories = $this->expenseModel->getCategories();
         $summary    = $this->expenseModel->getSummaryByCategory($filters['from_date'], $filters['to_date']);
         $totalAmt   = array_sum(array_column($expenses, 'amount'));
+
+        $thisMonthStart = date('Y-m-01');
+        $thisMonthEnd   = date('Y-m-d');
+        $lastMonthStart  = date('Y-m-01', strtotime('first day of last month'));
+        $lastMonthEnd    = date('Y-m-t', strtotime('last month'));
+        $expenseThisMonth = $this->expenseModel->sumAmountBetween($thisMonthStart, $thisMonthEnd);
+        $expenseLastMonth = $this->expenseModel->sumAmountBetween($lastMonthStart, $lastMonthEnd);
         $db         = Database::getInstance();
         $accounts   = self::getAccounts();
         $pageTitle  = 'Expenses';
@@ -134,16 +141,21 @@ class ExpenseController extends BaseController {
 
         $id = $this->inputInt('id');
         $db = Database::getInstance();
-        $old = $this->expenseModel->find($id);
-        if (!$old) { $this->flash('error', 'Expense not found.'); $this->redirect('?page=expenses'); }
-
-        $newAmount    = $this->inputFloat('amount');
-        $oldAmount    = (float)$old['amount'];
-        $newAccountId = $this->inputInt('account_id') ?: (int)$old['account_id'];
-        $oldAccountId = (int)$old['account_id'];
 
         $db->beginTransaction();
         try {
+            $old = $db->fetchOne("SELECT * FROM expenses WHERE id = ? FOR UPDATE", [$id]);
+            if (!$old) { 
+                $db->rollback();
+                $this->flash('error', 'Expense not found.'); 
+                $this->redirect('?page=expenses'); 
+            }
+
+            $newAmount    = $this->inputFloat('amount');
+            $oldAmount    = (float)$old['amount'];
+            $newAccountId = $this->inputInt('account_id') ?: (int)$old['account_id'];
+            $oldAccountId = (int)$old['account_id'];
+
             if ($newAccountId !== $oldAccountId) {
                 // Account changed: restore full amount to old account, deduct full amount from new account
                 $db->execute(

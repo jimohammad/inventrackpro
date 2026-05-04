@@ -18,6 +18,8 @@
 .autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:200px;overflow-y:auto;margin-top:4px;}
 .autocomplete-item{padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f8fafc;}
 .autocomplete-item:hover{background:#f8faff;}
+.edit-imei-list{margin-top:6px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;}
+.edit-imei-list code{background:transparent;padding:0;font-size:0.78rem;color:#0f172a;}
 </style>
 
 <div class="d-flex align-items-center mb-4 gap-3">
@@ -97,14 +99,22 @@
 
                 <div class="d-flex gap-2 justify-content-end">
                     <a href="?page=sales&action=detail&id=<?= $editSale['id'] ?>" class="btn btn-outline-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary"
+                        onclick="document.getElementById('printAfterSave').value='0';document.getElementById('editPrintMode').value='0';">
                         <i class="bi bi-check-lg me-1"></i> Save Changes
                     </button>
-                    <button type="submit" class="btn btn-outline-primary" onclick="document.getElementById('printAfterSave').value='1'">
+                    <button type="submit" class="btn btn-outline-primary"
+                        onclick="document.getElementById('printAfterSave').value='1';document.getElementById('editPrintMode').value='1';">
                         <i class="bi bi-printer me-1"></i> Save & Print
+                    </button>
+                    <button type="submit" class="btn"
+                        style="background:rgba(5,150,105,0.12);color:#047857;border:1px solid rgba(5,150,105,0.35);"
+                        onclick="document.getElementById('printAfterSave').value='1';document.getElementById('editPrintMode').value='2';">
+                        <i class="bi bi-receipt me-1"></i> Save & Thermal
                     </button>
                 </div>
                 <input type="hidden" name="print_after_save" id="printAfterSave" value="0">
+                <input type="hidden" name="print_mode" id="editPrintMode" value="0">
             </div>
         </div>
     </div>
@@ -130,7 +140,11 @@
                     </thead>
                     <tbody id="itemsTbody">
                         <?php foreach ($editSale['items'] as $i => $item):
-                            $imeiCount = !empty($item['imei_list']) ? count(explode('||', $item['imei_list'])) : 0;
+                            $lineImeis = [];
+                            if (!empty($item['imei_list'])) {
+                                $lineImeis = array_values(array_filter(array_map('trim', explode('||', $item['imei_list']))));
+                            }
+                            $imeiCount = count($lineImeis);
                             $needsImei = !empty($item['has_imei']) && $imeiCount < (int)$item['quantity'];
                         ?>
                         <tr id="row_<?= $item['id'] ?>">
@@ -149,6 +163,14 @@
                                         <i class="bi bi-check-circle-fill"></i> <?= $imeiCount ?> IMEI<?= $imeiCount !== 1 ? 's' : '' ?>
                                     </span>
                                     <?php endif; ?>
+                                <?php endif; ?>
+                                <?php if ($lineImeis): ?>
+                                <div class="edit-imei-list">
+                                    <div style="font-size:0.65rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:4px;">IMEI / Serial</div>
+                                    <?php foreach ($lineImeis as $im): ?>
+                                    <code><?= htmlspecialchars($im) ?></code>
+                                    <?php endforeach; ?>
+                                </div>
                                 <?php endif; ?>
                                 <input type="hidden" name="items[<?= $item['id'] ?>][sale_item_id]" value="<?= $item['id'] ?>">
                                 <input type="hidden" name="items[<?= $item['id'] ?>][deleted]" id="del_<?= $item['id'] ?>" value="0">

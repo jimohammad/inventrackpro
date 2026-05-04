@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Performance: preconnect to CDN sources -->
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <!-- Preconnect only to CDNs we actually load (cdnjs) -->
     <title><?= $pageTitle ?? 'Dashboard' ?> | <?= APP_NAME ?></title>
     <script>
         // Apply theme before CSS loads to prevent flash
@@ -34,9 +31,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css">
     <?php endif; ?>
 
-    <link rel="preload" href="assets/css/layout.css?v=20260425" as="style">
-    <link rel="preload" href="assets/js/app.js?v=20260430" as="script">
-    <link rel="stylesheet" href="assets/css/layout.css?v=20260425">
+    <link rel="preload" href="assets/css/layout.css?v=20260502" as="style">
+    <link rel="preload" href="assets/js/app.js?v=20260502" as="script">
+    <link rel="stylesheet" href="assets/css/layout.css?v=20260502">
 </head>
 <body>
 
@@ -73,7 +70,7 @@
     <?php endif; ?>
     <?php if (Auth::can('sales', 'view')): ?>
     <div class="sidebar-link-wrap">
-        <a href="?page=sales" class="sidebar-link <?= ($page ?? '') === 'sales' ? 'active' : '' ?>">
+        <a href="?page=sales" class="sidebar-link <?= ($page ?? '') === 'sales' && (($_GET['view'] ?? '') !== 'voided') ? 'active' : '' ?>">
             <i class="bi bi-receipt"></i> Sales
         </a>
         <?php if (Auth::can('sales', 'add')): ?>
@@ -191,6 +188,9 @@
         <i class="bi bi-clipboard-check"></i> Stock Audit
     </a>
     <?php endif; ?>
+    <a href="/imei" class="sidebar-link <?= ($page ?? '') === 'imeitrack' ? 'active' : '' ?>">
+        <i class="bi bi-shield-check"></i> IMEI Warranty Track
+    </a>
     <?php endif; ?>
 
     <?php if (Auth::can('payments', 'view') || Auth::can('expenses', 'view')): ?>
@@ -358,14 +358,14 @@
 <?php if (isset($page) && $page === 'reports'): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <?php endif; ?>
-<script src="assets/js/app.js?v=20260430"></script>
+<script src="assets/js/app.js?v=20260502"></script>
 
 <?php if (isset($extraJs)): ?>
 <script><?= $extraJs ?></script>
 <?php endif; ?>
 
 <!-- Admin PIN Verification Modal -->
-<div id="pinModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:99999;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+<div id="pinModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.72);z-index:99999;align-items:center;justify-content:center;">
     <div style="background:var(--bg-card);border-radius:16px;padding:28px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,0.3);text-align:center;">
         <div style="width:52px;height:52px;border-radius:50%;background:rgba(245,158,11,0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
             <i class="bi bi-shield-lock" style="font-size:1.4rem;color:#f59e0b;"></i>

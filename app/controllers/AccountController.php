@@ -258,9 +258,14 @@ class AccountController extends BaseController {
         $db->beginTransaction();
         try {
             // Generate transfer number (locked inside transaction)
-            $last = $db->fetchOne("SELECT transfer_no FROM account_transfers ORDER BY id DESC LIMIT 1 FOR UPDATE");
-            $num  = $last ? (int) substr($last['transfer_no'], 4) + 1 : 1;
-            $transferNo = 'TRF-' . str_pad($num, 6, '0', STR_PAD_LEFT);
+            $row = $db->fetchOne(
+                "SELECT COALESCE(MAX(CAST(SUBSTRING(transfer_no, 5) AS UNSIGNED)), 0) AS max_no
+                 FROM account_transfers
+                 WHERE transfer_no LIKE 'TRF-%'
+                 FOR UPDATE"
+            );
+            $num  = (int)($row['max_no'] ?? 0);
+            $transferNo = 'TRF-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
             // Debit from source, credit to destination
             $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$amount, $fromId]);

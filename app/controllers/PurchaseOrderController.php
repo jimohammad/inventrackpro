@@ -125,12 +125,18 @@ class PurchaseOrderController extends BaseController {
         $paidKwd         = $this->inputFloat('paid_kwd');
         $paidForeign     = $exchangeRate > 0 ? round($paidKwd / $exchangeRate, 3) : $paidKwd;
         $warehouseId     = $this->inputInt('warehouse_id') ?: Auth::warehouseId();
+        
+        $accountId = $this->inputInt('account_id') ?: null;
+        if ($paidKwd > 0 && !$accountId) {
+            $this->flash('error', 'Please select an account for the paid amount.');
+            $this->redirect('?page=purchaseorders&action=create');
+            return;
+        }
 
         $status = $paidKwd >= $subtotalKwd ? 'paid' : 'draft';
 
         $this->db->beginTransaction();
         try {
-            $accountId = $paidKwd > 0 ? ($this->inputInt('account_id') ?: null) : null;
 
             $poId = $this->db->insert(
                 "INSERT INTO purchase_orders
@@ -478,16 +484,25 @@ class PurchaseOrderController extends BaseController {
         if ($po && $po['status'] !== 'converted') {
             $this->db->beginTransaction();
             try {
-                // Reverse account deduction if PO was already paid
-                if ($po['status'] === 'paid' && $po['account_id'] && (float)$po['paid_kwd'] > 0) {
+                // Reverse account deduction for any paid amount (full or partial)
+                if ($po['account_id'] && (float)$po['paid_kwd'] > 0) {
                     $this->db->execute(
                         "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
                         [(float)$po['paid_kwd'], $po['account_id']]
                     );
                 }
-                $this->db->execute("UPDATE purchase_orders SET status='cancelled' WHERE id=?", [$id]);
+                
+                // Delete associated payment records so supplier balance stays accurate
+                $this->db->execute("DELETE FROM payments WHERE ref_type='purchase_order' AND ref_id=?", [$id]);
+                
+                // Zero out paid amounts to prevent state leak on reactivation
+                $this->db->execute(
+                    "UPDATE purchase_orders SET status='cancelled', paid_kwd=0, paid_foreign=0, account_id=NULL WHERE id=?", 
+                    [$id]
+                );
+                
                 $this->db->commit();
-                $this->flash('success', 'Purchase Order cancelled.' . ($po['status'] === 'paid' ? ' Account balance restored.' : ''));
+                $this->flash('success', 'Purchase Order cancelled.' . ((float)$po['paid_kwd'] > 0 ? ' Account balance restored.' : ''));
             } catch (Exception $e) {
                 $this->db->rollback();
                 $this->flash('error', 'Cancellation failed. Please try again.');
@@ -617,9 +632,15 @@ class PurchaseOrderController extends BaseController {
         $paidForeign     = $exchangeRate > 0 ? round($paidKwd / $exchangeRate, 3) : $paidKwd;
         $status          = $paidKwd >= $subtotalKwd ? 'paid' : 'draft';
 
+        $newAccountId = $this->inputInt('account_id') ?: null;
+        if ($paidKwd > 0 && !$newAccountId) {
+            $this->flash('error', 'Please select an account for the paid amount.');
+            $this->redirect('?page=purchaseorders&action=edit&id=' . $id);
+            return;
+        }
+
         // Account handling: detect change in paid amount and deduct/refund accordingly
         $oldPaidKwd  = (float)$po['paid_kwd'];
-        $newAccountId = $paidKwd > 0 ? ($this->inputInt('account_id') ?: null) : null;
         $oldAccountId = (int)($po['account_id'] ?? 0);
         $paidDiff = round($paidKwd - $oldPaidKwd, 3);
 

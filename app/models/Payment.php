@@ -259,7 +259,7 @@ class Payment extends BaseModel {
     private function reverseFifoPurchaseApplications(int $partyId, int $warehouseId, float $amount): void {
         $remaining = $amount;
         $rows      = $this->db->fetchAll(
-            "SELECT id, paid_amount, balance
+            "SELECT id, paid_amount, balance, grand_total
              FROM purchases
              WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
              ORDER BY date DESC, id DESC",
@@ -275,7 +275,10 @@ class Payment extends BaseModel {
                 continue;
             }
             $newPaid = round($paid - $take, 3);
-            $newBal  = round((float) $row['balance'] + $take, 3);
+            
+            $returnsTot = (float)($this->db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'purchase_return' AND status = 'approved'", [$row['id']])['tot'] ?? 0);
+            $newBal  = max(0, round((float) $row['grand_total'] - $newPaid - $returnsTot, 3));
+            
             $status  = 'confirmed';
             if ($newPaid > 0.001) {
                 $status = ($newBal < 0.001) ? 'paid' : 'partial';
@@ -295,7 +298,7 @@ class Payment extends BaseModel {
     private function reverseFifoSaleApplications(int $partyId, int $warehouseId, float $amount): void {
         $remaining = $amount;
         $rows      = $this->db->fetchAll(
-            "SELECT id, paid_amount, balance
+            "SELECT id, paid_amount, balance, grand_total
              FROM sales
              WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
              ORDER BY date DESC, id DESC",
@@ -311,7 +314,10 @@ class Payment extends BaseModel {
                 continue;
             }
             $newPaid = round($paid - $take, 3);
-            $newBal  = round((float) $row['balance'] + $take, 3);
+            
+            $returnsTot = (float)($this->db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$row['id']])['tot'] ?? 0);
+            $newBal  = max(0, round((float) $row['grand_total'] - $newPaid - $returnsTot, 3));
+            
             $status  = 'confirmed';
             if ($newPaid > 0.001) {
                 $status = ($newBal < 0.001) ? 'paid' : 'partial';

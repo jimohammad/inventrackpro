@@ -18,16 +18,36 @@ header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 
 Auth::startSession();
 
+// #region agent log
+$debugPayload = [
+    'sessionId' => '04f822',
+    'runId' => 'run1',
+    'hypothesisId' => 'H0',
+    'location' => 'index.php:router',
+    'message' => 'Request routed in workspace entrypoint',
+    'data' => [
+        'requestUri' => $_SERVER['REQUEST_URI'] ?? '',
+        'requestMethod' => $_SERVER['REQUEST_METHOD'] ?? '',
+        'queryPage' => $_GET['page'] ?? '',
+        'queryAction' => $_GET['action'] ?? '',
+    ],
+    'timestamp' => (int) round(microtime(true) * 1000),
+];
+$debugLine = json_encode($debugPayload, JSON_UNESCAPED_SLASHES);
+if ($debugLine !== false) {
+    @file_put_contents('G:/My Drive/Iqbalerp_Folder/debug-04f822.log', $debugLine . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+// #endregion
+
 // Get the requested page from URL e.g. ?page=sales&action=add
 $page   = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['page'] ?? 'dashboard'));
 $action = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['action'] ?? 'index');
 if (empty($action)) $action = 'index';
 
-// Public pages that don't need login
-$publicPages = ['login', 'logout', 'fieldstatement', 'servicetrack'];
-$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetrack'];
+// Public pages that don't need login (see Auth::isPublicPage)
+$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetrack', 'imeitrack'];
 
-if (!in_array($page, $publicPages)) {
+if (!Auth::isPublicPage($page)) {
     Auth::required();
 }
 
@@ -67,6 +87,7 @@ $routes = [
     'imei'            => 'IMEIController',
     'service'         => 'ServiceController',
     'servicetrack'    => 'ServiceController',
+    'imeitrack'       => 'IMEIController',
     'users'           => 'UserController',
     'warehouses'      => 'WarehouseAdminController',
     'settings'        => 'SettingsController',

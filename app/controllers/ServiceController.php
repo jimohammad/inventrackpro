@@ -26,6 +26,21 @@ class ServiceController extends BaseController {
         };
     }
 
+    /** Preset values = item categories in use (service intake create/edit). */
+    public static function deviceBrandOptions(): array {
+        return [
+            'Buds',
+            'Charger',
+            'Honor',
+            'Laptop',
+            'Meizu',
+            'Motorola',
+            'Realme',
+            'Redmi',
+            'Samsung',
+        ];
+    }
+
     public function __construct() {
         parent::__construct();
         $this->db = Database::getInstance();
@@ -141,7 +156,11 @@ class ServiceController extends BaseController {
 
             $this->logActivity('create_service', 'service', $id, "Service {$serviceNo} for {$imei}");
             $this->flash('success', "Service {$serviceNo} created.");
-            $this->redirect('?page=service&action=detail&id=' . $id);
+            if ($this->input('save_action') === 'thermal') {
+                $this->redirect('?page=service&action=thermalReceipt&id=' . $id . '&autoprint=1');
+            } else {
+                $this->redirect('?page=service&action=detail&id=' . $id);
+            }
             return;
         }
 
@@ -184,6 +203,35 @@ class ServiceController extends BaseController {
         include __DIR__ . '/../views/service/detail.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Customer-facing 80mm-style thermal receipt (standalone HTML, no app layout).
+     */
+    public function thermalReceipt(): void {
+        Auth::authorize('service', 'view');
+
+        $id = $this->inputInt('id', 0, 'get');
+        $record = $this->db->fetchOne(
+            "SELECT sr.*, p.name as party_name, w.name as warehouse_name
+             FROM service_records sr
+             LEFT JOIN parties p ON p.id = sr.party_id
+             LEFT JOIN warehouses w ON w.id = sr.warehouse_id
+             WHERE sr.id = ? AND sr.warehouse_id = ?",
+            [$id, Auth::warehouseId()]
+        );
+
+        if (!$record) {
+            http_response_code(404);
+            echo 'Service record not found.';
+            return;
+        }
+
+        $settings = self::getSettings();
+        $stages   = self::stages();
+        $trackUrl = APP_URL . '/?page=servicetrack&token=' . rawurlencode((string) $record['tracking_token']);
+
+        include __DIR__ . '/../views/service/thermal_receipt.php';
     }
 
     public function updateStage(): void {

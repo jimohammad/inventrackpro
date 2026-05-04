@@ -159,10 +159,20 @@
     color: var(--text-muted);
 }
 .svc-btn-cancel:hover { border-color: #ef4444; color: #ef4444; }
+.svc-actions-right { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.svc-btn-print {
+    background: linear-gradient(135deg, #059669, #047857);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+.svc-btn-print:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4); }
 
 @media (max-width: 640px) {
     .svc-row2, .svc-row3, .svc-row21 { grid-template-columns: 1fr; }
     .svc-body { padding: 16px; }
+    .svc-actions { flex-wrap: wrap; }
+    .svc-actions-right { width: 100%; justify-content: stretch; }
+    .svc-actions-right .svc-btn { flex: 1; justify-content: center; min-width: 0; }
 }
 </style>
 
@@ -199,7 +209,7 @@
                 <div class="svc-row2" style="margin-top:12px;">
                     <div class="svc-f">
                         <label>Brand</label>
-                        <input type="text" name="device_brand" placeholder="Samsung, Redmi, Honor...">
+                        <?php $deviceBrandValue = ''; include __DIR__ . '/partials/device_brand_select.php'; ?>
                     </div>
                     <div class="svc-f">
                         <label>Model</label>
@@ -267,9 +277,14 @@
             <!-- Actions -->
             <div class="svc-actions">
                 <a href="?page=service" class="svc-btn svc-btn-cancel"><i class="bi bi-x-lg"></i> Cancel</a>
-                <button type="submit" class="svc-btn svc-btn-save">
-                    <i class="bi bi-check-lg"></i> Save & Create Tracking
-                </button>
+                <div class="svc-actions-right">
+                    <button type="submit" name="save_action" value="detail" class="svc-btn svc-btn-save">
+                        <i class="bi bi-check-lg"></i> Save &amp; Create Tracking
+                    </button>
+                    <button type="submit" name="save_action" value="thermal" class="svc-btn svc-btn-print" title="Saves the record, then opens the thermal receipt for printing">
+                        <i class="bi bi-printer"></i> Save &amp; Print Receipt
+                    </button>
+                </div>
             </div>
         </div>
     </form>

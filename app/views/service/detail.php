@@ -62,7 +62,12 @@ $trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
         <a href="?page=service" class="back"><i class="bi bi-arrow-left"></i></a>
         <h1><?= htmlspecialchars($record['service_no']) ?></h1>
         <span class="sd-badge" style="background:<?= ServiceController::statusColor($record['status']) ?>;"><?= $record['status'] ?></span>
-        <div style="margin-left:auto;font-size:.8rem;color:var(--text-muted);"><?= date('d M Y', strtotime($record['received_date'] ?: $record['created_at'])) ?></div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" target="_blank" rel="noopener" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
+                <i class="bi bi-receipt-cutoff"></i> Thermal receipt
+            </a>
+            <span style="font-size:.8rem;color:var(--text-muted);"><?= date('d M Y', strtotime($record['received_date'] ?: $record['created_at'])) ?></span>
+        </div>
     </div>
 
     <!-- Public tracking link -->

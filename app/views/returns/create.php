@@ -461,6 +461,11 @@ document.getElementById('retPartySearch').addEventListener('input', function() {
 
 // ── LOAD FROM INVOICE ──
 let invoiceTimer;
+function retEscapeHtml(text) {
+    const s = document.createElement('span');
+    s.textContent = text == null ? '' : String(text);
+    return s.innerHTML;
+}
 function searchInvoice(q) {
     clearTimeout(invoiceTimer);
     const drop = document.getElementById('invoiceDrop');
@@ -472,27 +477,40 @@ function searchInvoice(q) {
             .then(r => r.json())
             .then(invoices => {
                 if (!invoices.length) { drop.style.display = 'none'; return; }
-                drop.innerHTML = invoices.map(inv => `
-                    <div class="autocomplete-item" onmousedown="selectInvoice(event, ${inv.id}, '${inv.invoice_no.replace(/'/g,"\'")}', '${inv.party_name.replace(/'/g,"\'")}')">
-                        <strong>${inv.invoice_no}</strong>
+                drop.innerHTML = invoices.map(inv => {
+                    const invNo = retEscapeHtml(inv.invoice_no);
+                    const pnEsc = retEscapeHtml(inv.party_name);
+                    const dtEsc = retEscapeHtml(inv.date);
+                    const pid = parseInt(inv.party_id, 10) || 0;
+                    return `<div class="autocomplete-item ret-inv-pick" data-sale-id="${inv.id}" data-party-id="${pid}" data-pname="${encodeURIComponent(inv.party_name || '')}">
+                        <strong>${invNo}</strong>
                         <small style="float:right;color:#6366f1;font-weight:600;">${parseFloat(inv.grand_total).toFixed(3)} KWD</small>
-                        <br><small style="color:#94a3b8;">${inv.party_name} · ${inv.date}</small>
-                    </div>`).join('');
+                        <br><small style="color:#94a3b8;">${pnEsc} · ${dtEsc}</small>
+                    </div>`;
+                }).join('');
+                drop.querySelectorAll('.ret-inv-pick').forEach(el => {
+                    el.addEventListener('mousedown', function(ev) {
+                        ev.preventDefault();
+                        document.getElementById('refIdInput').value = this.dataset.saleId;
+                        document.getElementById('retPartyId').value = this.dataset.partyId;
+                        const ps = document.getElementById('retPartySearch');
+                        if (ps) {
+                            ps.value = decodeURIComponent(this.dataset.pname || '');
+                            ps.classList.add('selected');
+                        }
+                        const invEl = document.getElementById('invoiceSearch');
+                        if (invEl) {
+                            const strong = this.querySelector('strong');
+                            invEl.value = strong ? strong.textContent : '';
+                            invEl.style.borderColor = '#10b981';
+                            invEl.style.background  = '#f0fdf4';
+                        }
+                        drop.style.display = 'none';
+                    });
+                });
                 drop.style.display = 'block';
             });
     }, 250);
-}
-function selectInvoice(e, id, invNo, partyName) {
-    e.preventDefault();
-    document.getElementById('refIdInput').value = id;
-    var invEl = document.getElementById('invoiceSearch');
-    if (invEl) {
-        invEl.value = invNo;
-        invEl.style.borderColor = '#10b981';
-        invEl.style.background  = '#f0fdf4';
-    }
-    var dropEl = document.getElementById('invoiceDrop');
-    if (dropEl) dropEl.style.display = 'none';
 }
 if (document.getElementById('invoiceSearch')) {
     document.getElementById('invoiceSearch').addEventListener('blur', () => {
@@ -677,6 +695,17 @@ function processQuickScan() {
 
             // IMEI found in system — auto-fill item + price
             if (data.found) {
+                if (data.sale_id) {
+                    document.getElementById('refIdInput').value = String(data.sale_id);
+                }
+                if (data.party_id) {
+                    document.getElementById('retPartyId').value = String(data.party_id);
+                    const ps = document.getElementById('retPartySearch');
+                    if (ps && data.party_name) {
+                        ps.value = data.party_name;
+                        ps.classList.add('selected');
+                    }
+                }
                 const existingRid = findExistingRowForItem(data.item_id);
 
                 if (existingRid) {

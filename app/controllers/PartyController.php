@@ -147,7 +147,40 @@ class PartyController extends BaseController {
         // Check view permission based on party type
         Auth::authorize($this->partyModule($party['type']), 'view');
 
-        $ledger    = $this->partyModel->getLedger($id);
+        $db               = Database::getInstance();
+        $linkedSalesCount = (int) ($db->fetchOne(
+            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND status != 'cancelled'",
+            [$id]
+        )['c'] ?? 0);
+
+        $cancelledSalesCount = (int) ($db->fetchOne(
+            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND status = 'cancelled'",
+            [$id]
+        )['c'] ?? 0);
+
+        $cancelledSalesList = [];
+        if ($cancelledSalesCount > 0) {
+            $cancelledSalesList = $db->fetchAll(
+                "SELECT id, invoice_no, date, grand_total FROM sales
+                 WHERE party_id = ? AND status = 'cancelled'
+                 ORDER BY date ASC, id ASC",
+                [$id]
+            );
+        }
+
+        $ledger         = $this->partyModel->getLedger($id);
+        $ledgerMismatch = $linkedSalesCount > 0 && empty($ledger);
+
+        $ledgerHasSale = false;
+        foreach ($ledger as $row) {
+            if (($row['type'] ?? '') === 'sale') {
+                $ledgerHasSale = true;
+                break;
+            }
+        }
+        // Only flag “wrong party” if there is no sale history at all (not explained by voided invoices).
+        $ledgerReturnWrongParty = $linkedSalesCount === 0 && $cancelledSalesCount === 0 && !$ledgerHasSale && !empty($ledger);
+
         $pageTitle = $party['name'];
         $page      = 'parties';
 

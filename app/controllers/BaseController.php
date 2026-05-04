@@ -69,7 +69,10 @@ abstract class BaseController {
 
     public function __construct() {
         Auth::startSession();
-        Auth::required(); // every controller needs login by default
+        $page = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['page'] ?? 'dashboard'));
+        if (!Auth::isPublicPage($page)) {
+            Auth::required();
+        }
 
         // Auto CSRF check on every POST request
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -127,6 +130,21 @@ abstract class BaseController {
         $source = $from === 'get' ? $_GET : $_POST;
         $value  = $source[$key] ?? $default;
         return htmlspecialchars(trim($value), ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * Plain search/query string for use in SQL LIKE with bound parameters only.
+     * Do not HTML-escape here (that breaks matching and belongs on output).
+     */
+    protected function inputSearch(string $key, string $default = '', string $from = 'get', int $maxLen = 160): string {
+        $source = $from === 'get' ? $_GET : $_POST;
+        $value  = trim((string) ($source[$key] ?? $default));
+        if ($maxLen > 0) {
+            $value = function_exists('mb_substr')
+                ? mb_substr($value, 0, $maxLen, 'UTF-8')
+                : substr($value, 0, $maxLen);
+        }
+        return $value;
     }
 
     // Get integer input

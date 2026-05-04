@@ -84,6 +84,15 @@ class Auth {
         return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
     }
 
+    /**
+     * Router pages that skip login (must stay aligned with index.php public routing).
+     * Controllers extend BaseController, which also checks this before Auth::required().
+     */
+    public static function isPublicPage(string $page): bool {
+        $page = preg_replace('/[^a-z0-9_]/', '', strtolower($page));
+        return in_array($page, ['login', 'logout', 'fieldstatement', 'servicetrack', 'imeitrack'], true);
+    }
+
     // Redirect to login if not authenticated
     public static function required(): void {
         if (!self::check()) {

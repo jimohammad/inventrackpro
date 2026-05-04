@@ -66,11 +66,33 @@ class DashboardController extends BaseController {
             "SELECT name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
         );
         $todayCashFresh = $db->fetchOne(
-            "SELECT COALESCE(SUM(amount),0) as t, COUNT(*) as c
-             FROM payments WHERE date = CURDATE() AND payment_type = 'in' AND ref_type != 'discount' AND warehouse_id = ?",
+            "SELECT
+                COALESCE(SUM(py.amount),0) as total_received,
+                COUNT(*) as payment_count,
+                COALESCE(SUM(CASE WHEN a.type = 'cash' THEN py.amount ELSE 0 END),0) as cash_total,
+                COALESCE(SUM(CASE WHEN a.type = 'bank' THEN py.amount ELSE 0 END),0) as bank_total,
+                COALESCE(SUM(CASE
+                    WHEN a.type = 'cash' AND (a.is_default = 1 OR LOWER(TRIM(a.name)) = 'main cash')
+                    THEN py.amount ELSE 0 END),0) as main_cash_total
+             FROM payments py
+             JOIN accounts a ON a.id = py.account_id
+             WHERE py.date = CURDATE()
+               AND py.payment_type = 'in'
+               AND py.ref_type != 'discount'
+               AND py.warehouse_id = ?",
             [$whId]
         );
-        $todayCash = ['total' => (float)$todayCashFresh['t'], 'count' => (int)$todayCashFresh['c']];
+        $mainCashReceived = (float)($todayCashFresh['main_cash_total'] ?? 0);
+        $cashFallback = (float)($todayCashFresh['cash_total'] ?? 0);
+        if ($mainCashReceived <= 0 && $cashFallback > 0) {
+            $mainCashReceived = $cashFallback;
+        }
+        $todayCash = [
+            'total' => (float)($todayCashFresh['total_received'] ?? 0),
+            'count' => (int)($todayCashFresh['payment_count'] ?? 0),
+            'main_cash' => $mainCashReceived,
+            'bank_total' => (float)($todayCashFresh['bank_total'] ?? 0),
+        ];
 
         $expectedKeys = ['todaySales','todayExpenses','stockValue','pendingReceivables','pendingPayables','lowStockItems','recentSales','topItems','pendingPOs'];
         $usedCache = false;

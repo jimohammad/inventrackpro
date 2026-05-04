@@ -51,11 +51,7 @@
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; }
 [data-theme="light"] .search-box input { background: #fff; color: var(--text-main); }
 
-/* Smooth transition on theme switch */
-body, .sidebar, .topbar, .card, .stat-card,
-.form-control, .form-select, .table, .main-content {
-    transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
+/* Minimal motion — faster paints, less compositing (theme still updates instantly) */
 
 /* Theme toggle button */
 .theme-toggle {
@@ -70,7 +66,6 @@ body, .sidebar, .topbar, .card, .stat-card,
     justify-content: center;
     cursor: pointer;
     font-size: 1rem;
-    transition: all 0.15s;
 }
 .theme-toggle:hover { background: rgba(99,102,241,0.25); color: var(--primary); }
 
@@ -94,7 +89,7 @@ body {
     border-right: 1px solid #2d3f55;
     overflow-y: auto;
     z-index: 1000;
-    transition: transform 0.3s;
+    transition: transform 0.12s ease-out;
 }
 
 .sidebar-brand {
@@ -126,7 +121,6 @@ body {
     color: #ffffff;
     text-decoration: none;
     border-radius: 0;
-    transition: all 0.15s;
     font-size: 0.875rem;
 }
 .sidebar-link:hover,
@@ -135,7 +129,8 @@ body {
     color: #ffffff;
 }
 .sidebar-link.active {
-    border-left: 3px solid #6366f1;
+    background: rgba(99, 102, 241, 0.28);
+    box-shadow: inset 2px 0 0 rgba(165, 180, 252, 0.45);
 }
 .sidebar-link i { font-size: 1rem; width: 20px; }
 
@@ -166,7 +161,6 @@ body {
     font-size: 0.9rem;
     font-weight: 700;
     text-decoration: none;
-    transition: all 0.15s;
     line-height: 1;
     cursor: pointer;
 }
@@ -174,7 +168,6 @@ body {
     background: #6366f1 !important;
     border-color: #6366f1 !important;
     color: #fff !important;
-    transform: translateY(-50%) scale(1.12);
 }
 
 /* Top Bar */
@@ -267,6 +260,20 @@ body {
 }
 .card-body { padding: 1.25rem; }
 
+/* Rounded table header inside cards — pure CSS (replaces JS on DOMContentLoaded) */
+.card table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.card table thead tr:first-child > th:first-child,
+.card table thead tr:first-child > td:first-child {
+    border-top-left-radius: 12px;
+}
+.card table thead tr:first-child > th:last-child,
+.card table thead tr:first-child > td:last-child {
+    border-top-right-radius: 12px;
+}
+
 /* Stat Cards on Dashboard */
 .stat-card {
     background: var(--bg-card);
@@ -331,7 +338,9 @@ body {
     background: var(--bg-main);
     border-color: var(--primary);
     color: var(--text-main);
-    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    box-shadow: none;
+    outline: 2px solid rgba(99,102,241,0.35);
+    outline-offset: 0;
 }
 .form-label { color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
 
@@ -441,19 +450,13 @@ input[type=number] { -moz-appearance: textfield; }
     outline: none;
     background: var(--bg-main);
     color: var(--text-main);
-    transition: border-color 0.15s;
 }
 .pin-digit:focus {
     border-color: #f59e0b !important;
-    box-shadow: 0 0 0 4px rgba(245,158,11,0.3) !important;
+    box-shadow: none;
+    outline: 2px solid rgba(245,158,11,0.5);
     background: #fffbeb !important;
 }
 .pin-digit.err {
     border-color: #ef4444;
-    animation: pinShake 0.3s;
-}
-@keyframes pinShake {
-    0%,100% { transform: translateX(0); }
-    25% { transform: translateX(-6px); }
-    75% { transform: translateX(6px); }
 }

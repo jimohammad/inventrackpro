@@ -72,7 +72,7 @@
                 <div class="svc-row2">
                     <div class="svc-f">
                         <label>Brand</label>
-                        <input type="text" name="device_brand" value="<?= htmlspecialchars($record['device_brand'] ?? '') ?>" placeholder="Samsung, Redmi, Honor...">
+                        <?php $deviceBrandValue = (string) ($record['device_brand'] ?? ''); include __DIR__ . '/partials/device_brand_select.php'; ?>
                     </div>
                     <div class="svc-f">
                         <label>Model</label>

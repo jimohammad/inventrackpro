@@ -37,6 +37,15 @@
     </div>
     <div class="col-md-3">
         <div class="stat-card">
+            <p class="stat-label mb-1">Active sales</p>
+            <p class="fw-semibold" style="color:#4338ca;"><?= (int)($linkedSalesCount ?? 0) ?> <span style="font-size:0.75rem;font-weight:600;color:#94a3b8;">(excl. cancelled)</span></p>
+            <?php if (!empty($cancelledSalesCount)): ?>
+            <p class="mb-0 mt-1" style="font-size:0.72rem;color:#94a3b8;">Cancelled: <strong style="color:#64748b;"><?= (int)$cancelledSalesCount ?></strong></p>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
             <p class="stat-label mb-1">Net Balance</p>
             <?php $netBal = (float)($party['net_balance'] ?? 0); ?>
             <?php if ($netBal > 0.001): ?>
@@ -51,6 +60,44 @@
         </div>
     </div>
 </div>
+
+<?php if (!empty($ledgerMismatch)): ?>
+<div class="alert alert-warning border-0 mb-3" style="border-radius:12px;">
+    <strong>Data check:</strong> This account has <?= (int)$linkedSalesCount ?> non-cancelled sale invoice(s) in the database, but the ledger table below is empty.
+    Try refreshing the page. If it persists, note party ID <code><?= (int)$party['id'] ?></code> for support — the unified ledger query may need inspection on the server.
+</div>
+<?php elseif (!empty($ledgerReturnWrongParty)): ?>
+<div class="alert alert-danger border-0 mb-3" style="border-radius:12px;">
+    <strong>Likely wrong customer on a return:</strong> This ledger has payments/returns/purchases but <strong>no sale invoices</strong> tied to account <?= htmlspecialchars($party['party_code'] ?? '') ?> (ID <?= (int)$party['id'] ?>).
+    A <strong>sale return</strong> may have been saved while a different duplicate customer was selected; the real invoices sit on another party with the same name.
+    Open the return (e.g. from Returns), confirm the original invoice, then run <code>database/fix_return_party_mismatch.sql</code> on the server (after backup) to copy <code>party_id</code> from each sale into its linked return.
+</div>
+<?php elseif (!empty($cancelledSalesCount)): ?>
+<div class="alert alert-info border-0 mb-3" style="border-radius:12px;">
+    <strong>Cancelled (voided) invoices:</strong> This customer has <strong><?= (int)$cancelledSalesCount ?></strong> sale(s) marked <code>cancelled</code> in the database.
+    They are <strong>excluded</strong> from this ledger and from the main sales list on purpose (same rules as <code>Party::getLedger</code> / active totals).
+    <?php if (!empty($cancelledSalesList)): ?>
+    <ul class="mb-0 mt-2 small">
+        <?php foreach ($cancelledSalesList as $cs): ?>
+        <li>
+            <?php if (Auth::can('sales', 'view') && !empty($cs['id'])): ?>
+            <a href="?page=sales&action=detail&id=<?= (int)$cs['id'] ?>" style="font-weight:600;"><?= htmlspecialchars($cs['invoice_no']) ?></a>
+            <?php else: ?>
+            <code><?= htmlspecialchars($cs['invoice_no']) ?></code>
+            <?php endif; ?>
+            — <?= htmlspecialchars($cs['date']) ?> — <?= APP_CURRENCY ?> <?= number_format((float)$cs['grand_total'], DECIMAL_PLACES) ?>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+    <?php endif; ?>
+    <p class="small mb-0 mt-2 text-muted">If you did not use Cancel on these invoices, open each invoice from Sales (search by invoice number); the detail page shows <strong>who/when</strong> from <code>activity_log</code> when the app recorded a cancel. If that section is empty, status may have been changed outside the app (e.g. phpMyAdmin).</p>
+    <p class="small mb-0 mt-2"><strong>Find them in Sales:</strong> as admin, use the sidebar <strong>Voided invoices</strong> (or <a href="?page=sales&view=voided" class="fw-bold">this link</a>) — the list includes <strong>all warehouses</strong>. Or tick <strong>Include voided</strong> on the main sales filter (shows voided from any warehouse plus active sales for your current warehouse). Then open the invoice and use <strong>Reinstate voided invoice</strong> if appropriate.</p>
+</div>
+<?php elseif ((int)($linkedSalesCount ?? 0) === 0 && empty($ledger)): ?>
+<div class="alert alert-light border mb-3" style="border-radius:12px;color:#64748b;">
+    No sales, purchases, or payments are linked to this party record yet. If you already posted invoices under this name, you may have a <strong>duplicate customer</strong> (same name, different account number) — open the invoice from Sales and use “View customer” to reach the ledger that has those transactions.
+</div>
+<?php endif; ?>
 
 <div class="card">
     <div class="card-header">Transaction Ledger</div>

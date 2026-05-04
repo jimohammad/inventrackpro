@@ -47,6 +47,10 @@ RedirectMatch 403 ^/(config|app|backups|database|cron|api/v1|graphify-out|\.clau
     RewriteRule ^\.env - [F,L]
     RewriteRule ^\.gitignore - [F,L]
     RewriteRule ^\.user(\.ini)?$ - [F,L]
+
+    # Pretty URL for public IMEI warranty tracking
+    RewriteRule ^imei/?$ index.php?page=imeitrack [L,QSA,NC]
+    RewriteRule ^imei/([^/]+)/?$ index.php?page=imeitrack&imei=$1 [L,QSA,NC]
 </IfModule>
 
 <FilesMatch "^\.env|^\.ht|^\.user\.ini$|^user\.ini$|^\.user$|\.sql$|\.php\.bak$|\.php\.old$|\.php\.swp$|\.php~$|\.log$|\.bak$|\.old$|\.swp$|~$|\.(md|markdown|code-workspace|yml|yaml|toml|lock)$|^(composer\.json|composer\.lock|package\.json|package-lock\.json|yarn\.lock)$">

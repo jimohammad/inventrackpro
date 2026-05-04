@@ -1,10 +1,33 @@
 <style>
 /* ══ EXPENSE PAGE ══ */
-.exp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
-.exp-header-left h1{font-size:1.4rem;font-weight:800;color:var(--text-main);margin:0;}
-.exp-header-left p{color:var(--text-muted);font-size:0.82rem;margin:2px 0 0;}
-.btn-add-exp{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;color:#fff;border-radius:10px;font-size:0.875rem;font-weight:700;cursor:pointer;box-shadow:0 3px 12px rgba(139,92,246,0.35);transition:all 0.15s;text-decoration:none;}
-.btn-add-exp:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(139,92,246,0.45);color:#fff;}
+.exp-page-top{margin-bottom:22px;}
+.exp-page-title h1{font-size:1.4rem;font-weight:800;color:var(--text-main);margin:0;}
+.exp-page-title p{color:var(--text-muted);font-size:0.82rem;margin:4px 0 0;}
+.exp-hero-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;}
+@media (max-width:900px){.exp-hero-cards{grid-template-columns:1fr;}}
+.exp-hero-card{
+    display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+    min-height:100px;padding:16px 18px;border-radius:14px;border:1px solid var(--border-color);
+    background:var(--bg-card);text-align:left;text-decoration:none;color:inherit;
+    box-sizing:border-box;transition:transform 0.15s,box-shadow 0.15s,border-color 0.15s;
+    position:relative;overflow:hidden;
+}
+a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,23,42,0.08);border-color:#c4b5fd;}
+.exp-metric-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:6px;}
+.exp-metric-value{font-size:1.25rem;font-weight:800;color:var(--text-main);line-height:1.15;}
+.exp-metric-hint{font-size:0.72rem;color:var(--text-muted);margin-top:8px;}
+.exp-metric-add{
+    border:none;cursor:pointer;width:100%;
+    background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border:1px solid transparent;
+    box-shadow:0 4px 16px rgba(139,92,246,0.35);align-items:center;text-align:center;
+}
+.exp-metric-add .exp-metric-label{color:rgba(255,255,255,0.85);}
+.exp-metric-add .exp-metric-value{color:#fff;font-size:1.05rem;display:inline-flex;align-items:center;gap:8px;}
+.exp-metric-add:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(139,92,246,0.45);color:#fff;}
+.exp-metric-add:focus{outline:2px solid #a78bfa;outline-offset:2px;}
+.exp-hero-card-accent::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;}
+.exp-card-this::before{background:linear-gradient(90deg,#6366f1,#818cf8);}
+.exp-card-last::before{background:linear-gradient(90deg,#f59e0b,#fbbf24);}
 
 /* Stats */
 .exp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px;}
@@ -69,15 +92,30 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 .exp-empty i{font-size:2.5rem;opacity:0.3;display:block;margin-bottom:10px;}
 </style>
 
-<!-- Header -->
-<div class="exp-header">
-    <div class="exp-header-left">
+<!-- Title + month cards + add (same row height) -->
+<div class="exp-page-top">
+    <div class="exp-page-title">
         <h1><i class="bi bi-receipt me-2" style="color:#8b5cf6;"></i>Expenses</h1>
         <p>Track and manage all business expenses</p>
     </div>
-    <button class="btn-add-exp" onclick="toggleExpForm()">
-        <i class="bi bi-plus-lg"></i> Add Expense
-    </button>
+    <div class="exp-hero-cards">
+        <a class="exp-hero-card exp-hero-card-accent exp-card-this"
+           href="?page=expenses&amp;from_date=<?= htmlspecialchars($thisMonthStart) ?>&amp;to_date=<?= htmlspecialchars($thisMonthEnd) ?>">
+            <span class="exp-metric-label">This month</span>
+            <span class="exp-metric-value"><?= APP_CURRENCY ?> <?= number_format($expenseThisMonth ?? 0, DECIMAL_PLACES) ?></span>
+            <span class="exp-metric-hint"><?= htmlspecialchars(date('M j', strtotime($thisMonthStart)) . ' – ' . date('M j, Y', strtotime($thisMonthEnd))) ?> · show in list</span>
+        </a>
+        <a class="exp-hero-card exp-hero-card-accent exp-card-last"
+           href="?page=expenses&amp;from_date=<?= htmlspecialchars($lastMonthStart) ?>&amp;to_date=<?= htmlspecialchars($lastMonthEnd) ?>">
+            <span class="exp-metric-label">Last month</span>
+            <span class="exp-metric-value"><?= APP_CURRENCY ?> <?= number_format($expenseLastMonth ?? 0, DECIMAL_PLACES) ?></span>
+            <span class="exp-metric-hint"><?= htmlspecialchars(date('M j', strtotime($lastMonthStart)) . ' – ' . date('M j, Y', strtotime($lastMonthEnd))) ?> · show in list</span>
+        </a>
+        <button type="button" class="exp-hero-card exp-metric-add" id="expBtnOpenAddForm">
+            <span class="exp-metric-label">Quick entry</span>
+            <span class="exp-metric-value"><i class="bi bi-plus-lg"></i> Add expense</span>
+        </button>
+    </div>
 </div>
 
 
@@ -347,6 +385,10 @@ function toggleExpForm() {
         setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     }
 }
+
+document.getElementById('expBtnOpenAddForm')?.addEventListener('click', function() {
+    toggleExpForm();
+});
 
 <?php if (isset($_GET['new'])): ?>
 document.addEventListener('DOMContentLoaded', () => {

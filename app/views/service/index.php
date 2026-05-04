@@ -137,6 +137,7 @@ $stages = ServiceController::stages();
                     <td><span class="sv-badge" style="background:<?= $st['color'] ?>15;color:<?= $st['color'] ?>;"><i class="bi <?= $st['icon'] ?>"></i> <?= $st['label'] ?></span></td>
                     <td><span class="sv-badge" style="background:<?= ServiceController::statusColor($r['status']) ?>15;color:<?= ServiceController::statusColor($r['status']) ?>;"><?= $r['status'] ?></span></td>
                     <td class="sv-actions">
+                        <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $r['id'] ?>&amp;autoprint=1" class="sv-act view" style="background:rgba(5,150,105,.12);color:#059669;" target="_blank" rel="noopener" title="Thermal customer receipt"><i class="bi bi-receipt-cutoff"></i></a>
                         <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
                         <?php if (Auth::can('service', 'edit')): ?>
                         <a href="?page=service&action=edit&id=<?= $r['id'] ?>" class="sv-act edit pin-protect" title="Edit"><i class="bi bi-pencil"></i></a>

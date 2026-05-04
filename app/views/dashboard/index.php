@@ -23,6 +23,8 @@ function money($val) {
     position: relative;
     overflow: hidden;
     transition: transform 0.15s, box-shadow 0.15s;
+    min-height: 118px;
+    height: 100%;
 }
 .dash-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); cursor: pointer; }
 .dash-card .dc-stripe { position: absolute; top: 0; left: 0; width: 4px; height: 100%; border-radius: 10px 0 0 10px; }
@@ -30,12 +32,13 @@ function money($val) {
 .dash-card .dc-label { font-size: 0.68rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
 .dash-card .dc-value { font-size: 0.95rem; font-weight: 800; color: var(--text-main); line-height: 1.2; }
 .dash-card .dc-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
+.dash-link { display: block; height: 100%; text-decoration: none; color: inherit; }
 </style>
 
 <div class="row g-2 mb-4">
     <!-- Today's Sales -->
     <div class="col-6 col-md-2">
-        <a href="?page=sales" style="text-decoration:none;color:inherit;">
+        <a href="?page=sales" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#6366f1;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -48,24 +51,28 @@ function money($val) {
         </a>
     </div>
 
-    <!-- Today's Cash In -->
+    <!-- Today's Amount Received -->
     <div class="col-6 col-md-2">
-        <a href="?page=payments" style="text-decoration:none;color:inherit;">
+        <a href="?page=payments" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#10b981;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
                 <div class="dc-icon" style="background:rgba(16,185,129,0.12);"><i class="bi bi-cash-coin" style="color:#10b981;"></i></div>
-                <div class="dc-label">Cash Received</div>
+                <div class="dc-label">Amount Received</div>
             </div>
             <div class="dc-value" style="padding-left:6px;color:#10b981;"><?= money($todayCash['total'] ?? 0) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-wallet2 me-1"></i><?= $todayCash['count'] ?? 0 ?> payments</div>
+            <div class="dc-sub" style="padding-left:6px;">
+                <i class="bi bi-wallet2 me-1"></i><?= $todayCash['count'] ?? 0 ?> payments
+                <div>Main Cash: <?= money($todayCash['main_cash'] ?? 0) ?></div>
+                <div>All Banks: <?= money($todayCash['bank_total'] ?? 0) ?></div>
+            </div>
         </div>
         </a>
     </div>
 
     <!-- Receivables -->
     <div class="col-6 col-md-2">
-        <a href="?page=parties&type=customer" style="text-decoration:none;color:inherit;">
+        <a href="?page=parties&type=customer" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#f59e0b;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -80,7 +87,7 @@ function money($val) {
 
     <!-- Payables -->
     <div class="col-6 col-md-2">
-        <a href="?page=parties&type=supplier" style="text-decoration:none;color:inherit;">
+        <a href="?page=parties&type=supplier" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#ef4444;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -95,7 +102,7 @@ function money($val) {
 
     <!-- Stock Value -->
     <div class="col-6 col-md-2">
-        <a href="?page=stock" style="text-decoration:none;color:inherit;">
+        <a href="?page=stock" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#8b5cf6;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -110,7 +117,7 @@ function money($val) {
 
     <!-- Pending POs -->
     <div class="col-6 col-md-2">
-        <a href="?page=purchaseorders" style="text-decoration:none;color:inherit;">
+        <a href="?page=purchaseorders" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#3b82f6;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">

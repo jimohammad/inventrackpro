@@ -47,8 +47,14 @@ class Expense extends BaseModel {
     }
 
     public function nextExpenseNo(): string {
-        $last = $this->db->fetchOne("SELECT expense_no FROM expenses ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $num  = $last ? (int) substr($last['expense_no'], strlen(EXPENSE_PREFIX)) : 0;
+        $row = $this->db->fetchOne(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(expense_no, ?) AS UNSIGNED)), 0) AS max_no
+             FROM expenses
+             WHERE expense_no LIKE ?
+             FOR UPDATE",
+            [strlen(EXPENSE_PREFIX) + 1, EXPENSE_PREFIX . '%']
+        );
+        $num = (int)($row['max_no'] ?? 0);
         return EXPENSE_PREFIX . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
     }
 
@@ -91,11 +97,14 @@ class Expense extends BaseModel {
     // the expense deletion were not atomic — if the DELETE failed after the UPDATE,
     // the account balance would be corrupted (money added back but expense still exists).
     public function delete(int $id): int {
-        $exp = $this->find($id);
-        if (!$exp) return 0;
-
         $this->db->beginTransaction();
         try {
+            $exp = $this->db->fetchOne("SELECT * FROM expenses WHERE id = ? FOR UPDATE", [$id]);
+            if (!$exp) {
+                $this->db->rollback();
+                return 0;
+            }
+
             // Reverse the account deduction
             $this->db->execute(
                 "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
@@ -125,5 +134,21 @@ class Expense extends BaseModel {
              ORDER BY total DESC",
             [$fromDate, $toDate]
         );
+    }
+
+    /** Total expense amount in date range (inclusive), scoped to current warehouse like getAll(). */
+    public function sumAmountBetween(string $fromDate, string $toDate): float {
+        $params = [$fromDate, $toDate];
+        $where  = 'WHERE e.date BETWEEN ? AND ?';
+        if (Auth::warehouseId()) {
+            $where .= ' AND e.warehouse_id = ?';
+            $params[] = Auth::warehouseId();
+        }
+        $row = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(e.amount), 0) AS total FROM expenses e {$where}",
+            $params
+        );
+
+        return (float) ($row['total'] ?? 0);
     }
 }

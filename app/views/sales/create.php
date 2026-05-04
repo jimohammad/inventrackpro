@@ -184,9 +184,30 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
 .scan-bar-msg {
     font-size:0.78rem; font-weight:600; text-align:left;
     padding:4px 0; border-radius:6px; min-height:1.25em;
+    display:inline-flex; align-items:center; gap:6px; max-width:280px;
 }
 .scan-bar-msg.ok { background:transparent; color:#065f46; }
 .scan-bar-msg.err { background:transparent; color:#991b1b; }
+.scan-bar-msg i { font-size:1rem; flex-shrink:0; line-height:1; }
+
+@keyframes scanBarShake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+}
+.scan-bar-wrap.scan-bar-shake {
+    animation: scanBarShake 0.42s ease-out;
+}
+
+@keyframes scanRowFlash {
+    0% { background-color: #d1fae5; box-shadow: inset 0 0 0 2px #059669; }
+    100% { background-color: transparent; box-shadow: none; }
+}
+table.items-tbl tbody tr.scan-row-flash {
+    animation: scanRowFlash 1s ease-out;
+}
 .scan-bar-count {
     font-size:0.75rem; color:#6366f1; font-weight:700; white-space:nowrap;
 }
@@ -445,10 +466,10 @@ table.items-tbl tfoot tr { background:#f8f9ff; }
         <div class="scan-bar-wrap">
             <i class="bi bi-upc-scan scan-bar-inner-icon" aria-hidden="true"></i>
             <input type="text" class="scan-bar-input" id="imeiScanBar" placeholder="Scan IMEI barcode — auto-adds item with price" autocomplete="off"
-                   onkeydown="if(event.key==='Enter'){event.preventDefault();scanImeiToRow();}">
+                   aria-describedby="scanBarMsg">
         </div>
         <div class="scan-bar-meta">
-            <span class="scan-bar-msg" id="scanBarMsg"></span>
+            <span class="scan-bar-msg" id="scanBarMsg" role="status" aria-live="polite"></span>
             <span class="scan-bar-count" id="scanBarCount">0 scanned</span>
         </div>
     </div>
@@ -1160,8 +1181,9 @@ function saveImeiModal() {
 
 // ═══ PREVENT ACCIDENTAL FORM SUBMIT ON ENTER ═══
 // Barcode scanners send Enter after each scan; block it from all text inputs
-// except the scan bar (which has its own inline onkeydown → scanImeiToRow)
+// except the IMEI scan bar (handled below → scanImeiToRow)
 document.getElementById('saleForm').addEventListener('keydown', function(e) {
+    if (e.target && e.target.id === 'imeiScanBar') return;
     if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
         !['submit','hidden','button'].includes(e.target.type)) {
         e.preventDefault();
@@ -1209,6 +1231,68 @@ document.getElementById('saleForm').addEventListener('submit', function(e) {
 
 // ═══ SCAN-FIRST IMEI ═══
 let scanCount = 0;
+let _scanBarMsgTimer = null;
+
+document.getElementById('imeiScanBar').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    scanImeiToRow();
+});
+
+function shakeScanBar() {
+    const wrap = document.querySelector('.scan-bar-wrap');
+    if (!wrap) return;
+    wrap.classList.remove('scan-bar-shake');
+    void wrap.offsetWidth;
+    wrap.classList.add('scan-bar-shake');
+    setTimeout(function() { wrap.classList.remove('scan-bar-shake'); }, 450);
+}
+
+function flashScanRow(rid) {
+    const tr = document.getElementById(rid);
+    if (!tr) return;
+    tr.classList.remove('scan-row-flash');
+    void tr.offsetWidth;
+    tr.classList.add('scan-row-flash');
+    setTimeout(function() { tr.classList.remove('scan-row-flash'); }, 1100);
+    try {
+        tr.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+    } catch (err) { /* ignore */ }
+}
+
+function setScanBarErr(text) {
+    const msg = document.getElementById('scanBarMsg');
+    if (_scanBarMsgTimer) { clearTimeout(_scanBarMsgTimer); _scanBarMsgTimer = null; }
+    msg.className = 'scan-bar-msg err';
+    msg.innerHTML = '';
+    const ic = document.createElement('i');
+    ic.className = 'bi bi-exclamation-triangle-fill';
+    ic.setAttribute('aria-hidden', 'true');
+    const span = document.createElement('span');
+    span.textContent = text;
+    msg.appendChild(ic);
+    msg.appendChild(span);
+    shakeScanBar();
+    _scanBarMsgTimer = setTimeout(function() {
+        msg.textContent = '';
+        msg.innerHTML = '';
+        msg.className = 'scan-bar-msg';
+        _scanBarMsgTimer = null;
+    }, 3500);
+}
+
+function setScanBarOkShort() {
+    const msg = document.getElementById('scanBarMsg');
+    if (_scanBarMsgTimer) { clearTimeout(_scanBarMsgTimer); _scanBarMsgTimer = null; }
+    msg.className = 'scan-bar-msg ok';
+    msg.innerHTML = '<i class="bi bi-check-circle-fill" aria-hidden="true"></i> <span>Added</span>';
+    _scanBarMsgTimer = setTimeout(function() {
+        msg.textContent = '';
+        msg.innerHTML = '';
+        msg.className = 'scan-bar-msg';
+        _scanBarMsgTimer = null;
+    }, 1600);
+}
 
 function scanImeiToRow() {
     const input = document.getElementById('imeiScanBar');
@@ -1218,8 +1302,9 @@ function scanImeiToRow() {
 
     input.value = '';
     input.focus();
+    if (_scanBarMsgTimer) { clearTimeout(_scanBarMsgTimer); _scanBarMsgTimer = null; }
     msg.className = 'scan-bar-msg';
-    msg.textContent = 'Looking up...';
+    msg.innerHTML = '<i class="bi bi-hourglass-split" aria-hidden="true"></i> <span>Looking up…</span>';
 
     fetch('?page=imei&action=lookupImei&imei=' + encodeURIComponent(imei))
         .then(r => r.json())
@@ -1227,14 +1312,9 @@ function scanImeiToRow() {
 
             if (!data.found) {
                 if (data.accepted) {
-                    // IMEI not in DB — notification only (no item picker)
-                    msg.className = 'scan-bar-msg err';
-                    msg.textContent = 'IMEI not registered in system';
-                    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+                    setScanBarErr('Not registered in system');
                 } else {
-                    msg.className = 'scan-bar-msg err';
-                    msg.textContent = data.message || 'IMEI not found';
-                    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+                    setScanBarErr(data.message || 'IMEI not found');
                 }
                 return;
             }
@@ -1242,9 +1322,7 @@ function scanImeiToRow() {
             // Check if this IMEI is already added in any row
             for (const rid in imeiData) {
                 if (imeiData[rid] && imeiData[rid].includes(imei)) {
-                    msg.className = 'scan-bar-msg err';
-                    msg.textContent = 'Already added in this invoice';
-                    setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+                    setScanBarErr('Already on this invoice');
                     return;
                 }
             }
@@ -1263,6 +1341,8 @@ function scanImeiToRow() {
                 }
             }
 
+            let affectedRid = null;
+
             if (targetRid) {
                 // Add IMEI to existing row and set qty = total IMEIs for this item
                 if (!imeiData[targetRid]) imeiData[targetRid] = [];
@@ -1271,6 +1351,7 @@ function scanImeiToRow() {
                 document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
                 updateImeiBtn(targetRid);
                 calcRow(targetRid);
+                affectedRid = targetRid;
             } else {
                 // Find last empty row or create a new one
                 let emptyRid = null;
@@ -1303,19 +1384,17 @@ function scanImeiToRow() {
 
                 // Add an empty row for next manual entry
                 addRow();
+                affectedRid = emptyRid;
             }
 
             scanCount++;
             document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
-            msg.className = 'scan-bar-msg ok';
-            msg.textContent = data.item_name.substring(0, 25);
-            setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 2000);
+            setScanBarOkShort();
+            flashScanRow(affectedRid);
             calcTotals();
         })
         .catch(() => {
-            msg.className = 'scan-bar-msg err';
-            msg.textContent = 'Network error';
-            setTimeout(() => { msg.textContent = ''; msg.className = 'scan-bar-msg'; }, 3000);
+            setScanBarErr('Network error');
         });
 }
 

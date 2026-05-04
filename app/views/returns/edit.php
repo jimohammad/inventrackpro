@@ -16,6 +16,7 @@
 .autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:200px;overflow-y:auto;margin-top:4px;}
 .autocomplete-item{padding:8px 12px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f8fafc;}
 .autocomplete-item:hover{background:#f8faff;}
+.imei-edit-box{width:160px;min-height:58px;max-height:84px;resize:vertical;font-size:0.74rem;line-height:1.2;font-family:Consolas,monospace;border:1px solid #cbd5e1;border-radius:6px;padding:6px;background:#fff;}
 </style>
 
 <div class="d-flex align-items-center mb-4 gap-3">
@@ -27,6 +28,7 @@
 <form method="POST" action="?page=returns&action=update" id="editReturnForm">
     <?= Auth::csrfField() ?>
     <input type="hidden" name="id" value="<?= $editReturn['id'] ?>">
+    <input type="hidden" name="return_edit_nonce" value="<?= htmlspecialchars($returnEditNonce ?? '') ?>">
 
 <div class="row g-3">
 
@@ -97,6 +99,7 @@
                         <tr>
                             <th style="width:28px;">#</th>
                             <th>Item</th>
+                            <th class="text-center" style="width:180px;">IMEIs</th>
                             <th class="text-center" style="width:80px;">Qty</th>
                             <th class="text-end" style="width:110px;">Price</th>
                             <th class="text-end" style="width:110px;">Total</th>
@@ -110,6 +113,13 @@
                             <td style="font-weight:500;">
                                 <?= htmlspecialchars($item['item_name']) ?>
                                 <input type="hidden" name="items[<?= $item['id'] ?>][deleted]" id="del_<?= $item['id'] ?>" value="0">
+                            </td>
+                            <td class="text-center">
+                                <textarea
+                                    name="items[<?= $item['id'] ?>][imeis]"
+                                    class="imei-edit-box"
+                                    placeholder="One IMEI per line"
+                                ><?= htmlspecialchars(str_replace('||', "\n", (string)($item['imei_list'] ?? ''))) ?></textarea>
                             </td>
                             <td class="text-center">
                                 <input type="number" name="items[<?= $item['id'] ?>][quantity]"
@@ -136,7 +146,7 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="4" class="text-end fw-bold" style="padding:8px 10px;font-size:0.75rem;color:#64748b;text-transform:uppercase;">Subtotal</td>
+                            <td colspan="5" class="text-end fw-bold" style="padding:8px 10px;font-size:0.75rem;color:#64748b;text-transform:uppercase;">Subtotal</td>
                             <td class="text-end fw-semibold" id="editSubtotal" style="padding:8px 10px;"><?= retMoney($editReturn['subtotal']) ?></td>
                             <td></td>
                         </tr>
@@ -196,6 +206,12 @@ function addNewItemRow() {
                 onblur="setTimeout(()=>hideNewDrop(${n}),200)">
             <input type="hidden" name="new_items[${n}][item_id]" id="newItemId_${n}">
             <div class="autocomplete-box" id="newDrop_${n}" style="display:none;"></div>
+        </td>
+        <td class="text-center">
+            <textarea
+                name="new_items[${n}][imeis]"
+                class="imei-edit-box"
+                placeholder="One IMEI per line"></textarea>
         </td>
         <td class="text-center">
             <input type="number" name="new_items[${n}][quantity]" id="newQty_${n}"

@@ -29,17 +29,22 @@ class SalesController extends BaseController {
     public function index(): void {
         Auth::authorize('sales', 'view');
 
+        $viewVoided      = Auth::isAdmin() && ($this->input('view', '', 'get') === 'voided');
+        $includeVoided   = Auth::isAdmin() && ($this->input('include_voided', '', 'get') === '1');
+
         $filters = [
-            'search'    => $this->input('search', '', 'get'),
-            'status'    => $this->input('status', '', 'get'),
-            'party_id'  => $this->inputInt('party_id', 0, 'get'),
-            'from_date' => $this->input('from_date', '', 'get'),
-            'to_date'   => $this->input('to_date', '', 'get'),
+            'search'         => $this->inputSearch('search', '', 'get'),
+            'status'         => $this->input('status', '', 'get'),
+            'party_id'       => $this->inputInt('party_id', 0, 'get'),
+            'from_date'      => $this->input('from_date', '', 'get'),
+            'to_date'        => $this->input('to_date', '', 'get'),
+            'voided_only'    => $viewVoided,
+            'include_voided' => $includeVoided && !$viewVoided,
         ];
 
         $sales     = $this->saleModel->getAll($filters);
         $stats     = $this->saleModel->getStats('month');
-        $pageTitle = 'Sales';
+        $pageTitle = $viewVoided ? 'Sales — voided invoices' : 'Sales';
         $page      = 'sales';
 
         ob_start();
@@ -273,7 +278,7 @@ class SalesController extends BaseController {
 
             // Validate IMEI availability
             if (!empty($imeis)) {
-                $errors = $this->imeiModel->validateList($imeis, (int)$row['item_id']);
+                $errors = $this->imeiModel->validateList($imeis, (int)$row['item_id'], Auth::warehouseId());
                 if (!empty($errors)) {
                     $this->flash('error', implode(' | ', $errors));
                     $hasError = true;
@@ -347,7 +352,7 @@ class SalesController extends BaseController {
                 $this->redirect('?page=sales&action=print&id=' . $result['id'] . '&autoprint=1');
             }
             if ($printMode === '2') {
-                $this->redirect('?page=sales&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
+                $this->redirect('?page=sales&action=thermalPrint&id=' . $result['id'] . '&thermal=1&autoprint=1');
             }
             $this->redirect('?page=sales&action=detail&id=' . $result['id']);
         } else {
@@ -369,10 +374,26 @@ class SalesController extends BaseController {
             $this->redirect('?page=sales');
         }
 
+        $partyBalance = $this->partyModel->findWithBalance((int)$sale['party_id']);
+        $sale['party_total_balance'] = (float)($partyBalance['net_balance'] ?? 0);
+        $sale['prev_balance']        = (float)$sale['party_total_balance'] - (float)$sale['balance'];
+
         $db        = Database::getInstance();
         $accounts  = self::getAccounts();
         $pageTitle = 'Sale: ' . $sale['invoice_no'];
         $page      = 'sales';
+
+        $cancelAudit = [];
+        if (($sale['status'] ?? '') === 'cancelled') {
+            $cancelAudit = $db->fetchAll(
+                "SELECT al.created_at, al.user_id, al.description, al.ip_address, u.name AS user_name
+                 FROM activity_log al
+                 LEFT JOIN users u ON u.id = al.user_id
+                 WHERE al.action = 'cancel_sale' AND al.module = 'sales' AND al.ref_id = ?
+                 ORDER BY al.created_at DESC",
+                [$id]
+            );
+        }
 
         ob_start();
         include __DIR__ . '/../views/sales/view.php';
@@ -380,24 +401,33 @@ class SalesController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
-    // Print/PDF invoice
+    // Print/PDF invoice — thermal when `thermal` appears in query (same rule as print.php / payment receipts).
     public function print(): void {
+        $this->renderInvoicePrint(isset($_GET['thermal']));
+    }
+
+    // Dedicated thermal print route (does not rely on query flag parsing)
+    public function thermalPrint(): void {
+        $this->renderInvoicePrint(true);
+    }
+
+    private function renderInvoicePrint(bool $isThermal): void {
         Auth::authorize('sales', 'view');
 
         $id   = $this->inputInt('id', 0, 'get');
-        $sale = $this->saleModel->findFull($id);
+        $sale = $this->saleModel->findForPrint($id);
 
         if (!$sale) die('Invoice not found.');
 
-        $db       = Database::getInstance();
         $settings = self::getSettings();
-
-        // Party balance — use unified method
-        $partyBalance = $this->partyModel->findWithBalance($sale['party_id']);
+        $partyBalance = $this->partyModel->findWithBalance((int)$sale['party_id']);
         $currentBalance = (float)($partyBalance['net_balance'] ?? 0);
         // Previous balance = current balance minus this invoice's unpaid portion
         $sale['prev_balance']  = $currentBalance - (float)$sale['balance'];
         $sale['total_balance'] = $currentBalance;
+
+        // Explicit flag for print view (some hosts / includes: avoid relying only on local $isThermal).
+        $salePrintThermal = (bool) $isThermal;
 
         include __DIR__ . '/../views/sales/print.php';
     }
@@ -513,13 +543,28 @@ class SalesController extends BaseController {
 
                     // Get old item data first
                     $oldItem = $db->fetchOne(
-                        "SELECT item_id, quantity, unit_price, total FROM sale_items WHERE id = ? AND sale_id = ?",
+                        "SELECT si.item_id, si.quantity, si.unit_price, si.total, i.has_imei 
+                         FROM sale_items si 
+                         JOIN items i ON i.id = si.item_id
+                         WHERE si.id = ? AND si.sale_id = ?",
                         [$saleItemId, $id]
                     );
                     if (!$oldItem) continue;
 
                     // Handle deletion
                     if (!empty($row['deleted'])) {
+                        // Release serials tied to this line — otherwise imei_records stays sold/sale_id
+                        // (CASCADE removes sale_item_imei rows on DELETE, so we must update IMEIs first.)
+                        $linkedImeiIds = $db->fetchAll(
+                            'SELECT imei_id FROM sale_item_imei WHERE sale_item_id = ?',
+                            [$saleItemId]
+                        );
+                        foreach ($linkedImeiIds as $lim) {
+                            $db->execute(
+                                "UPDATE imei_records SET status = 'in_stock', sale_id = NULL WHERE id = ?",
+                                [(int) $lim['imei_id']]
+                            );
+                        }
                         // Restore full qty back to stock
                         $db->execute(
                             "UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?",
@@ -534,13 +579,27 @@ class SalesController extends BaseController {
                     $newTotal = round($newQty * $newPrice, 3);
                     $oldQty   = (int)$oldItem['quantity'];
                     $qtyDiff  = $oldQty - $newQty;
+                    
+                    if ($qtyDiff != 0 && !empty($oldItem['has_imei'])) {
+                        throw new Exception("Cannot change quantity of IMEI-tracked items during edit. Please delete the line and re-add it to properly scan or release serials.");
+                    }
 
                     $db->execute(
                         "UPDATE sale_items SET quantity = ?, unit_price = ?, total = ? WHERE id = ?",
                         [$newQty, $newPrice, $newTotal, $saleItemId]
                     );
 
-                    if ($qtyDiff != 0) {
+                    if ($qtyDiff < 0) { // Increasing quantity
+                        $additionalNeeded = abs($qtyDiff);
+                        $affected = $db->execute(
+                            "UPDATE stock SET quantity = quantity - ? WHERE item_id = ? AND warehouse_id = ? AND quantity >= ?",
+                            [$additionalNeeded, $oldItem['item_id'], $warehouseId, $additionalNeeded]
+                        );
+                        if ($affected === 0) {
+                            $itemName = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$oldItem['item_id']]);
+                            throw new Exception("Insufficient stock for \"{$itemName['name']}\" to increase quantity by {$additionalNeeded}.");
+                        }
+                    } elseif ($qtyDiff > 0) { // Decreasing quantity
                         $db->execute(
                             "UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?",
                             [$qtyDiff, $oldItem['item_id'], $warehouseId]
@@ -585,7 +644,9 @@ class SalesController extends BaseController {
             // Recalculate grand_total and balance
             $paidAmount    = (float)$sale['paid_amount'];
             $newGrandTotal = $newSubtotal - $newDiscount;
-            $newBalance    = max(0, $newGrandTotal - $paidAmount);
+            
+            $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$id])['tot'] ?? 0);
+            $newBalance = max(0, $newGrandTotal - $paidAmount - $returnsTot);
 
             // Determine new status
             if ($newBalance < 0.001) {
@@ -613,7 +674,13 @@ class SalesController extends BaseController {
         $this->logActivity('edit_sale', 'sales', $id, "Edited {$sale['invoice_no']}: items/prices updated");
         $this->flash('success', "Invoice {$sale['invoice_no']} updated.");
 
-        if ($this->input('print_after_save') === '1') {
+        $printMode = $this->input('print_mode');
+        if ($printMode === '2') {
+            $this->redirect("?page=sales&action=thermalPrint&id={$id}&thermal=1");
+            return;
+        }
+
+        if ($printMode === '1' || $this->input('print_after_save') === '1') {
             $this->redirect("?page=sales&action=print&id={$id}");
             return;
         }
@@ -720,7 +787,7 @@ class SalesController extends BaseController {
         }
 
         // Validate IMEIs against item
-        $errors = $this->imeiModel->validateList($imeis, (int)$line['item_id']);
+        $errors = $this->imeiModel->validateList($imeis, (int)$line['item_id'], Auth::warehouseId());
         if (!empty($errors)) {
             $this->flash('error', implode(' | ', $errors));
             $this->redirect("?page=sales&action=scanItemImeis&id={$saleId}&sale_item_id={$saleItemId}");
@@ -732,7 +799,21 @@ class SalesController extends BaseController {
         $db->beginTransaction();
         try {
             foreach ($imeis as $imei) {
-                $rec = $db->fetchOne("SELECT id FROM imei_records WHERE imei = ?", [$imei]);
+                $rec = $db->fetchOne(
+                    "SELECT id
+                     FROM imei_records
+                     WHERE imei = ?
+                     ORDER BY
+                        CASE
+                            WHEN warehouse_id = ? AND status IN ('in_stock','returned') THEN 0
+                            WHEN status IN ('in_stock','returned') THEN 1
+                            WHEN warehouse_id = ? THEN 2
+                            ELSE 3
+                        END,
+                        id DESC
+                     LIMIT 1",
+                    [$imei, $whId, $whId]
+                );
                 if (!$rec) {
                     // IMEI not in system — create it as sold for this sale
                     $imeiId = $db->insert(
@@ -842,7 +923,7 @@ class SalesController extends BaseController {
             }
 
             if (!empty($imeis)) {
-                $errors = $this->imeiModel->validateList($imeis, $itemId);
+                $errors = $this->imeiModel->validateList($imeis, $itemId, Auth::warehouseId());
                 if (!empty($errors)) { $this->flash('error', implode(' | ', $errors)); $this->redirect("?page=sales&action=addItem&id={$id}"); return; }
             }
 
@@ -882,7 +963,21 @@ class SalesController extends BaseController {
 
                 // Mark IMEIs sold + link
                 foreach ($it['imeis'] as $imei) {
-                    $rec = $db->fetchOne("SELECT id FROM imei_records WHERE imei = ?", [$imei]);
+                    $rec = $db->fetchOne(
+                        "SELECT id
+                         FROM imei_records
+                         WHERE imei = ?
+                         ORDER BY
+                            CASE
+                                WHEN warehouse_id = ? AND status IN ('in_stock','returned') THEN 0
+                                WHEN status IN ('in_stock','returned') THEN 1
+                                WHEN warehouse_id = ? THEN 2
+                                ELSE 3
+                            END,
+                            id DESC
+                         LIMIT 1",
+                        [$imei, $whId, $whId]
+                    );
                     if (!$rec) {
                         $imeiId = $db->insert(
                             "INSERT INTO imei_records (imei, item_id, warehouse_id, status, sale_id) VALUES (?,?,?,'sold',?)",
@@ -958,6 +1053,43 @@ class SalesController extends BaseController {
         $this->redirect('?page=sales');
     }
 
+    /**
+     * Admin-only: reverse a voided invoice (Sale::reopenCancelled).
+     * Transactional stock + IMEI; payments are NOT recreated — full balance due unless re-recorded.
+     */
+    public function reopen(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=sales');
+            return;
+        }
+
+        if (!$this->isPost()) {
+            $this->flash('error', 'Invalid request method.');
+            $this->redirect('?page=sales');
+            return;
+        }
+
+        $id = $this->inputInt('id');
+        if ($id <= 0) {
+            $this->flash('error', 'Invalid invoice.');
+            $this->redirect('?page=sales');
+            return;
+        }
+
+        $result = $this->saleModel->reopenCancelled($id);
+
+        if (!empty($result['success'])) {
+            $this->logActivity('reopen_sale', 'sales', $id, 'Reinstated voided invoice (stock/IMEI); payments must be re-entered if applicable');
+            $this->flash('success', 'Invoice reinstated: stock deducted and serials marked sold again. Payment rows were not restored — record receipts in Payments if the customer paid.');
+            $this->redirect('?page=sales&action=detail&id=' . $id);
+            return;
+        }
+
+        $this->flash('error', $result['error'] ?? 'Could not reinstate this invoice.');
+        $this->redirect('?page=sales&action=detail&id=' . $id);
+    }
+
     // AJAX: search items for autocomplete
     public function searchItems(): void {
         header('Content-Type: application/json');
@@ -1005,10 +1137,15 @@ class SalesController extends BaseController {
             return;
         }
 
-        $row = Database::getInstance()->fetchOne(
+        $db = Database::getInstance();
+        $row = $db->fetchOne(
             "SELECT ir.*, i.name as item_name FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.imei = ? AND ir.warehouse_id = ?",
+             WHERE ir.imei = ? AND ir.warehouse_id = ?
+             ORDER BY
+                CASE WHEN ir.status IN ('in_stock','returned') THEN 0 ELSE 1 END,
+                ir.id DESC
+             LIMIT 1",
             [$imei, Auth::warehouseId()]
         );
 
@@ -1018,8 +1155,23 @@ class SalesController extends BaseController {
         }
 
         if ($row['status'] === 'sold') {
-            echo json_encode(['valid' => false, 'message' => "IMEI already sold ({$row['item_name']})."]);
-            return;
+            $targetItemId = $itemId > 0 ? $itemId : (int)$row['item_id'];
+            $this->imeiModel->validateList([$imei], $targetItemId, Auth::warehouseId());
+
+            $row = $db->fetchOne(
+                "SELECT ir.*, i.name as item_name FROM imei_records ir
+                 JOIN items i ON i.id = ir.item_id
+                 WHERE ir.imei = ? AND ir.warehouse_id = ?
+                 ORDER BY
+                    CASE WHEN ir.status IN ('in_stock','returned') THEN 0 ELSE 1 END,
+                    ir.id DESC
+                 LIMIT 1",
+                [$imei, Auth::warehouseId()]
+            );
+            if ($row && $row['status'] === 'sold') {
+                echo json_encode(['valid' => false, 'message' => "IMEI already sold ({$row['item_name']})."]);
+                return;
+            }
         }
 
         if ($itemId && (int)$row['item_id'] !== $itemId) {

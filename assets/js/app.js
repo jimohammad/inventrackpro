@@ -121,29 +121,14 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Initialize DataTables with default styling
+// Initialize DataTables — deferRender speeds first paint on large tables
 function initDataTable(selector, options = {}) {
     return $(selector).DataTable({
         pageLength: 25,
         responsive: true,
+        deferRender: true,
+        autoWidth: false,
         language: { search: '', searchPlaceholder: 'Filter...' },
         ...options
     });
 }
-
-// Rounded top corners on all card tables
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.card table').forEach(function(table) {
-        table.style.borderCollapse = 'separate';
-        table.style.borderSpacing = '0';
-        var thead = table.querySelector('thead');
-        if (!thead) return;
-        var firstRow = thead.querySelector('tr');
-        if (!firstRow) return;
-        var cells = firstRow.querySelectorAll('th, td');
-        if (cells.length > 0) {
-            cells[0].style.borderTopLeftRadius = '12px';
-            cells[cells.length - 1].style.borderTopRightRadius = '12px';
-        }
-    });
-});

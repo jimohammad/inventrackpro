@@ -181,9 +181,38 @@ class SaleReturn extends BaseModel {
                     foreach ($item['imeis'] as $imei) {
                         $imei = trim($imei);
                         if (!$imei) continue;
-                        $imeiRow = $this->db->fetchOne(
-                            "SELECT id FROM imei_records WHERE imei = ?", [$imei]
-                        );
+                        $refSaleId = (int)($data['ref_id'] ?? 0);
+                        if ($refSaleId > 0) {
+                            // Prefer the IMEI row tied to this original sale, then any sold row, then latest row.
+                            $imeiRow = $this->db->fetchOne(
+                                "SELECT id
+                                 FROM imei_records
+                                 WHERE imei = ?
+                                 ORDER BY
+                                    CASE
+                                        WHEN sale_id = ? THEN 0
+                                        WHEN status = 'sold' THEN 1
+                                        ELSE 2
+                                    END,
+                                    id DESC
+                                 LIMIT 1",
+                                [$imei, $refSaleId]
+                            );
+                        } else {
+                            $imeiRow = $this->db->fetchOne(
+                                "SELECT id
+                                 FROM imei_records
+                                 WHERE imei = ?
+                                 ORDER BY
+                                    CASE
+                                        WHEN status = 'sold' THEN 0
+                                        ELSE 1
+                                    END,
+                                    id DESC
+                                 LIMIT 1",
+                                [$imei]
+                            );
+                        }
                         if ($imeiRow) {
                             $alreadyReturned = $this->isImeiAlreadyReturned($imeiRow['id'], $data['ref_id'] ?? null);
                             if ($alreadyReturned) {

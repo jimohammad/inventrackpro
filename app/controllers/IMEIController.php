@@ -15,6 +15,10 @@ class IMEIController extends BaseController {
     }
 
     public function index(): void {
+        if (($_GET['page'] ?? '') === 'imeitrack') {
+            $this->publicTrack();
+            return;
+        }
         Auth::authorize('imei', 'view');
 
         $filters = [
@@ -32,6 +36,84 @@ class IMEIController extends BaseController {
         include __DIR__ . '/../views/imei/index.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Public IMEI warranty tracking — no login required.
+     * Shows only sold date and remaining warranty period (13 months).
+     */
+    public function publicTrack(): void {
+        $imei = strtoupper(trim($this->input('imei', '', 'get')));
+        $saleDate = null;
+        $remainingText = null;
+        $error = null;
+        $isExpired = false;
+        $warrantyMonths = 13;
+
+        if ($imei !== '') {
+            // Basic rate limit to slow brute force scanning.
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $cacheDir = sys_get_temp_dir() . '/imei_track_rl';
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0700, true);
+            }
+            $rlFile = $cacheDir . '/' . md5($ip);
+            $now = time();
+            $hits = file_exists($rlFile) ? (array) @json_decode((string) file_get_contents($rlFile), true) : [];
+            $hits = array_filter($hits, static fn($t) => $t > $now - 300);
+            if (count($hits) >= 60) {
+                http_response_code(429);
+                $error = 'Too many lookups. Please try again in a few minutes.';
+                include __DIR__ . '/../views/public/imei_track.php';
+                return;
+            }
+            $hits[] = $now;
+            @file_put_contents($rlFile, json_encode(array_values($hits)));
+
+            if (!preg_match('/^[A-Z0-9\\/\\-]{6,20}$/', $imei)) {
+                $error = 'Please enter a valid IMEI / serial number.';
+                include __DIR__ . '/../views/public/imei_track.php';
+                return;
+            }
+
+            $db = Database::getInstance();
+            $sale = $db->fetchOne(
+                "SELECT s.date
+                 FROM sale_item_imei sii
+                 JOIN imei_records ir ON ir.id = sii.imei_id
+                 JOIN sale_items si ON si.id = sii.sale_item_id
+                 JOIN sales s ON s.id = si.sale_id
+                 WHERE (ir.imei = ? OR ir.imei2 = ?)
+                   AND s.status != 'cancelled'
+                 ORDER BY s.date DESC, s.id DESC
+                 LIMIT 1",
+                [$imei, $imei]
+            );
+
+            if (!$sale || empty($sale['date'])) {
+                $error = 'No sold record found for this IMEI.';
+                include __DIR__ . '/../views/public/imei_track.php';
+                return;
+            }
+
+            $saleDate = $sale['date'];
+            $soldAt = new DateTimeImmutable($saleDate);
+            $warrantyEnd = $soldAt->modify('+' . $warrantyMonths . ' months');
+            $today = new DateTimeImmutable('today');
+
+            if ($today > $warrantyEnd) {
+                $isExpired = true;
+                $remainingText = 'Expired';
+            } else {
+                $diff = $today->diff($warrantyEnd);
+                $months = ($diff->y * 12) + $diff->m;
+                $days = (int) $diff->d;
+                $remainingText = $months . ' month' . ($months === 1 ? '' : 's')
+                    . ' ' . $days . ' day' . ($days === 1 ? '' : 's');
+            }
+        }
+
+        include __DIR__ . '/../views/public/imei_track.php';
     }
 
     public function detail(): void {
@@ -335,14 +417,23 @@ class IMEIController extends BaseController {
 
         $db = Database::getInstance();
 
-        // Check all statuses so we can give a precise error message
+        // Prefer sellable rows first (current warehouse in_stock/returned, then other warehouses).
         $row = $db->fetchOne(
             "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
                     i.name as item_name, i.sale_price, i.sku, i.has_imei
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
-             WHERE ir.imei = ?",
-            [$imei]
+             WHERE ir.imei = ?
+             ORDER BY
+                CASE
+                    WHEN ir.warehouse_id = ? AND ir.status IN ('in_stock','returned') THEN 0
+                    WHEN ir.status IN ('in_stock','returned') THEN 1
+                    WHEN ir.warehouse_id = ? THEN 2
+                    ELSE 3
+                END,
+                ir.id DESC
+             LIMIT 1",
+            [$imei, Auth::warehouseId(), Auth::warehouseId()]
         );
 
         if (!$row) {
@@ -355,8 +446,34 @@ class IMEIController extends BaseController {
             return;
         }
         if ($row['status'] === 'sold') {
-            echo json_encode(['found' => false, 'message' => "Already sold ({$row['item_name']})."]);
-            return;
+            // Reuse sale validator auto-heal logic for stale sold rows (returned but status not released).
+            $this->imeiModel->validateList([$imei], (int)$row['item_id'], Auth::warehouseId());
+
+            $row = $db->fetchOne(
+                "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
+                        i.name as item_name, i.sale_price, i.sku, i.has_imei
+                 FROM imei_records ir
+                 JOIN items i ON i.id = ir.item_id
+                 WHERE ir.imei = ?
+                 ORDER BY
+                    CASE
+                        WHEN ir.warehouse_id = ? AND ir.status IN ('in_stock','returned') THEN 0
+                        WHEN ir.status IN ('in_stock','returned') THEN 1
+                        WHEN ir.warehouse_id = ? THEN 2
+                        ELSE 3
+                    END,
+                    ir.id DESC
+                 LIMIT 1",
+                [$imei, Auth::warehouseId(), Auth::warehouseId()]
+            );
+            if (!$row) {
+                echo json_encode(['found' => false, 'message' => 'IMEI not found after refresh.']);
+                return;
+            }
+            if ($row['status'] === 'sold') {
+                echo json_encode(['found' => false, 'message' => "Already sold ({$row['item_name']})."]);
+                return;
+            }
         }
         if (!in_array($row['status'], ['in_stock', 'returned'])) {
             echo json_encode(['found' => false, 'message' => "Not available — status: {$row['status']}"]);
@@ -434,24 +551,61 @@ class IMEIController extends BaseController {
                     'link'  => null,
                 ];
 
-                // 2. Sale
+                // 2. Sale events — read from sale_item_imei (real link), not imei_records.sale_id.
+                // imei_records.sale_id can lag behind reality when a sale line was deleted/edited.
+                // Each surviving link to a non-cancelled sale is a real "Sold" event.
+                $saleLinks = $db->fetchAll(
+                    "SELECT s.id AS sale_id, s.invoice_no, s.date, s.status,
+                            pa.name AS customer_name, si.unit_price
+                     FROM sale_item_imei sii
+                     JOIN sale_items si ON si.id = sii.sale_item_id
+                     JOIN sales s ON s.id = si.sale_id
+                     LEFT JOIN parties pa ON pa.id = s.party_id
+                     WHERE sii.imei_id = ?
+                     ORDER BY s.date ASC, s.id ASC",
+                    [$id]
+                );
+                foreach ($saleLinks as $sl) {
+                    $isCancelled = ($sl['status'] ?? '') === 'cancelled';
+                    $title = $isCancelled ? 'Sold (voided invoice)' : 'Sold';
+                    $color = $isCancelled ? '#94a3b8' : '#22c55e';
+                    $timeline[] = [
+                        'date'  => $sl['date'],
+                        'icon'  => 'bi-receipt',
+                        'color' => $color,
+                        'title' => $title,
+                        'desc'  => "Invoice: {$sl['invoice_no']}<br>Customer: " . ($sl['customer_name'] ?? '—') .
+                                   "<br>Price: " . APP_CURRENCY . " " . number_format($sl['unit_price'] ?? 0, DECIMAL_PLACES),
+                        'link'  => "?page=sales&action=detail&id={$sl['sale_id']}",
+                    ];
+                }
+
+                // Stale-link warning: imei_records.sale_id points somewhere but no real link exists.
+                // Caused by older edits that deleted a sale line without releasing the IMEI.
                 if ($record['sale_id']) {
-                    $sale = $db->fetchOne(
-                        "SELECT s.invoice_no, s.date, s.grand_total, pa.name as customer_name, si.unit_price
-                         FROM sales s
-                         LEFT JOIN parties pa ON pa.id = s.party_id
-                         LEFT JOIN sale_items si ON si.sale_id = s.id AND si.item_id = ?
-                         WHERE s.id = ?",
-                        [$itemId, $record['sale_id']]
+                    $stillLinked = $db->fetchOne(
+                        "SELECT 1 AS ok FROM sale_item_imei sii
+                         JOIN sale_items si ON si.id = sii.sale_item_id
+                         WHERE sii.imei_id = ? AND si.sale_id = ?
+                         LIMIT 1",
+                        [$id, $record['sale_id']]
                     );
-                    if ($sale) {
+                    if (!$stillLinked) {
+                        $orphanSale = $db->fetchOne(
+                            "SELECT s.invoice_no, s.status, s.date, pa.name AS customer_name
+                             FROM sales s LEFT JOIN parties pa ON pa.id = s.party_id WHERE s.id = ?",
+                            [$record['sale_id']]
+                        );
+                        $orphanInv  = $orphanSale['invoice_no'] ?? ('#' . (int)$record['sale_id']);
+                        $orphanCust = $orphanSale['customer_name'] ?? '—';
                         $timeline[] = [
-                            'date'  => $sale['date'],
-                            'icon'  => 'bi-receipt',
-                            'color' => '#22c55e',
-                            'title' => 'Sold',
-                            'desc'  => "Invoice: {$sale['invoice_no']}<br>Customer: {$sale['customer_name']}<br>Price: " . APP_CURRENCY . " " . number_format($sale['unit_price'] ?? 0, DECIMAL_PLACES),
-                            'link'  => "?page=sales&action=detail&id={$record['sale_id']}",
+                            'date'  => $orphanSale['date'] ?? $record['updated_at'] ?? $record['created_at'],
+                            'icon'  => 'bi-exclamation-triangle',
+                            'color' => '#dc2626',
+                            'title' => 'Stale sale link (data fix needed)',
+                            'desc'  => "imei_records.sale_id still points to <strong>{$orphanInv}</strong> ({$orphanCust}) but the line was removed."
+                                       . " Lifecycle ignores it. Run database/heal_orphan_imei_sale_id.sql to clean status and sale_id.",
+                            'link'  => null,
                         ];
                     }
                 }

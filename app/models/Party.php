@@ -6,6 +6,29 @@ class Party extends BaseModel {
     protected string $table = 'parties';
 
     /**
+     * Party list/search visibility for the active warehouse.
+     * Include the party if it is assigned here, unassigned (legacy), OR has any
+     * sales/purchase/payment/return in this branch — avoids duplicate names where
+     * one record has invoices and another (same display name) is empty on the ledger.
+     *
+     * @return array{0:string,1:array<int,int>}
+     */
+    private function warehouseVisibilitySqlAndParams(int $warehouseId): array {
+        if ($warehouseId <= 0) {
+            return ['', []];
+        }
+        $sql = " AND (
+            p.warehouse_id IS NULL
+            OR p.warehouse_id = ?
+            OR EXISTS (SELECT 1 FROM sales s WHERE s.party_id = p.id AND s.warehouse_id = ? AND s.status != 'cancelled')
+            OR EXISTS (SELECT 1 FROM purchases pur WHERE pur.party_id = p.id AND pur.warehouse_id = ? AND pur.status != 'cancelled')
+            OR EXISTS (SELECT 1 FROM payments pay WHERE pay.party_id = p.id AND pay.warehouse_id = ?)
+            OR EXISTS (SELECT 1 FROM `returns` r WHERE r.party_id = p.id AND r.warehouse_id = ?)
+        )";
+        return [$sql, [$warehouseId, $warehouseId, $warehouseId, $warehouseId, $warehouseId]];
+    }
+
+    /**
      * UNIFIED BALANCE LOGIC (single account per party):
      *
      * balance = opening_balance
@@ -28,8 +51,9 @@ class Party extends BaseModel {
             $params[] = $type;
         }
         if ($wid) {
-            $where .= " AND p.warehouse_id = ?";
-            $params[] = $wid;
+            [$whSql, $whParams] = $this->warehouseVisibilitySqlAndParams((int) $wid);
+            $where .= $whSql;
+            $params = array_merge($params, $whParams);
         }
 
         // Fast: fetch parties first, then compute balances in one pass
@@ -56,7 +80,7 @@ class Party extends BaseModel {
                 FROM payments WHERE party_id IN ($placeholders) AND ref_type IN ('sale','discount')
                 UNION ALL
                 SELECT party_id, 0, 0, grand_total, 0, 0, 0
-                FROM returns WHERE party_id IN ($placeholders) AND type = 'sale_return' AND status = 'approved'
+                FROM `returns` WHERE party_id IN ($placeholders) AND type = 'sale_return' AND status = 'approved'
                 UNION ALL
                 SELECT party_id, 0, 0, 0, grand_total, 0, 0
                 FROM purchases WHERE party_id IN ($placeholders) AND status != 'cancelled'
@@ -65,7 +89,7 @@ class Party extends BaseModel {
                 FROM payments WHERE party_id IN ($placeholders) AND ref_type = 'purchase'
                 UNION ALL
                 SELECT party_id, 0, 0, 0, 0, 0, grand_total
-                FROM returns WHERE party_id IN ($placeholders) AND type = 'purchase_return' AND status = 'approved'
+                FROM `returns` WHERE party_id IN ($placeholders) AND type = 'purchase_return' AND status = 'approved'
              ) t GROUP BY party_id",
             array_merge($ids, $ids, $ids, $ids, $ids, $ids)
         );
@@ -118,7 +142,7 @@ class Party extends BaseModel {
                 FROM payments WHERE party_id=? AND ref_type IN ('sale','discount')
                 UNION ALL
                 SELECT 0, 0, grand_total, 0, 0, 0
-                FROM returns WHERE party_id=? AND type='sale_return' AND status='approved'
+                FROM `returns` WHERE party_id=? AND type='sale_return' AND status='approved'
                 UNION ALL
                 SELECT 0, 0, 0, grand_total, 0, 0
                 FROM purchases WHERE party_id=? AND status!='cancelled'
@@ -127,7 +151,7 @@ class Party extends BaseModel {
                 FROM payments WHERE party_id=? AND ref_type='purchase'
                 UNION ALL
                 SELECT 0, 0, 0, 0, 0, grand_total
-                FROM returns WHERE party_id=? AND type='purchase_return' AND status='approved'
+                FROM `returns` WHERE party_id=? AND type='purchase_return' AND status='approved'
              ) t",
             [$id, $id, $id, $id, $id, $id]
         );
@@ -186,11 +210,11 @@ class Party extends BaseModel {
                     CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END,
                     CASE WHEN type = 'sale_return' THEN grand_total ELSE 0 END,
                     0, status
-             FROM returns WHERE party_id = ? AND status = 'approved' {$dateFilter}
+             FROM `returns` WHERE party_id = ? AND status = 'approved' {$dateFilter}
              UNION ALL
              SELECT 'expense', expense_no, date, amount, 0, 0, 'paid'
              FROM expenses WHERE party_id = ? {$dateFilter}
-             ORDER BY date ASC, type",
+             ORDER BY 3 ASC, 1 ASC",
             $params
         );
     }
@@ -282,8 +306,9 @@ class Party extends BaseModel {
         $wid = Auth::warehouseId();
         $whClause = '';
         if ($wid) {
-            $whClause = "AND p.warehouse_id = ?";
-            $params[] = $wid;
+            [$whSql, $whParams] = $this->warehouseVisibilitySqlAndParams((int) $wid);
+            $whClause = $whSql;
+            $params   = array_merge($params, $whParams);
         }
 
         $params = array_merge($params, [$like, $like, $like, $like, $like]);
@@ -316,7 +341,7 @@ class Party extends BaseModel {
                 FROM payments WHERE party_id IN ($ph) AND ref_type IN ('sale','discount')
                 UNION ALL
                 SELECT party_id, 0, 0, grand_total
-                FROM returns WHERE party_id IN ($ph) AND type='sale_return' AND status='approved'
+                FROM `returns` WHERE party_id IN ($ph) AND type='sale_return' AND status='approved'
              ) t GROUP BY party_id",
             array_merge($ids, $ids, $ids)
         );

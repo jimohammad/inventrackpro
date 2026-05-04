@@ -403,24 +403,35 @@ class PaymentController extends BaseController {
 
             // Update linked sale/purchase balances when amount changes (warehouse-scoped)
             if ($amountChanged && $payment['ref_id'] > 0) {
-                $diff = $newAmount - $oldAmount;
                 $whId = Auth::warehouseId();
                 if ($payment['ref_type'] === 'sale') {
-                    $db->execute(
-                        "UPDATE sales SET paid_amount = paid_amount + ?, balance = GREATEST(0, balance - ?),
-                         status = CASE WHEN GREATEST(0, balance - ?) < 0.001 THEN 'paid'
-                                       WHEN paid_amount + ? > 0 THEN 'partial' ELSE status END
-                         WHERE id = ? AND warehouse_id = ?",
-                        [$diff, $diff, $diff, $diff, $payment['ref_id'], $whId]
-                    );
+                    $sale = $db->fetchOne("SELECT grand_total FROM sales WHERE id = ? AND warehouse_id = ?", [$payment['ref_id'], $whId]);
+                    if ($sale) {
+                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$payment['ref_id']])['tot'] ?? 0);
+                        $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$payment['ref_id']])['tot'] ?? 0);
+                        
+                        $newBalance = max(0, (float)$sale['grand_total'] - $totalPaid - $returnsTot);
+                        $newStatus  = $newBalance < 0.001 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'confirmed');
+                        
+                        $db->execute(
+                            "UPDATE sales SET paid_amount = ?, balance = ?, status = ? WHERE id = ? AND warehouse_id = ?",
+                            [$totalPaid, $newBalance, $newStatus, $payment['ref_id'], $whId]
+                        );
+                    }
                 } elseif ($payment['ref_type'] === 'purchase') {
-                    $db->execute(
-                        "UPDATE purchases SET paid_amount = paid_amount + ?, balance = GREATEST(0, balance - ?),
-                         status = CASE WHEN GREATEST(0, balance - ?) < 0.001 THEN 'paid'
-                                       WHEN paid_amount + ? > 0 THEN 'partial' ELSE status END
-                         WHERE id = ? AND warehouse_id = ?",
-                        [$diff, $diff, $diff, $diff, $payment['ref_id'], $whId]
-                    );
+                    $purch = $db->fetchOne("SELECT grand_total FROM purchases WHERE id = ? AND warehouse_id = ?", [$payment['ref_id'], $whId]);
+                    if ($purch) {
+                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$payment['ref_id']])['tot'] ?? 0);
+                        $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'purchase_return' AND status = 'approved'", [$payment['ref_id']])['tot'] ?? 0);
+                        
+                        $newBalance = max(0, (float)$purch['grand_total'] - $totalPaid - $returnsTot);
+                        $newStatus  = $newBalance < 0.001 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'confirmed');
+                        
+                        $db->execute(
+                            "UPDATE purchases SET paid_amount = ?, balance = ?, status = ? WHERE id = ? AND warehouse_id = ?",
+                            [$totalPaid, $newBalance, $newStatus, $payment['ref_id'], $whId]
+                        );
+                    }
                 }
             }
 

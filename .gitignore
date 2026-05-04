@@ -24,6 +24,7 @@ backups/cache/
 .idea/
 .vscode/
 .vs/
+.cursor/
 *.swp
 *.swo
 *~

@@ -350,10 +350,21 @@ class Sale extends BaseModel {
         }
     }
 
-    // Record a payment against a sale
+    /**
+     * Record a payment receipt against a sale (always payment_type='in').
+     *
+     * M2 note: hardcodes account_balance += amount. Do NOT reuse for refunds, payouts,
+     * or any payment_type='out' direction — money would move the wrong way. If you need
+     * an outbound flow, use Payment::createStandalone instead.
+     */
     public function recordPayment(int $saleId, array $data): void {
         $amount = (float) $data['paid_amount'];
         if ($amount <= 0) return;
+        // Guard against accidental misuse: if a caller passed an explicit type other than 'in',
+        // refuse rather than silently update the account in the wrong direction.
+        if (isset($data['payment_type']) && $data['payment_type'] !== 'in') {
+            throw new Exception('Sale::recordPayment only handles inbound (sale receipt) payments.');
+        }
 
         // C2 fix: use MAX(numeric) generator and retry on duplicate-key collision so a concurrent
         // standalone payment can't crash the sale insert.

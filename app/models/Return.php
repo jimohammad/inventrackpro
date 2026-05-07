@@ -109,6 +109,19 @@ class SaleReturn extends BaseModel {
 
             // Validate return quantities against original sale if linked
             if (!empty($data['ref_id'])) {
+                // M1 fix: don't trust the controller alone — refuse returns against cancelled
+                // invoices in case this model is ever called from a script/API path.
+                $saleStatus = $this->db->fetchOne(
+                    "SELECT status FROM sales WHERE id = ?",
+                    [$data['ref_id']]
+                );
+                if (!$saleStatus) {
+                    throw new Exception('Original invoice not found.');
+                }
+                if (($saleStatus['status'] ?? '') === 'cancelled') {
+                    throw new Exception('Cannot post a return against a cancelled invoice.');
+                }
+
                 $saleItems = $this->db->fetchAll(
                     "SELECT si.item_id, SUM(si.quantity) as sold_qty,
                             COALESCE(ret.returned_qty, 0) as already_returned

@@ -118,6 +118,9 @@ class DiscountController extends BaseController {
                 $db->fetchOne("SELECT id FROM payments WHERE id = ? FOR UPDATE", [$payId]);
                 $db->execute("DELETE FROM payments WHERE id = ? AND ref_type = 'discount' LIMIT 1", [$payId]);
             } else {
+                // M4 fix: legacy rows (no payment_id link) — if the fuzzy lookup misses,
+                // the customer_discounts row would be deleted while the payment lingers,
+                // leaving the customer balance silently reduced. Fail loudly instead.
                 $pay = $db->fetchOne(
                     "SELECT id FROM payments
                      WHERE ref_type = 'discount'
@@ -130,16 +133,23 @@ class DiscountController extends BaseController {
                      FOR UPDATE",
                     [$disc['party_id'], $disc['amount'], Auth::warehouseId(), '%' . $disc['discount_no'] . '%']
                 );
-                if ($pay && !empty($pay['id'])) {
-                    $db->execute("DELETE FROM payments WHERE id = ? LIMIT 1", [(int)$pay['id']]);
+                if (!$pay || empty($pay['id'])) {
+                    throw new \Exception(
+                        'Cannot reverse this discount: linked payment row not found. '
+                        . 'Locate the PAY-* row in Payments (ref_type=discount) and remove it manually, '
+                        . 'or contact support to relink it.'
+                    );
                 }
+                $db->execute("DELETE FROM payments WHERE id = ? LIMIT 1", [(int)$pay['id']]);
             }
             $db->execute("DELETE FROM customer_discounts WHERE id = ?", [$id]);
+            $this->logActivity('delete_discount', 'customer_discounts', $id,
+                'Reversed ' . ($disc['discount_no'] ?? '#' . $id));
             $db->commit();
             $this->flash('success', 'Discount reversed and removed.');
         } catch (\Exception $e) {
             $db->rollBack();
-            $this->flash('error', 'Failed to delete.');
+            $this->flash('error', 'Failed to delete: ' . $e->getMessage());
         }
 
         $this->redirect('?page=discounts');

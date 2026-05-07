@@ -122,37 +122,49 @@ class ServiceController extends BaseController {
             }
 
             $token = bin2hex(random_bytes(24)); // 48-char token — resistant to brute force
-            $lastNo = $this->db->fetchOne("SELECT service_no FROM service_records ORDER BY id DESC LIMIT 1 FOR UPDATE");
-            $num = $lastNo ? (int)substr($lastNo['service_no'], 4) : 0;
-            $serviceNo = 'SRV-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
-            $id = $this->db->insert(
-                "INSERT INTO service_records (service_no, imei, party_id, customer_name, customer_phone, device_brand, device_model, warehouse_id, fault_category, fault_description, technician_name, repair_cost, tracking_token, notes, received_date, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [
-                    $serviceNo,
-                    $imei,
-                    $this->inputInt('party_id') ?: null,
-                    $this->input('customer_name'),
-                    $this->input('customer_phone'),
-                    $this->input('device_brand'),
-                    $this->input('device_model'),
-                    Auth::warehouseId(),
-                    $this->input('fault_category'),
-                    $this->input('fault_description'),
-                    $this->input('technician_name'),
-                    (float)$this->input('repair_cost', 0),
-                    $token,
-                    $this->input('notes'),
-                    $this->input('received_date') ?: date('Y-m-d'),
-                    Auth::id(),
-                ]
-            );
+            $this->db->beginTransaction();
+            try {
+                // Generate service number inside transaction (FOR UPDATE must be effective).
+                $lastNo = $this->db->fetchOne("SELECT service_no FROM service_records ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                $num = $lastNo ? (int)substr($lastNo['service_no'], 4) : 0;
+                $serviceNo = 'SRV-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
-            $this->db->insert(
-                "INSERT INTO service_history (service_id, event_type, new_value, note, user_id) VALUES (?,?,?,?,?)",
-                [$id, 'created', 'Pending', 'Service record created', Auth::id()]
-            );
+                $id = $this->db->insert(
+                    "INSERT INTO service_records (service_no, imei, party_id, customer_name, customer_phone, device_brand, device_model, warehouse_id, fault_category, fault_description, technician_name, repair_cost, tracking_token, notes, received_date, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [
+                        $serviceNo,
+                        $imei,
+                        $this->inputInt('party_id') ?: null,
+                        $this->input('customer_name'),
+                        $this->input('customer_phone'),
+                        $this->input('device_brand'),
+                        $this->input('device_model'),
+                        Auth::warehouseId(),
+                        $this->input('fault_category'),
+                        $this->input('fault_description'),
+                        $this->input('technician_name'),
+                        (float)$this->input('repair_cost', 0),
+                        $token,
+                        $this->input('notes'),
+                        $this->input('received_date') ?: date('Y-m-d'),
+                        Auth::id(),
+                    ]
+                );
+
+                $this->db->insert(
+                    "INSERT INTO service_history (service_id, event_type, new_value, note, user_id) VALUES (?,?,?,?,?)",
+                    [$id, 'created', 'Pending', 'Service record created', Auth::id()]
+                );
+
+                $this->db->commit();
+            } catch (Exception $e) {
+                $this->db->rollback();
+                $this->flash('error', 'Failed to create service record: ' . $e->getMessage());
+                $this->redirect('?page=service&action=create');
+                return;
+            }
 
             $this->logActivity('create_service', 'service', $id, "Service {$serviceNo} for {$imei}");
             $this->flash('success', "Service {$serviceNo} created.");

@@ -73,11 +73,19 @@ class DiscountController extends BaseController {
             $acc = $db->fetchOne("SELECT id FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC LIMIT 1");
             $accId = $acc['id'] ?? 1;
 
-            $db->insert(
+            $paymentId = $db->insert(
                 "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, warehouse_id, created_by)
                  VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?, ?)",
                 [$payNo, $partyId, $accId, $amount, $date, 'Discount ' . $discountNo . ($reason ? ' — ' . $reason : ''), Auth::warehouseId(), Auth::id()]
             );
+
+            // Store the exact payment id for safe future updates/deletes (requires migration adding customer_discounts.payment_id)
+            if ($paymentId) {
+                $db->execute(
+                    "UPDATE customer_discounts SET payment_id = ? WHERE discount_no = ?",
+                    [(int) $paymentId, $discountNo]
+                );
+            }
 
             $db->commit();
             $this->flash('success', "Discount {$discountNo} — " . APP_CURRENCY . " " . number_format($amount, DECIMAL_PLACES) . " applied.");
@@ -104,10 +112,28 @@ class DiscountController extends BaseController {
 
         $db->beginTransaction();
         try {
-            $db->execute(
-                "DELETE FROM payments WHERE notes LIKE ? AND party_id = ? AND amount = ? AND warehouse_id = ? LIMIT 1",
-                ['%' . $disc['discount_no'] . '%', $disc['party_id'], $disc['amount'], Auth::warehouseId()]
-            );
+            // Safe delete: prefer linked payment_id; otherwise lock and delete only ref_type='discount'
+            $payId = (int)($disc['payment_id'] ?? 0);
+            if ($payId > 0) {
+                $db->fetchOne("SELECT id FROM payments WHERE id = ? FOR UPDATE", [$payId]);
+                $db->execute("DELETE FROM payments WHERE id = ? AND ref_type = 'discount' LIMIT 1", [$payId]);
+            } else {
+                $pay = $db->fetchOne(
+                    "SELECT id FROM payments
+                     WHERE ref_type = 'discount'
+                       AND party_id = ?
+                       AND amount = ?
+                       AND warehouse_id = ?
+                       AND notes LIKE ?
+                     ORDER BY id DESC
+                     LIMIT 1
+                     FOR UPDATE",
+                    [$disc['party_id'], $disc['amount'], Auth::warehouseId(), '%' . $disc['discount_no'] . '%']
+                );
+                if ($pay && !empty($pay['id'])) {
+                    $db->execute("DELETE FROM payments WHERE id = ? LIMIT 1", [(int)$pay['id']]);
+                }
+            }
             $db->execute("DELETE FROM customer_discounts WHERE id = ?", [$id]);
             $db->commit();
             $this->flash('success', 'Discount reversed and removed.');
@@ -182,15 +208,20 @@ class DiscountController extends BaseController {
             );
 
             // Update associated payment
-            $db->execute(
-                "UPDATE payments SET party_id=?, amount=?, date=?, notes=? WHERE notes LIKE ? AND party_id=? LIMIT 1",
-                [
-                    $partyId, $amount, $date,
-                    'Discount ' . $disc['discount_no'] . ($reason ? ' — ' . $reason : ''),
-                    '%' . $disc['discount_no'] . '%',
-                    $disc['party_id']
-                ]
-            );
+            $note = 'Discount ' . $disc['discount_no'] . ($reason ? ' — ' . $reason : '');
+            $payId = (int)($disc['payment_id'] ?? 0);
+            if ($payId > 0) {
+                $db->execute(
+                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=? WHERE id=? AND ref_type='discount' LIMIT 1",
+                    [$partyId, $amount, $date, $note, $payId]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=?
+                     WHERE ref_type='discount' AND notes LIKE ? AND party_id=? AND warehouse_id=? LIMIT 1",
+                    [$partyId, $amount, $date, $note, '%' . $disc['discount_no'] . '%', $disc['party_id'], Auth::warehouseId()]
+                );
+            }
 
             $db->commit();
             $this->flash('success', "Discount {$disc['discount_no']} updated.");

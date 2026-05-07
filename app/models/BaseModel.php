@@ -104,8 +104,19 @@ abstract class BaseModel {
 
     // Generate a unique invoice/reference number
     protected function generateNumber(string $prefix, string $column): string {
+        // Must be called inside an active transaction so FOR UPDATE is effective.
+        if (!$this->db->getConnection()->inTransaction()) {
+            throw new Exception('generateNumber() must be called inside an active DB transaction.');
+        }
+
+        // Defensive: column name is interpolated into SQL
+        $column = preg_replace('/[^a-zA-Z0-9_]/', '', $column);
+        if ($column === '') {
+            throw new Exception('Invalid column for generateNumber().');
+        }
+
         $lastRow = $this->db->fetchOne(
-            "SELECT {$column} FROM {$this->table} ORDER BY id DESC LIMIT 1"
+            "SELECT {$column} FROM {$this->table} ORDER BY id DESC LIMIT 1 FOR UPDATE"
         );
 
         if ($lastRow && isset($lastRow[$column])) {

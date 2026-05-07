@@ -92,7 +92,7 @@ class PurchaseController extends BaseController {
 
     public function store(): void {
         Auth::authorize('purchases', 'add');
-        if (!$this->isPost()) { $this->redirect('?page=purchases&action=create'); }
+        if (!$this->isPost()) { $this->redirect('?page=purchases&action=create'); return; }
 
         $db       = Database::getInstance();
 
@@ -101,6 +101,7 @@ class PurchaseController extends BaseController {
         if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
             $this->flash('warning', 'This purchase form was already submitted or expired. Please check Purchases list before trying again.');
             $this->redirect('?page=purchases');
+            return;
         }
         unset($_SESSION['purchase_form_nonce']);
 
@@ -114,10 +115,12 @@ class PurchaseController extends BaseController {
             if ((int)$row['quantity'] <= 0) {
                 $this->flash('error', 'Quantity must be greater than zero.');
                 $this->redirect('?page=purchases&action=create');
+                return;
             }
             if ((float)$row['unit_price'] < 0) {
                 $this->flash('error', 'Price cannot be negative.');
                 $this->redirect('?page=purchases&action=create');
+                return;
             }
 
             $imeis = [];
@@ -135,6 +138,7 @@ class PurchaseController extends BaseController {
         if (empty($items)) {
             $this->flash('error', 'Add at least one item.');
             $this->redirect('?page=purchases&action=create');
+            return;
         }
 
         $invoiceNo = $this->nextInvoiceNo($db);

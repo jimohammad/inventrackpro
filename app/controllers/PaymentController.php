@@ -181,6 +181,7 @@ class PaymentController extends BaseController {
 
         if (!$this->isPost()) {
             $this->redirect('?page=payments&action=create');
+            return;
         }
 
         $errors = $this->validate([
@@ -193,12 +194,14 @@ class PaymentController extends BaseController {
         if (!empty($errors)) {
             $this->flash('error', implode(' ', $errors));
             $this->redirect('?page=payments&action=create');
+            return;
         }
 
         // Validate positive amount
         if ($this->inputFloat('amount') <= 0) {
             $this->flash('error', 'Amount must be greater than zero.');
             $this->redirect('?page=payments&action=create');
+            return;
         }
 
         $postedNonce = isset($_POST['payment_form_nonce']) ? trim((string) $_POST['payment_form_nonce']) : '';
@@ -206,6 +209,7 @@ class PaymentController extends BaseController {
         if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
             $this->flash('warning', 'This payment was already submitted or the form expired. Check the list—if the payment is already there, do not submit again.');
             $this->redirect('?page=payments');
+            return;
         }
         unset($_SESSION['payment_form_nonce']);
 

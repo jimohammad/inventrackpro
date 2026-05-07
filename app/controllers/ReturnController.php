@@ -99,6 +99,7 @@ class ReturnController extends BaseController {
 
         if (!$this->isPost()) {
             $this->redirect('?page=returns&action=create');
+            return;
         }
 
         $postedNonce = isset($_POST['return_form_nonce']) ? trim((string)$_POST['return_form_nonce']) : '';
@@ -106,6 +107,7 @@ class ReturnController extends BaseController {
         if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
             $this->flash('warning', 'This return form was already submitted or expired. Please check Returns list before trying again.');
             $this->redirect('?page=returns');
+            return;
         }
 
         $rawItems = $_POST['items'] ?? [];
@@ -128,6 +130,7 @@ class ReturnController extends BaseController {
         if (empty($items)) {
             $this->flash('error', 'Add at least one item.');
             $this->redirect('?page=returns&action=create');
+            return;
         }
 
         $refId   = $this->inputInt('ref_id') ?: null;
@@ -159,15 +162,18 @@ class ReturnController extends BaseController {
             if (!$sale) {
                 $this->flash('error', 'Selected invoice was not found.');
                 $this->redirect('?page=returns&action=create');
+                return;
             }
             if ($sale['status'] === 'cancelled') {
                 $this->flash('error', 'Cannot post a return against a cancelled invoice.');
                 $this->redirect('?page=returns&action=create');
+                return;
             }
             $partyId = (int) $sale['party_id'];
         } elseif ($partyId <= 0) {
             $this->flash('error', 'Please select a customer.');
             $this->redirect('?page=returns&action=create');
+            return;
         }
 
         $result = $this->returnModel->create([
@@ -187,16 +193,21 @@ class ReturnController extends BaseController {
                 $tpl = $_SESSION['print_template'] ?? 'a5';
                 if ($tpl === 'thermal') {
                     $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
+                    return;
                 }
                 $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1');
+                return;
             }
             if ($this->input('print_mode') === '2') {
                 $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
+                return;
             }
             $this->redirect('?page=returns');
+            return;
         } else {
             $this->flash('error', $result['error']);
             $this->redirect('?page=returns&action=create');
+            return;
         }
     }
 

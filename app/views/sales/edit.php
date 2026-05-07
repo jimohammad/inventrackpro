@@ -151,7 +151,7 @@
                             <td class="text-muted row-num"><?= $i+1 ?></td>
                             <td>
                                 <span class="fw-semibold"><?= htmlspecialchars($item['item_name']) ?></span>
-                                <?php if ($item['sku']): ?><br><small class="text-muted"><?= $item['sku'] ?></small><?php endif; ?>
+                                <?php if ($item['sku']): ?><br><small class="text-muted"><?= htmlspecialchars((string) $item['sku']) ?></small><?php endif; ?>
                                 <?php if (!empty($item['has_imei'])): ?>
                                     <?php if ($needsImei): ?>
                                     <br><a href="?page=sales&action=scanItemImeis&id=<?= $editSale['id'] ?>&sale_item_id=<?= $item['id'] ?>"

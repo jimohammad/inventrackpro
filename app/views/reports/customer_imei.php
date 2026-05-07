@@ -29,11 +29,11 @@
             </div>
             <div class="col-6 col-md-2">
                 <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">From Date</label>
-                <input type="date" name="from_date" class="form-control form-control-sm" value="<?= $fromDate ?>">
+                <input type="date" name="from_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $fromDate) ?>">
             </div>
             <div class="col-6 col-md-2">
                 <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">To Date</label>
-                <input type="date" name="to_date" class="form-control form-control-sm" value="<?= $toDate ?>">
+                <input type="date" name="to_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $toDate) ?>">
             </div>
             <div class="col-6 col-md-2">
                 <div class="d-flex gap-1">
@@ -95,7 +95,7 @@
                     <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--primary);font-size:0.7rem;margin-left:4px;"><?= $party['party_code'] ?></span>
                     <?php endif; ?>
                 </td>
-                <td><?= $party['party_phone'] ?? '' ?></td>
+                <td><?= htmlspecialchars((string) ($party['party_phone'] ?? '')) ?></td>
                 <td>
                     <?= $fromDate ? date('d M Y', strtotime($fromDate)) : 'All time' ?><?= $toDate ? ' — ' . date('d M Y', strtotime($toDate)) : '' ?>
                 </td>

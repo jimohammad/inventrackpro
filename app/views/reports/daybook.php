@@ -17,7 +17,7 @@
             <input type="hidden" name="action" value="daybook">
             <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-calendar3" style="color:#0d9488;font-size:1.1rem;"></i>
-                <input type="date" name="date" value="<?= $date ?>" class="form-control form-control-sm" style="width:180px;font-weight:600;">
+                <input type="date" name="date" value="<?= htmlspecialchars((string) $date) ?>" class="form-control form-control-sm" style="width:180px;font-weight:600;">
             </div>
             <button type="submit" class="btn btn-sm" style="background:#0d9488;color:#fff;font-weight:600;padding:6px 20px;">
                 <i class="bi bi-search me-1"></i> View Day

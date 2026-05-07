@@ -17,7 +17,7 @@
             <input type="hidden" name="action" value="reconciliation">
             <div class="col-6 col-md-3">
                 <label class="form-label mb-1">Check as of date</label>
-                <input type="date" name="date" class="form-control form-control-sm" value="<?= $date ?>">
+                <input type="date" name="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $date) ?>">
             </div>
             <div class="col-6 col-md-2">
                 <button type="submit" class="btn btn-primary btn-sm w-100 mt-3">Run Check</button>

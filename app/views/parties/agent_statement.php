@@ -3,7 +3,7 @@
     <a href="?page=parties" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <div>
         <h1 class="page-title mb-0"><?= htmlspecialchars($party['name']) ?></h1>
-        <small class="text-muted"><?= $party['phone'] ?> &nbsp;·&nbsp; Agent Statement</small>
+        <small class="text-muted"><?= htmlspecialchars((string) ($party['phone'] ?? '')) ?> &nbsp;·&nbsp; Agent Statement</small>
     </div>
     <div class="ms-auto d-flex gap-2">
         <a href="?page=payments&action=create&party_id=<?= $party['id'] ?>" class="btn btn-sm btn-success">

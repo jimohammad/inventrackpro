@@ -88,7 +88,7 @@
                     <td>
                         <span class="fw-semibold"><?= htmlspecialchars($im['item_name']) ?></span>
                         <?php if ($im['sku']): ?>
-                        <br><small class="text-muted"><?= $im['sku'] ?></small>
+                        <br><small class="text-muted"><?= htmlspecialchars((string) $im['sku']) ?></small>
                         <?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($im['warehouse_name'] ?? '—') ?></td>

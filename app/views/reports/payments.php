@@ -14,8 +14,8 @@
         <form method="GET" class="row g-2 align-items-end">
             <input type="hidden" name="page" value="reports">
             <input type="hidden" name="action" value="payments">
-            <div class="col-6 col-md-3"><label class="form-label mb-1">From</label><input type="date" name="from_date" class="form-control form-control-sm" value="<?= $fromDate ?>"></div>
-            <div class="col-6 col-md-3"><label class="form-label mb-1">To</label><input type="date" name="to_date" class="form-control form-control-sm" value="<?= $toDate ?>"></div>
+            <div class="col-6 col-md-3"><label class="form-label mb-1">From</label><input type="date" name="from_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $fromDate) ?>"></div>
+            <div class="col-6 col-md-3"><label class="form-label mb-1">To</label><input type="date" name="to_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $toDate) ?>"></div>
             <div class="col-6 col-md-2"><button type="submit" class="btn btn-primary btn-sm w-100 mt-3">Generate</button></div>
         </form>
     </div>

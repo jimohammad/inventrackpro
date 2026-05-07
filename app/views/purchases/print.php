@@ -137,7 +137,7 @@
                 <td>
                     <strong><?= htmlspecialchars($item['item_name']) ?></strong>
                     <?php if ($item['sku']): ?>
-                    <br><small style="color:#888;"><?= $item['sku'] ?></small>
+                    <br><small style="color:#888;"><?= htmlspecialchars((string) $item['sku']) ?></small>
                     <?php endif; ?>
                 </td>
                 <td style="text-align:center;"><?= $item['quantity'] ?></td>

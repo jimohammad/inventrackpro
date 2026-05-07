@@ -128,27 +128,17 @@ abstract class BaseController {
     /**
      * Sanitize input.
      *
-     * SEC3 known issue: this HTML-escapes at INPUT time, which means user input is
-     * stored in the DB pre-escaped (e.g., O'Brien is saved as O&#039;Brien). When views
-     * call htmlspecialchars() on the same field at OUTPUT time the result is double-
-     * escaped and displayed mangled. The cleaner long-term fix is to remove the escape
-     * here (trim + length-cap only) AND audit every view that emits a stored string to
-     * make sure it escapes on output. That audit is large (50+ files); until it lands,
-     * leave this as-is so legacy raw-output sites stay safe from stored XSS, and use
-     * inputRaw() in code paths that explicitly need un-escaped storage.
+     * SEC3 fix: input() no longer HTML-escapes at INPUT time. Previously every value
+     * was stored pre-escaped (O'Brien -> O&#039;Brien), then views would call
+     * htmlspecialchars() on it again at OUTPUT, producing double-escaped display.
+     * Views that emit stored strings have been audited and now wrap user-controllable
+     * fields with htmlspecialchars on output. This change keeps the contract simple:
+     * data goes in raw, escape happens at the boundary you actually display from.
+     *
+     * Caps the value at $maxLen UTF-8 chars to protect against oversize input.
+     * inputRaw() is kept as an alias for new code that wants to be explicit.
      */
-    protected function input(string $key, string $default = '', string $from = 'post'): string {
-        $source = $from === 'get' ? $_GET : $_POST;
-        $value  = $source[$key] ?? $default;
-        return htmlspecialchars(trim($value), ENT_QUOTES, 'UTF-8');
-    }
-
-    /**
-     * Same source-of-input as input() but without HTML-escape — for fields whose
-     * display path is known to escape on output (recommended pattern). Use this when
-     * adding new write paths so the data isn't double-escaped on display.
-     */
-    protected function inputRaw(string $key, string $default = '', string $from = 'post', int $maxLen = 1000): string {
+    protected function input(string $key, string $default = '', string $from = 'post', int $maxLen = 1000): string {
         $source = $from === 'get' ? $_GET : $_POST;
         $value  = trim((string) ($source[$key] ?? $default));
         if ($maxLen > 0) {
@@ -157,6 +147,14 @@ abstract class BaseController {
                 : substr($value, 0, $maxLen);
         }
         return $value;
+    }
+
+    /**
+     * Alias of input() — kept so callers that want to be explicit about reading
+     * raw (un-escaped) user input can self-document the intent.
+     */
+    protected function inputRaw(string $key, string $default = '', string $from = 'post', int $maxLen = 1000): string {
+        return $this->input($key, $default, $from, $maxLen);
     }
 
     /**

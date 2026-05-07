@@ -172,7 +172,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
                 <td><?= $i + 1 ?></td>
                 <td>
                     <span style="font-weight:600;"><?= htmlspecialchars($item['item_name']) ?></span>
-                    <?php if (!empty($item['sku'])): ?><span style="font-size:7.5px;color:#888;margin-left:4px;"><?= $item['sku'] ?></span><?php endif; ?>
+                    <?php if (!empty($item['sku'])): ?><span style="font-size:7.5px;color:#888;margin-left:4px;"><?= htmlspecialchars((string) $item['sku']) ?></span><?php endif; ?>
                 </td>
                 <td style="text-align:center;"><?= $item['quantity'] ?></td>
                 <td style="text-align:right;"><?= number_format($item['unit_price'], DECIMAL_PLACES) ?></td>

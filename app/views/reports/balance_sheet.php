@@ -54,7 +54,7 @@
             <input type="hidden" name="page" value="reports">
             <input type="hidden" name="action" value="balanceSheet">
             <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;">As of:</label>
-            <input type="date" name="as_of" value="<?= $date ?>">
+            <input type="date" name="as_of" value="<?= htmlspecialchars((string) $date) ?>">
             <button type="submit"><i class="bi bi-funnel me-1"></i>Update</button>
         </form>
     </div>

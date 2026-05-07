@@ -74,7 +74,7 @@
         <div>
             <div class="item-name"><?= htmlspecialchars($item['name']) ?></div>
             <div class="item-meta">
-                <?php if ($item['sku']): ?>SKU: <?= $item['sku'] ?> &nbsp;|&nbsp;<?php endif; ?>
+                <?php if ($item['sku']): ?>SKU: <?= htmlspecialchars((string) $item['sku']) ?> &nbsp;|&nbsp;<?php endif; ?>
                 Sale Price: <?= APP_CURRENCY ?> <?= number_format($item['sale_price'], DECIMAL_PLACES) ?>
             </div>
         </div>

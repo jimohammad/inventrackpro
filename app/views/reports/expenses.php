@@ -21,11 +21,11 @@
             <input type="hidden" name="action" value="expenses">
             <div class="col-md-2">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">From Date</label>
-                <input type="date" name="from_date" class="form-control" value="<?= $fromDate ?>">
+                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>">
             </div>
             <div class="col-md-2">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">To Date</label>
-                <input type="date" name="to_date" class="form-control" value="<?= $toDate ?>">
+                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>">
             </div>
             <div class="col-md-2">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">Category</label>

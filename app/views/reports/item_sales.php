@@ -26,18 +26,18 @@
                     <?php foreach ($items as $it): ?>
                     <option value="<?= $it['id'] ?>" <?= $itemId == $it['id'] ? 'selected' : '' ?>>
                         <?= htmlspecialchars($it['name']) ?>
-                        <?php if ($it['sku']): ?>(<?= $it['sku'] ?>)<?php endif; ?>
+                        <?php if ($it['sku']): ?>(<?= htmlspecialchars((string) $it['sku']) ?>)<?php endif; ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">From</label>
-                <input type="date" name="from_date" class="form-control" value="<?= $fromDate ?>">
+                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>">
             </div>
             <div class="col-md-2">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">To</label>
-                <input type="date" name="to_date" class="form-control" value="<?= $toDate ?>">
+                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>">
             </div>
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">
@@ -60,8 +60,8 @@
             <div>
                 <div style="font-size:1.05rem;font-weight:700;color:var(--text-main);"><?= htmlspecialchars($item['name']) ?></div>
                 <div style="font-size:0.78rem;color:var(--text-muted);">
-                    <?php if ($item['sku']): ?><span class="me-3"><i class="bi bi-upc me-1"></i><?= $item['sku'] ?></span><?php endif; ?>
-                    <?php if ($item['brand']): ?><span class="me-3"><i class="bi bi-tag me-1"></i><?= $item['brand'] ?></span><?php endif; ?>
+                    <?php if ($item['sku']): ?><span class="me-3"><i class="bi bi-upc me-1"></i><?= htmlspecialchars((string) $item['sku']) ?></span><?php endif; ?>
+                    <?php if ($item['brand']): ?><span class="me-3"><i class="bi bi-tag me-1"></i><?= htmlspecialchars((string) $item['brand']) ?></span><?php endif; ?>
                     Sale Price: <?= APP_CURRENCY ?> <?= number_format($item['sale_price'], DECIMAL_PLACES) ?>
                 </div>
             </div>

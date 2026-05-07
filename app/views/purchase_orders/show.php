@@ -141,7 +141,7 @@ if (!empty($po['account_id'])) {
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#94a3b8;"><?= $n+1 ?></td>
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-weight:600;color:#1e293b;">
                                 <?= htmlspecialchars($item['item_name']) ?>
-                                <div style="font-size:0.72rem;color:#94a3b8;font-family:'JetBrains Mono',monospace;"><?= $item['sku'] ?? '' ?></div>
+                                <div style="font-size:0.72rem;color:#94a3b8;font-family:'JetBrains Mono',monospace;"><?= htmlspecialchars((string) ($item['sku'] ?? '')) ?></div>
                             </td>
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:center;font-weight:700;color:#4338ca;"><?= $item['quantity'] ?></td>
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;color:#475569;"><?= number_format($item['unit_price_foreign'], DECIMAL_PLACES) ?></td>

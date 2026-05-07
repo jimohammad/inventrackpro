@@ -75,7 +75,7 @@ class OpeningStockController extends BaseController {
 
                 if ($exists) {
                     // Read old quantity BEFORE updating the log
-                    $old = $this->db->fetchOne("SELECT quantity FROM opening_stock_log WHERE id=?", [$exists['id']]);
+                    $old = $this->db->fetchOne("SELECT quantity FROM opening_stock_log WHERE id=? FOR UPDATE", [$exists['id']]);
                     $diff = $qty - (int)($old['quantity'] ?? 0);
 
                     // Update log

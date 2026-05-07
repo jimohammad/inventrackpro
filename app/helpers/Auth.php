@@ -43,6 +43,10 @@ class Auth {
             return 'Invalid email or password.';
         }
 
+        // Prevent session fixation: regenerate immediately after successful auth,
+        // before writing any user data into the session.
+        session_regenerate_id(true);
+
         // Set session data
         $_SESSION['user_id']   = $user['id'];
         $_SESSION['user_name'] = $user['name'];
@@ -61,9 +65,6 @@ class Auth {
             ];
         }
         $_SESSION['permissions'] = $permMap;
-
-        // Prevent session fixation
-        session_regenerate_id(true);
 
         // Update last login timestamp
         $db->execute("UPDATE users SET last_login = NOW() WHERE id = ?", [$user['id']]);

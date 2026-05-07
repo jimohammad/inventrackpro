@@ -191,13 +191,30 @@ class IMEIController extends BaseController {
         }
 
         // Check if IMEI already exists
-        $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id FROM imei_records WHERE imei = ?", [$imei]);
+        $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id, sale_id FROM imei_records WHERE imei = ?", [$imei]);
         if ($existing) {
             if ($existing['status'] === 'in_stock') {
                 // Already in stock — real duplicate, block it
                 $existingItem = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
                 echo json_encode(['error' => "Already in stock — {$existingItem['name']}"]);
                 return;
+            }
+
+            // Reject re-stock if this IMEI is still linked to an active sale line.
+            if (($existing['status'] ?? '') === 'sold') {
+                $hasLiveSaleLink = $db->fetchOne(
+                    "SELECT 1 AS ok
+                     FROM sale_item_imei sii
+                     JOIN sale_items si ON si.id = sii.sale_item_id
+                     JOIN sales s ON s.id = si.sale_id
+                     WHERE sii.imei_id = ? AND s.status != 'cancelled'
+                     LIMIT 1",
+                    [(int) $existing['id']]
+                );
+                if ($hasLiveSaleLink) {
+                    echo json_encode(['error' => 'Cannot re-stock: this IMEI is linked to an active sale. Use a return/cancellation flow instead.']);
+                    return;
+                }
             }
 
             // Previously sold or transferred — re-stock it

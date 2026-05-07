@@ -41,6 +41,7 @@
 
 # Deny direct access to sensitive paths
 RedirectMatch 403 ^/(config|app|backups|database|cron|api/v1(?:/|$)|graphify-out|\.claude|\.idea|\.vscode|\.vs)(/.*)?$
+RedirectMatch 403 ^/\.git(?:/|$)
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

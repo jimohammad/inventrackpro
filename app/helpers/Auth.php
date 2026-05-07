@@ -56,8 +56,13 @@ class Auth {
         $_SESSION['user_role'] = $user['role'];
         $_SESSION['logged_in'] = true;
 
-        // Load permissions into session
-        $perms = $db->fetchAll("SELECT * FROM permissions WHERE user_id = ?", [$user['id']]);
+        // Load permissions into session (select only required columns)
+        $perms = $db->fetchAll(
+            "SELECT module, can_view, can_add, can_edit, can_delete
+             FROM permissions
+             WHERE user_id = ?",
+            [$user['id']]
+        );
         $permMap = [];
         foreach ($perms as $p) {
             $permMap[$p['module']] = [
@@ -145,7 +150,7 @@ class Auth {
 
     // Hash a password
     public static function hashPassword(string $password): string {
-        return password_hash($password, PASSWORD_BCRYPT);
+        return password_hash($password, PASSWORD_DEFAULT);
     }
 
     // CSRF Token

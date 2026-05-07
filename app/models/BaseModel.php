@@ -47,9 +47,18 @@ abstract class BaseModel {
         $params = [];
 
         if (!empty($where)) {
-            $conditions = array_map(fn($k) => "{$k} = ?", array_keys($where));
-            $sql .= " WHERE " . implode(' AND ', $conditions);
-            $params = array_values($where);
+            $conditions = [];
+            foreach ($where as $k => $v) {
+                $col = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $k);
+                if ($col === '') {
+                    continue;
+                }
+                $conditions[] = "{$col} = ?";
+                $params[] = $v;
+            }
+            if (!empty($conditions)) {
+                $sql .= " WHERE " . implode(' AND ', $conditions);
+            }
         }
 
         $result = $this->db->fetchOne($sql, $params);

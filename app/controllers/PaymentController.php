@@ -114,7 +114,9 @@ class PaymentController extends BaseController {
         if ($refId) {
             $defaultRef = ($mode === 'in') ? 'sale' : 'purchase';
             $refType    = $refType ?: $defaultRef;
-            $table      = $refType === 'sale' ? 'sales' : 'purchases';
+            // Explicit mapping (avoid "table-from-input" ambiguity even though refType is constrained).
+            $refTableMap = ['sale' => 'sales', 'purchase' => 'purchases'];
+            $table = $refTableMap[$refType] ?? $refTableMap[$defaultRef];
             $refData    = $db->fetchOne(
                 "SELECT t.*, p.name as party_name FROM {$table} t
                  JOIN parties p ON p.id = t.party_id

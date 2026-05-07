@@ -11,7 +11,6 @@ class ReturnController extends BaseController {
     private Party      $partyModel;
     private Item       $itemModel;
     private Sale       $saleModel;
-    private string     $debugLogPath;
 
     public function __construct() {
         parent::__construct();
@@ -19,27 +18,6 @@ class ReturnController extends BaseController {
         $this->partyModel  = new Party();
         $this->itemModel   = new Item();
         $this->saleModel   = new Sale();
-        // Debug logging is opt-in via environment flag to avoid writing logs in production.
-        $this->debugLogPath = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'erp-returns-debug.log';
-    }
-
-    private function debugLog(string $runId, string $hypothesisId, string $location, string $message, array $data = []): void {
-        if (!getenv('ERP_DEBUG_RETURNS')) {
-            return;
-        }
-        $payload = [
-            'sessionId'    => substr((string) session_id(), 0, 12),
-            'runId'        => $runId,
-            'hypothesisId' => $hypothesisId,
-            'location'     => $location,
-            'message'      => $message,
-            'data'         => $data,
-            'timestamp'    => (int) round(microtime(true) * 1000),
-        ];
-        $line = json_encode($payload, JSON_UNESCAPED_SLASHES);
-        if ($line !== false) {
-            @file_put_contents($this->debugLogPath, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
-        }
     }
 
     private function parsePostedImeis($rawImeis): array {
@@ -146,20 +124,6 @@ class ReturnController extends BaseController {
                 "SELECT id, party_id, status, warehouse_id FROM sales WHERE id = ? AND warehouse_id = ?",
                 [$refId, Auth::warehouseId()]
             );
-            // #region agent log
-            $this->debugLog(
-                'run1',
-                'H4',
-                'ReturnController.php:store',
-                'Store sale reference lookup',
-                [
-                    'refId' => $refId,
-                    'saleFound' => (bool)$sale,
-                    'saleWarehouseId' => $sale ? (int)$sale['warehouse_id'] : null,
-                    'authWarehouseId' => (int)Auth::warehouseId(),
-                ]
-            );
-            // #endregion
             if (!$sale) {
                 $this->flash('error', 'Selected invoice was not found.');
                 $this->redirect('?page=returns&action=create');
@@ -215,19 +179,6 @@ class ReturnController extends BaseController {
     public function searchSales(): void {
         Auth::authorize('returns', 'add');
         header('Content-Type: application/json');
-        // #region agent log
-        $this->debugLog(
-            'run1',
-            'H5',
-            'ReturnController.php:searchSales',
-            'searchSales endpoint reached',
-            [
-                'userId' => (int)Auth::id(),
-                'authWarehouseId' => (int)Auth::warehouseId(),
-                'qLength' => strlen(trim($_GET['q'] ?? '')),
-            ]
-        );
-        // #endregion
         $q = trim($_GET['q'] ?? '');
         if (strlen($q) < 1) { echo json_encode([]); return; }
         $db   = Database::getInstance();
@@ -249,18 +200,6 @@ class ReturnController extends BaseController {
     public function lookupImei(): void {
         Auth::authorize('returns', 'add');
         header('Content-Type: application/json');
-        // #region agent log
-        $this->debugLog(
-            'run1',
-            'H5',
-            'ReturnController.php:lookupImei',
-            'lookupImei endpoint reached',
-            [
-                'userId' => (int)Auth::id(),
-                'authWarehouseId' => (int)Auth::warehouseId(),
-            ]
-        );
-        // #endregion
         $imei = trim($_GET['imei'] ?? '');
 
         if (!$imei || !ctype_digit($imei) || strlen($imei) < 14 || strlen($imei) > 15) {
@@ -285,21 +224,6 @@ class ReturnController extends BaseController {
                AND ir.warehouse_id = ?",
             [$imei, Auth::warehouseId()]
         );
-        // #region agent log
-        $this->debugLog(
-            'run1',
-            'H4',
-            'ReturnController.php:lookupImei',
-            'IMEI lookup result warehouse scope',
-            [
-                'imei' => $imei,
-                'found' => (bool)$row,
-                'imeiWarehouseId' => $row ? (int)$row['imei_warehouse_id'] : null,
-                'authWarehouseId' => (int)Auth::warehouseId(),
-                'saleId' => $row && !empty($row['sale_id']) ? (int)$row['sale_id'] : null,
-            ]
-        );
-        // #endregion
 
         // IMEI NOT in system — still accept it, cashier picks item manually
         if (!$row) {
@@ -424,22 +348,6 @@ class ReturnController extends BaseController {
         $warehouseId = (int)$return['warehouse_id'];
 
         $rawItems    = $_POST['items'] ?? [];
-        // #region agent log
-        $this->debugLog(
-            'run1',
-            'H1',
-            'ReturnController.php:update',
-            'Update started with posted item subsets',
-            [
-                'returnId' => $id,
-                'postedItemsCount' => is_array($rawItems) ? count($rawItems) : 0,
-                'postedNewItemsCount' => is_array($_POST['new_items'] ?? null) ? count($_POST['new_items']) : 0,
-                'currentReturnSubtotal' => isset($return['subtotal']) ? (float)$return['subtotal'] : null,
-                'warehouseId' => $warehouseId,
-                'authWarehouseId' => (int)Auth::warehouseId(),
-            ]
-        );
-        // #endregion
 
         if (!empty($return['ref_id'])) {
             $saleId = (int)$return['ref_id'];
@@ -549,22 +457,6 @@ class ReturnController extends BaseController {
                         if ($affected === 0) {
                             throw new Exception("Cannot remove returned item — stock would go negative for item {$oldItem['item_id']}.");
                         }
-                        // #region agent log
-                        $this->debugLog(
-                            'run1',
-                            'H2',
-                            'ReturnController.php:update',
-                            'Delete return item stock reverse attempt',
-                            [
-                                'returnId' => $id,
-                                'returnItemId' => $retItemId,
-                                'itemId' => (int)$oldItem['item_id'],
-                                'qtyToDeduct' => (int)$oldItem['quantity'],
-                                'stockUpdateAffected' => (int)$affected,
-                                'imeiLinkCount' => $imeiLinkCount,
-                            ]
-                        );
-                        // #endregion
                         $db->execute("DELETE FROM return_items WHERE id = ?", [$retItemId]);
                         continue;
                     }
@@ -600,22 +492,6 @@ class ReturnController extends BaseController {
                         }
                     }
                     if ($qtyDiff != 0) {
-                        // #region agent log
-                        $this->debugLog(
-                            'run1',
-                            'H2',
-                            'ReturnController.php:update',
-                            'Quantity diff adjusted stock via upsert',
-                            [
-                                'returnId' => $id,
-                                'returnItemId' => $retItemId,
-                                'itemId' => (int)$oldItem['item_id'],
-                                'oldQty' => $oldQty,
-                                'newQty' => $newQty,
-                                'qtyDiff' => $qtyDiff,
-                            ]
-                        );
-                        // #endregion
                     }
                     if ($isImeiItem) {
                         $currentLinks = $db->fetchAll(
@@ -704,22 +580,6 @@ class ReturnController extends BaseController {
                             }
                         }
                     }
-                    // #region agent log
-                    $this->debugLog(
-                        'run1',
-                        'H3',
-                        'ReturnController.php:update',
-                        'Return item quantity edited without IMEI reconciliation',
-                        [
-                            'returnId' => $id,
-                            'returnItemId' => $retItemId,
-                            'itemId' => (int)$oldItem['item_id'],
-                            'oldQty' => $oldQty,
-                            'newQty' => $newQty,
-                            'imeiLinkCount' => $imeiLinkCount,
-                        ]
-                    );
-                    // #endregion
 
                 }
             }
@@ -809,21 +669,6 @@ class ReturnController extends BaseController {
                 throw new Exception("Return header update failed for return {$id}.");
             }
             $sumReturnItems = $newSubtotal;
-            // #region agent log
-            $this->debugLog(
-                'run1',
-                'H1',
-                'ReturnController.php:update',
-                'Post-update subtotal comparison and header update scope',
-                [
-                    'returnId' => $id,
-                    'computedNewSubtotal' => (float)$newSubtotal,
-                    'sumReturnItems' => $sumReturnItems,
-                    'headerWarehouseFilter' => $warehouseId,
-                    'returnWarehouseId' => $warehouseId,
-                ]
-            );
-            // #endregion
 
             if (!empty($return['ref_id'])) {
                 $this->saleModel->recomputeBalanceAfterReturns((int) $return['ref_id']);

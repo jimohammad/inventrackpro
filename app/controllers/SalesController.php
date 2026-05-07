@@ -355,8 +355,10 @@ class SalesController extends BaseController {
         $ok = $this->saleModel->addPayment($id, $amount, $accId, $method, $date, $notes);
         if ($ok === true) {
             echo json_encode(['success' => true]);
+            return;
         } else {
             echo json_encode(['success' => false, 'error' => is_string($ok) ? $ok : 'Failed to add payment.']);
+            return;
         }
     }
 
@@ -556,7 +558,7 @@ class SalesController extends BaseController {
 
             $db->execute(
                 "UPDATE sales SET date=?, subtotal=?, discount=?, grand_total=?, balance=?, status=?, notes=? WHERE id=? AND warehouse_id=?",
-                [$newDate, $newSubtotal, $newDiscount, $newGrandTotal, $newBalance, $newStatus, $newNotes ?: null, $id, Auth::warehouseId()]
+                [$newDate, $newSubtotal, $newDiscount, $newGrandTotal, $newBalance, $newStatus, $newNotes ?: null, $id, (int) ($sale['warehouse_id'] ?? 0)]
             );
 
             $db->commit();

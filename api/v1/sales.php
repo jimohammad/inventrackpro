@@ -144,6 +144,10 @@ switch ($method) {
 
         $db->beginTransaction();
         try {
+            $createdBy = $keyData['created_by'] ?? null;
+            if ($createdBy !== null) {
+                $createdBy = (int) $createdBy;
+            }
             // Idempotency record (best-effort table create, then unique insert)
             $db->execute("CREATE TABLE IF NOT EXISTS api_idempotency (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -197,8 +201,8 @@ switch ($method) {
 
             // Insert sale
             $saleId = $db->insert(
-                "INSERT INTO sales (invoice_no, party_id, warehouse_id, date, subtotal, discount, grand_total, paid_amount, balance, status, notes)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO sales (invoice_no, party_id, warehouse_id, date, subtotal, discount, grand_total, paid_amount, balance, status, notes, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     $invoiceNo,
                     $data['party_id'],
@@ -210,7 +214,8 @@ switch ($method) {
                     $paid,
                     $balance,
                     $status,
-                    $data['notes'] ?? null
+                    $data['notes'] ?? null,
+                    $createdBy
                 ]
             );
 
@@ -274,7 +279,7 @@ switch ($method) {
                      VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [$payNo, 'sale', $saleId, $data['party_id'], 'in', $accountId, $paid,
                      $data['payment_method'] ?? 'cash', $data['date'] ?? date('Y-m-d'),
-                     $data['warehouse_id'] ?? null, null]
+                     $data['warehouse_id'] ?? null, $createdBy]
                 );
 
                 // AUDIT FIX F4: Update account balance (was missing — caused balance drift)

@@ -123,6 +123,10 @@ class LandedCostController extends BaseController {
                 );
             }
 
+            // Track final landed unit prices per item_id across all purchase lines and all cost lines.
+            // We'll update the item master price once per item_id at the end (not per cost line).
+            $finalUnitPriceByItemId = [];
+
             // Apply each cost line
             foreach ($costs as $cost) {
                 $db->insert(
@@ -157,12 +161,18 @@ class LandedCostController extends BaseController {
                         "UPDATE purchase_items SET unit_price=?, total=? WHERE id=?",
                         [$item['unit_price'], $item['total'], $item['id']]
                     );
-                    $db->execute(
-                        "UPDATE items SET purchase_price=? WHERE id=?",
-                        [$item['unit_price'], $item['item_id']]
-                    );
+
+                    $finalUnitPriceByItemId[(int) $item['item_id']] = (float) $item['unit_price'];
                 }
                 unset($item);
+            }
+
+            // Apply final landed purchase_price to each item once (last computed landed unit price wins).
+            foreach ($finalUnitPriceByItemId as $itemId => $unitPrice) {
+                $db->execute(
+                    "UPDATE items SET purchase_price = ? WHERE id = ?",
+                    [(float) $unitPrice, (int) $itemId]
+                );
             }
 
             // Update each purchase grand_total

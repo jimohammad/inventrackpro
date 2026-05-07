@@ -7,6 +7,7 @@ require_once __DIR__ . '/../models/Party.php';
 require_once __DIR__ . '/../models/IMEI.php';
 require_once __DIR__ . '/../helpers/WhatsApp.php';
 require_once __DIR__ . '/../models/Payment.php';
+require_once __DIR__ . '/../services/SaleValidator.php';
 
 class SalesController extends BaseController {
 
@@ -170,144 +171,23 @@ class SalesController extends BaseController {
         }
         unset($_SESSION['sale_form_nonce']);
 
-        // Block new invoice if agent has outstanding unpaid balance OR exceeds credit limit
-        $partyId = $this->inputInt('party_id');
-        if ($partyId) {
-            $db = Database::getInstance();
+        $db = Database::getInstance();
+        try {
+            $rawItems = $_POST['items'] ?? [];
+            $priceFloorMode = in_array(Auth::role(), ['cashier', 'viewer'], true) ? 'clamp' : 'none';
+            $norm = SaleValidator::normalizeItems($db, $this->imeiModel, $rawItems, (int) $this->inputInt('warehouse_id'), $priceFloorMode);
+            $items = $norm['items'];
 
-            $party = $db->fetchOne(
-                "SELECT name, credit_limit FROM parties WHERE id = ? AND is_active = 1",
-                [$partyId]
-            );
-            if (!$party) {
-                $this->flash('error', 'Customer is inactive or does not exist.');
-                $this->redirect('?page=sales&action=create');
-                return;
-            }
-            $name        = $party['name'];
-            $creditLimit = (float) ($party['credit_limit'] ?? 0);
-
-            // Skip heavy balance query if no credit limit is set
-            if ($creditLimit <= 0) goto skipCreditCheck;
-
-            // Calculate real outstanding balance (same formula as party statement)
-            $balRow = $db->fetchOne(
-                "SELECT
-                    p.opening_balance
-                    + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                    - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                    - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                    as net_balance
-                 FROM parties p WHERE p.id = ?",
-                [$partyId]
-            );
-            $outstandingTotal = max(0, (float)($balRow['net_balance'] ?? 0));
-
-            // Check credit limit if one is set
-            if ($creditLimit > 0) {
-                // Calculate new invoice total from submitted items
-                $rawItems   = $_POST['items'] ?? [];
-                $newTotal   = 0;
-                foreach ($rawItems as $row) {
-                    if (empty($row['item_id']) || empty($row['quantity'])) continue;
-                    $lineDisc  = (float) ($row['discount'] ?? 0);
-                    $lineTotal = ((float)($row['unit_price'] ?? 0) * (int)$row['quantity']) - $lineDisc;
-                    $newTotal += $lineTotal;
-                }
-                $newTotal   -= (float) ($_POST['discount'] ?? 0);
-
-                $totalAfterInvoice = $outstandingTotal + $newTotal;
-
-                if ($totalAfterInvoice > $creditLimit) {
-                    $this->saveSaleDraftFromPost();
-                    $this->flash('error',
-                        "{$name}'s credit limit is " . APP_CURRENCY . " " . number_format($creditLimit, DECIMAL_PLACES) .
-                        ". Current outstanding: " . APP_CURRENCY . " " . number_format($outstandingTotal, DECIMAL_PLACES) .
-                        " + this invoice: " . APP_CURRENCY . " " . number_format($newTotal, DECIMAL_PLACES) .
-                        " = " . APP_CURRENCY . " " . number_format($totalAfterInvoice, DECIMAL_PLACES) .
-                        " — exceeds limit. Collect payment first or increase the credit limit."
-                    );
-                    $this->redirect('?page=sales&action=create');
-                }
-            }
-            skipCreditCheck:
-        }
-
-        // Parse items from POST
-        $rawItems   = $_POST['items'] ?? [];
-        $items      = [];
-        $hasError   = false;
-
-        // Batch-fetch all item info upfront — avoids N queries in the loop below
-        $allItemIds = array_filter(array_column($rawItems, 'item_id'));
-        $itemMap    = [];
-        if (!empty($allItemIds)) {
-            $ph = implode(',', array_fill(0, count($allItemIds), '?'));
-            $db = Database::getInstance();
-            foreach ($db->fetchAll("SELECT id, name, has_imei, imei_optional, sale_price FROM items WHERE id IN ({$ph})", array_map('intval', $allItemIds)) as $r) {
-                $itemMap[(int)$r['id']] = $r;
-            }
-        }
-
-        foreach ($rawItems as $row) {
-            if (empty($row['item_id']) || empty($row['quantity'])) continue;
-
-            // Validate positive values
-            if ((int)$row['quantity'] <= 0) {
-                $this->flash('error', 'Quantity must be greater than zero.');
-                $hasError = true; break;
-            }
-            if ((float)($row['unit_price'] ?? 0) < 0) {
-                $this->flash('error', 'Price cannot be negative.');
-                $hasError = true; break;
-            }
-
-            $imeis    = [];
-            if (!empty($row['imeis'])) {
-                $imeis = array_filter(array_map('trim', explode("\n", $row['imeis'])));
-            }
-
-            $itemInfo = $itemMap[(int)$row['item_id']] ?? null;
-
-            // Validate IMEI count matches qty for IMEI items
-            if ($itemInfo && $itemInfo['has_imei'] && empty($itemInfo['imei_optional']) && count($imeis) !== (int)$row['quantity']) {
-                $this->flash('error', "Item \"{$itemInfo['name']}\": IMEI count must match quantity ({$row['quantity']}).");
-                $hasError = true;
-                break;
-            }
-
-            // Validate IMEI availability
-            if (!empty($imeis)) {
-                $errors = $this->imeiModel->validateList($imeis, (int)$row['item_id'], Auth::warehouseId());
-                if (!empty($errors)) {
-                    $this->flash('error', implode(' | ', $errors));
-                    $hasError = true;
-                    break;
-                }
-            }
-
-            // Cashier/viewer: price can be higher than catalog, but never lower
-            $requestedPrice = (float)$row['unit_price'];
-            if (in_array(Auth::role(), ['cashier','viewer']) && $itemInfo) {
-                $catalogPrice = (float)$itemInfo['sale_price'];
-                if ($requestedPrice < $catalogPrice) {
-                    $requestedPrice = $catalogPrice;
-                }
-            }
-
-            $items[] = [
-                'item_id'    => (int)   $row['item_id'],
-                'quantity'   => (int)   $row['quantity'],
-                'unit_price' => $requestedPrice,
-                'discount'   => (float) ($row['discount'] ?? 0),
-                'imeis'      => $imeis,
-            ];
-        }
-
-        if ($hasError || empty($items)) {
+            // Credit limit check (if set)
+            $partyId = $this->inputInt('party_id');
+            $headerDisc = $this->inputFloat('discount');
+            $newInvoiceTotal = (float) $norm['subtotal'] - (float) $headerDisc;
+            SaleValidator::enforceCreditLimit($db, $partyId, $newInvoiceTotal);
+        } catch (Exception $e) {
             $this->saveSaleDraftFromPost();
-            if (!$hasError) $this->flash('error', 'Please add at least one item.');
+            $this->flash('error', $e->getMessage());
             $this->redirect('?page=sales&action=create');
+            return;
         }
 
         $result = $this->saleModel->createFull([

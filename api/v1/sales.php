@@ -8,6 +8,8 @@
  */
 
 $db = Database::getInstance();
+require_once __DIR__ . '/../../app/models/IMEI.php';
+require_once __DIR__ . '/../../app/services/SaleValidator.php';
 
 switch ($method) {
     case 'GET':
@@ -110,6 +112,12 @@ switch ($method) {
             apiError(403, 'No permission for this warehouse.');
         }
 
+        // Idempotency/double-submit guard (required): pass X-IDEMPOTENCY-KEY header or idempotency_key in JSON body.
+        $idemKey = trim((string) ($_SERVER['HTTP_X_IDEMPOTENCY_KEY'] ?? ($data['idempotency_key'] ?? '')));
+        if ($idemKey === '') {
+            apiError(422, 'idempotency_key is required (or pass X-IDEMPOTENCY-KEY header).');
+        }
+
         // Validate party and warehouse exist
         if (!$db->fetchOne("SELECT id FROM parties WHERE id = ? AND is_active = 1", [$data['party_id']])) {
             apiError(422, 'Invalid party_id — party not found or inactive.');
@@ -118,26 +126,57 @@ switch ($method) {
             apiError(422, 'Invalid warehouse_id — warehouse not found or inactive.');
         }
 
-        // Validate items
-        foreach ($data['items'] as $item) {
-            if ((int)($item['quantity'] ?? 0) <= 0) apiError(422, 'Item quantity must be greater than zero.');
-            if ((float)($item['unit_price'] ?? 0) < 0) apiError(422, 'Item price cannot be negative.');
+        $imeiModel = new IMEI();
+        try {
+            // API enforces price floor by default (reject below catalog) unless key explicitly allows override.
+            $allowBelowCatalog = !empty($keyPermissions['sales_price_override']);
+            $floorMode = $allowBelowCatalog ? 'none' : 'reject';
+            $norm = SaleValidator::normalizeItems($db, $imeiModel, (array) $data['items'], (int) $data['warehouse_id'], $floorMode);
+            $items = $norm['items'];
+
+            // Credit limit check if set
+            $headerDisc = (float) ($data['discount'] ?? 0);
+            $newInvoiceTotal = (float) $norm['subtotal'] - $headerDisc;
+            SaleValidator::enforceCreditLimit($db, (int) $data['party_id'], $newInvoiceTotal);
+        } catch (Exception $e) {
+            apiError(422, $e->getMessage());
         }
 
         $db->beginTransaction();
         try {
+            // Idempotency record (best-effort table create, then unique insert)
+            $db->execute("CREATE TABLE IF NOT EXISTS api_idempotency (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                api_key_id INT NOT NULL,
+                endpoint VARCHAR(50) NOT NULL,
+                idem_key VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_key (api_key_id, endpoint, idem_key),
+                INDEX idx_created (created_at)
+            )");
+
+            $keyData = $db->fetchOne("SELECT id FROM api_keys WHERE api_key = ? AND is_active = 1", [($_SERVER['HTTP_X_API_KEY'] ?? '')]);
+            $apiKeyId = (int) ($keyData['id'] ?? 0);
+            if ($apiKeyId > 0) {
+                $try = $db->execute(
+                    "INSERT INTO api_idempotency (api_key_id, endpoint, idem_key) VALUES (?,?,?)",
+                    [$apiKeyId, 'sales', $idemKey]
+                );
+                if ($try === 0) {
+                    $db->rollback();
+                    apiError(409, 'Duplicate request (idempotency_key already used).');
+                }
+            }
+
             // BUG FIX: Added FOR UPDATE to prevent duplicate invoice numbers under concurrency.
             // Previously two simultaneous API requests could generate the same invoice_no.
             $lastSale  = $db->fetchOne("SELECT invoice_no FROM sales ORDER BY id DESC LIMIT 1 FOR UPDATE");
             $lastNum   = $lastSale ? (int) substr($lastSale['invoice_no'], strlen(SALE_PREFIX)) : 0;
             $invoiceNo = SALE_PREFIX . str_pad($lastNum + 1, 6, '0', STR_PAD_LEFT);
 
-            $subtotal = 0;
             $discount = (float) ($data['discount'] ?? 0);
 
-            foreach ($data['items'] as $item) {
-                $subtotal += (float)$item['unit_price'] * (int)$item['quantity'];
-            }
+            $subtotal = (float) ($norm['subtotal'] ?? 0);
 
             $grandTotal = $subtotal - $discount;
             // Only accept payment if account_id is provided — prevents orphan paid_amount
@@ -176,12 +215,18 @@ switch ($method) {
             );
 
             // Insert items + update stock
-            foreach ($data['items'] as $item) {
+            foreach ($items as $item) {
                 $itemTotal = (float)$item['unit_price'] * (int)$item['quantity'];
                 $saleItemId = $db->insert(
                     "INSERT INTO sale_items (sale_id, item_id, quantity, unit_price, discount, total)
                      VALUES (?,?,?,?,?,?)",
                     [$saleId, $item['item_id'], $item['quantity'], $item['unit_price'], $item['discount'] ?? 0, $itemTotal]
+                );
+
+                // Lock stock row so concurrent operations serialize per item/warehouse
+                $db->fetchOne(
+                    "SELECT quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
+                    [$item['item_id'], $data['warehouse_id']]
                 );
 
                 // BUG FIX: Atomic stock check + deduct in one query to prevent race condition.

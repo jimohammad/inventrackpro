@@ -152,28 +152,10 @@ class PaymentController extends BaseController {
         $id = (int)($_GET['id'] ?? 0);
         if (!$id) { echo json_encode(['balance' => 0]); return; }
 
-        $db = Database::getInstance();
-        $whId = Auth::warehouseId();
-        $row = $db->fetchOne(
-            "SELECT p.opening_balance
-                + COALESCE(sl.total, 0)
-                - COALESCE(py_s.total, 0)
-                - COALESCE(rt_s.total, 0)
-                - COALESCE(pr.total, 0)
-                + COALESCE(py_p.total, 0)
-                + COALESCE(rt_p.total, 0)
-                as balance
-             FROM parties p
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM sales WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled' GROUP BY party_id) sl ON sl.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) as total FROM payments WHERE party_id = ? AND warehouse_id = ? AND ref_type IN ('sale','discount') GROUP BY party_id) py_s ON py_s.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND warehouse_id = ? AND type = 'sale_return' AND status = 'approved' GROUP BY party_id) rt_s ON rt_s.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM purchases WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled' GROUP BY party_id) pr ON pr.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(amount) as total FROM payments WHERE party_id = ? AND warehouse_id = ? AND ref_type = 'purchase' GROUP BY party_id) py_p ON py_p.party_id = p.id
-             LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE party_id = ? AND warehouse_id = ? AND type = 'purchase_return' AND status = 'approved' GROUP BY party_id) rt_p ON rt_p.party_id = p.id
-             WHERE p.id = ?",
-            [$id, $whId, $id, $whId, $id, $whId, $id, $whId, $id, $whId, $id, $whId, $id]
-        );
-        echo json_encode(['balance' => (float)($row['balance'] ?? 0)]);
+        // Centralized balance logic (directional CASE WHEN rules) lives in Party::findWithBalance().
+        $partyModel = new Party();
+        $party = $partyModel->findWithBalance($id);
+        echo json_encode(['balance' => (float)($party['net_balance'] ?? 0)]);
     }
 
     public function store(): void {

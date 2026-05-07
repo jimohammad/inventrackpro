@@ -55,7 +55,12 @@ class PurchaseController extends BaseController {
         $stats = $db->fetchOne(
             "SELECT COUNT(*) as count, COALESCE(SUM(grand_total),0) as total,
                     COALESCE(SUM(paid_amount),0) as paid, COALESCE(SUM(balance),0) as balance
-             FROM purchases WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND date <= CURDATE() AND status != 'cancelled'"
+             FROM purchases
+             WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+               AND date <= CURDATE()
+               AND status != 'cancelled'
+               AND (? = 0 OR warehouse_id = ?)",
+            [(int) (Auth::warehouseId() ?? 0), (int) (Auth::warehouseId() ?? 0)]
         );
 
         $pageTitle = 'Purchases';

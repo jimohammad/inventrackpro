@@ -124,25 +124,23 @@ switch ($method) {
         $product = $db->fetchOne("SELECT id FROM items WHERE id = ?", [$id]);
         if (!$product) apiError(404, 'Product not found.');
 
-        $db->execute(
-            "UPDATE items SET 
-                name = COALESCE(?, name),
-                sku = COALESCE(?, sku),
-                brand = COALESCE(?, brand),
-                sale_price = COALESCE(?, sale_price),
-                purchase_price = COALESCE(?, purchase_price),
-                min_stock = COALESCE(?, min_stock)
-             WHERE id = ?",
-            [
-                $data['name'] ?? null,
-                $data['sku'] ?? null,
-                $data['brand'] ?? null,
-                isset($data['sale_price']) ? (float)$data['sale_price'] : null,
-                isset($data['purchase_price']) ? (float)$data['purchase_price'] : null,
-                isset($data['min_stock']) ? (int)$data['min_stock'] : null,
-                $id
-            ]
-        );
+        $fields = [];
+        $params = [];
+
+        // Only update fields that are present in the payload (allows explicit null to clear nullable columns).
+        if (array_key_exists('name', $data)) { $fields[] = "name = ?"; $params[] = $data['name']; }
+        if (array_key_exists('sku', $data)) { $fields[] = "sku = ?"; $params[] = $data['sku']; }
+        if (array_key_exists('brand', $data)) { $fields[] = "brand = ?"; $params[] = $data['brand']; }
+        if (array_key_exists('sale_price', $data)) { $fields[] = "sale_price = ?"; $params[] = ($data['sale_price'] === null ? null : (float)$data['sale_price']); }
+        if (array_key_exists('purchase_price', $data)) { $fields[] = "purchase_price = ?"; $params[] = ($data['purchase_price'] === null ? null : (float)$data['purchase_price']); }
+        if (array_key_exists('min_stock', $data)) { $fields[] = "min_stock = ?"; $params[] = ($data['min_stock'] === null ? null : (int)$data['min_stock']); }
+
+        if (empty($fields)) {
+            apiError(422, 'No updatable fields provided.');
+        }
+
+        $params[] = $id;
+        $db->execute("UPDATE items SET " . implode(', ', $fields) . " WHERE id = ?", $params);
 
         apiSuccess(['message' => 'Product updated.']);
         break;

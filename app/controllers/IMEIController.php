@@ -52,10 +52,18 @@ class IMEIController extends BaseController {
 
         if ($imei !== '') {
             // Basic rate limit to slow brute force scanning.
-            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $ip = self::clientIp();
             $cacheDir = sys_get_temp_dir() . '/imei_track_rl';
             if (!is_dir($cacheDir)) {
                 @mkdir($cacheDir, 0700, true);
+            }
+            // Best-effort cleanup to prevent unbounded growth (delete old files).
+            foreach (@scandir($cacheDir) ?: [] as $f) {
+                if ($f === '.' || $f === '..') continue;
+                $p = $cacheDir . '/' . $f;
+                if (@is_file($p) && @filemtime($p) && @filemtime($p) < time() - 86400) {
+                    @unlink($p);
+                }
             }
             $rlFile = $cacheDir . '/' . md5($ip);
             $now = time();

@@ -109,6 +109,7 @@ class ReturnController extends BaseController {
             $this->redirect('?page=returns');
             return;
         }
+        unset($_SESSION['return_form_nonce']);
 
         $rawItems = $_POST['items'] ?? [];
         $items    = [];
@@ -186,7 +187,6 @@ class ReturnController extends BaseController {
         ]);
 
         if ($result['success']) {
-            unset($_SESSION['return_form_nonce']);
             $this->logActivity('create_return', 'returns', $result['id'], $result['return_no']);
             $this->flash('success', "Return {$result['return_no']} saved.");
             if ($this->input('print_mode') === '1') {

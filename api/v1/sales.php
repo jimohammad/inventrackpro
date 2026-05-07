@@ -15,6 +15,11 @@ switch ($method) {
             apiError(403, 'No permission to read sales.');
         }
 
+        $allowedWhIds = apiAllowedWarehouseIds();
+        if (empty($allowedWhIds)) {
+            apiError(403, 'API key is not scoped to any warehouse.');
+        }
+
         $id = (int) ($_GET['id'] ?? 0);
 
         if ($id > 0) {
@@ -22,8 +27,8 @@ switch ($method) {
                 "SELECT s.*, p.name as party_name, p.phone as party_phone
                  FROM sales s
                  LEFT JOIN parties p ON p.id = s.party_id
-                 WHERE s.id = ?",
-                [$id]
+                 WHERE s.id = ? AND s.warehouse_id IN (" . implode(',', array_fill(0, count($allowedWhIds), '?')) . ")",
+                array_merge([$id], $allowedWhIds)
             );
             if (!$sale) apiError(404, 'Sale not found.');
 
@@ -48,8 +53,8 @@ switch ($method) {
         $page    = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = min(100, (int) ($_GET['per_page'] ?? 25));
         $offset  = ($page - 1) * $perPage;
-        $params  = [];
-        $where   = "WHERE 1=1";
+        $params  = $allowedWhIds;
+        $where   = "WHERE s.warehouse_id IN (" . implode(',', array_fill(0, count($allowedWhIds), '?')) . ")";
 
         if (!empty($_GET['party_id'])) {
             $where .= " AND s.party_id = ?";
@@ -99,6 +104,11 @@ switch ($method) {
         if (empty($data['party_id']))    apiError(422, 'party_id is required.');
         if (empty($data['warehouse_id'])) apiError(422, 'warehouse_id is required.');
         if (empty($data['items']))       apiError(422, 'items array is required.');
+
+        $allowedWhIds = apiAllowedWarehouseIds();
+        if (!empty($allowedWhIds) && !in_array((int) $data['warehouse_id'], $allowedWhIds, true)) {
+            apiError(403, 'No permission for this warehouse.');
+        }
 
         // Validate party and warehouse exist
         if (!$db->fetchOne("SELECT id FROM parties WHERE id = ? AND is_active = 1", [$data['party_id']])) {

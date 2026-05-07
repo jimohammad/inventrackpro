@@ -79,6 +79,22 @@ try {
 // Parse permissions
 $keyPermissions = json_decode($keyData['permissions'] ?? '{}', true) ?? [];
 
+// Warehouse scoping (security): API keys can be restricted to one or more warehouses.
+// Supported formats:
+// - api_keys.warehouse_id (if column exists in deployed DB)
+// - permissions JSON: { "warehouse_id": 1 } or { "warehouse_ids": [1,2] } or { "warehouses": [1,2] }
+$apiWarehouseIds = [];
+if (!empty($keyData['warehouse_id'])) {
+    $apiWarehouseIds = [(int) $keyData['warehouse_id']];
+} elseif (isset($keyPermissions['warehouse_id'])) {
+    $apiWarehouseIds = [(int) $keyPermissions['warehouse_id']];
+} elseif (isset($keyPermissions['warehouse_ids']) && is_array($keyPermissions['warehouse_ids'])) {
+    $apiWarehouseIds = array_map('intval', $keyPermissions['warehouse_ids']);
+} elseif (isset($keyPermissions['warehouses']) && is_array($keyPermissions['warehouses'])) {
+    $apiWarehouseIds = array_map('intval', $keyPermissions['warehouses']);
+}
+$apiWarehouseIds = array_values(array_unique(array_filter($apiWarehouseIds, fn($id) => $id > 0)));
+
 // -- Route Request --
 $endpoint = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['endpoint'] ?? ''));
 $method   = $_SERVER['REQUEST_METHOD'];
@@ -108,6 +124,11 @@ function apiError(int $code, string $message): void {
 
 function hasPermission(array $keyPermissions, string $resource, string $action = 'read'): bool {
     return isset($keyPermissions[$resource]) && in_array($action, $keyPermissions[$resource]);
+}
+
+function apiAllowedWarehouseIds(): array {
+    global $apiWarehouseIds;
+    return $apiWarehouseIds;
 }
 
 function getInput(): array {

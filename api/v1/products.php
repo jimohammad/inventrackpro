@@ -37,7 +37,6 @@ switch ($method) {
         }
 
         // List with optional filters
-        $search    = $db->getConnection()->quote('%' . ($_GET['search'] ?? '') . '%');
         $category  = (int) ($_GET['category_id'] ?? 0);
         $page      = max(1, (int) ($_GET['page'] ?? 1));
         $perPage   = min(100, (int) ($_GET['per_page'] ?? 25));

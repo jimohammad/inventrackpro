@@ -141,6 +141,41 @@ class PurchaseController extends BaseController {
             return;
         }
 
+        // Validate IMEI counts for IMEI-tracked items to avoid "ghost stock" without IMEIs.
+        $itemIds = array_values(array_unique(array_map(static fn($i) => (int) $i['item_id'], $items)));
+        if (!empty($itemIds)) {
+            $ph = implode(',', array_fill(0, count($itemIds), '?'));
+            $rows = $db->fetchAll(
+                "SELECT id, name, has_imei, imei_optional
+                 FROM items
+                 WHERE id IN ({$ph})",
+                $itemIds
+            );
+            $itemInfoMap = [];
+            foreach ($rows as $r) {
+                $itemInfoMap[(int) $r['id']] = $r;
+            }
+
+            foreach ($items as $it) {
+                $info = $itemInfoMap[(int) $it['item_id']] ?? null;
+                if (!$info) {
+                    $this->flash('error', 'Invalid item selected.');
+                    $this->redirect('?page=purchases&action=create');
+                    return;
+                }
+                if (!empty($info['has_imei']) && empty($info['imei_optional'])) {
+                    $qty = (int) ($it['quantity'] ?? 0);
+                    $cnt = is_array($it['imeis'] ?? null) ? count($it['imeis']) : 0;
+                    if ($qty > 0 && $cnt !== $qty) {
+                        $name = (string) ($info['name'] ?? ('Item #' . (int) $it['item_id']));
+                        $this->flash('error', "Item \"{$name}\": IMEI count must match quantity ({$qty}).");
+                        $this->redirect('?page=purchases&action=create');
+                        return;
+                    }
+                }
+            }
+        }
+
         $invoiceNo = $this->nextInvoiceNo($db);
         $subtotal  = array_sum(array_map(fn($i) => $i['unit_price'] * $i['quantity'], $items));
         $discount  = $this->inputFloat('discount');

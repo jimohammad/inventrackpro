@@ -38,39 +38,53 @@ if (!$keyData) {
 $db->execute("UPDATE api_keys SET last_used_at = NOW() WHERE id = ?", [$keyData['id']]);
 
 // ── AUDIT FIX S6: Rate Limiting ────────────────────────────
-// Sliding window: max API_RATE_LIMIT requests per 60 seconds per key
-// Uses the database to track request counts (no Redis/memcached needed)
+// Fixed 60s window rate limit: max API_RATE_LIMIT requests per minute per key.
+// Uses a counter table (see database migration) to avoid CREATE TABLE per request
+// and to serialize increments (prevents phantom-read races).
 try {
-    // Create rate limit table if not exists (runs once, then cached by MySQL)
-    $db->execute("CREATE TABLE IF NOT EXISTS api_rate_limits (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        api_key_id INT NOT NULL,
-        request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_key_time (api_key_id, request_time)
-    )");
+    $apiKeyId  = (int) ($keyData['id'] ?? 0);
+    $windowKey = (int) floor(time() / 60);
 
-    // Clean old entries (older than 2 minutes) to keep table small
-    $db->execute(
-        "DELETE FROM api_rate_limits WHERE request_time < DATE_SUB(NOW(), INTERVAL 2 MINUTE)"
-    );
+    $db->beginTransaction();
+    try {
+        // Ensure row exists, then lock it and increment safely
+        $db->execute(
+            "INSERT INTO api_rate_limit_counters (api_key_id, window_key, cnt)
+             VALUES (?,?,0)
+             ON DUPLICATE KEY UPDATE cnt = cnt",
+            [$apiKeyId, $windowKey]
+        );
 
-    // Count requests in the last 60 seconds for this key
-    $rateCheck = $db->fetchOne(
-        "SELECT COUNT(*) as cnt FROM api_rate_limits
-         WHERE api_key_id = ? AND request_time > DATE_SUB(NOW(), INTERVAL 60 SECOND)",
-        [$keyData['id']]
-    );
+        $row = $db->fetchOne(
+            "SELECT cnt FROM api_rate_limit_counters
+             WHERE api_key_id = ? AND window_key = ?
+             FOR UPDATE",
+            [$apiKeyId, $windowKey]
+        );
 
-    if ((int)($rateCheck['cnt'] ?? 0) >= API_RATE_LIMIT) {
-        header('Retry-After: 60');
-        apiError(429, 'Rate limit exceeded. Maximum ' . API_RATE_LIMIT . ' requests per minute.');
+        $cnt = (int) ($row['cnt'] ?? 0);
+        if ($cnt >= API_RATE_LIMIT) {
+            $db->rollback();
+            header('Retry-After: 60');
+            apiError(429, 'Rate limit exceeded. Maximum ' . API_RATE_LIMIT . ' requests per minute.');
+        }
+
+        $db->execute(
+            "UPDATE api_rate_limit_counters SET cnt = cnt + 1 WHERE api_key_id = ? AND window_key = ?",
+            [$apiKeyId, $windowKey]
+        );
+
+        // Best-effort cleanup (older than 2 minutes). This is cheap with idx_window.
+        $db->execute(
+            "DELETE FROM api_rate_limit_counters WHERE window_key < ?",
+            [$windowKey - 2]
+        );
+
+        $db->commit();
+    } catch (Exception $inner) {
+        $db->rollback();
+        throw $inner;
     }
-
-    // Log this request
-    $db->insert(
-        "INSERT INTO api_rate_limits (api_key_id) VALUES (?)",
-        [$keyData['id']]
-    );
 } catch (Exception $e) {
     // Rate limiting failure should not block the API — log and continue
     error_log("API rate limit check failed: " . $e->getMessage());

@@ -111,7 +111,10 @@
             $scanned = (int)$it['imei_count'];
             $done    = $scanned >= $qty;
             $pct     = $qty > 0 ? min(100, round($scanned / $qty * 100)) : 0;
-            $nameJs  = htmlspecialchars(addslashes($it['name']));
+            // SEC7 fix: json_encode handles JS quoting/HTML attribute safely in one step
+            // and removes the brittle htmlspecialchars(addslashes(...)) chain. The result
+            // already includes its own quotes, so the call sites drop the outer ''.
+            $nameJs  = json_encode((string)($it['name'] ?? ''), JSON_HEX_QUOT | JSON_HEX_APOS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
         ?>
         <div class="sp-item-row <?= $done ? 'done' : '' ?>" id="spItem_<?= $it['item_id'] ?>">
             <div class="sp-item-top">
@@ -130,11 +133,11 @@
                     <i id="spDone_<?= $it['item_id'] ?>" class="bi bi-check-circle-fill" style="color:#22c55e;font-size:1.1rem;display:none;"></i>
                     <?php endif; ?>
                     <button class="sp-btn sp-btn-scan"
-                            onclick="openScanMode(<?= $it['item_id'] ?>, '<?= $nameJs ?>', <?= $qty ?>, <?= $scanned ?>)">
+                            onclick="openScanMode(<?= $it['item_id'] ?>, <?= $nameJs ?>, <?= $qty ?>, <?= $scanned ?>)">
                         <i class="bi bi-upc-scan"></i> Scan
                     </button>
                     <button class="sp-btn sp-btn-paste"
-                            onclick="openPasteMode(<?= $it['item_id'] ?>, '<?= $nameJs ?>', <?= $qty ?>)">
+                            onclick="openPasteMode(<?= $it['item_id'] ?>, <?= $nameJs ?>, <?= $qty ?>)">
                         <i class="bi bi-clipboard-plus"></i> Paste
                     </button>
                 </div>

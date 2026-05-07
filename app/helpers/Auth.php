@@ -163,8 +163,14 @@ class Auth {
 
     // Verify CSRF Token
     public static function verifyCsrf(): bool {
-        $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-        return hash_equals($_SESSION['csrf_token'] ?? '', $token);
+        $token   = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        $session = $_SESSION['csrf_token'] ?? '';
+        // SEC2 fix: refuse empty-vs-empty match. hash_equals('','') returns true and would
+        // let a POST without a token pass on a fresh session that has never rendered a form.
+        if ($token === '' || $session === '') {
+            return false;
+        }
+        return hash_equals($session, $token);
     }
 
     // Print hidden CSRF input field — use inside every form

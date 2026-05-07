@@ -38,7 +38,7 @@ body {
 }
 
 .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
-.company-name { font-size: 18px; font-weight: 800; color: #1e3a5f; }
+.company-name { font-size: 18px; font-weight: 800; color: <?= $thermal ? '#000' : '#1e3a5f' ?>; }
 .company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
 
 .receipt-title {
@@ -46,7 +46,7 @@ body {
     font-size: <?= $thermal ? '12px' : '13px' ?>; font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 2px;
-    color: #6366f1;
+    color: <?= $thermal ? '#000' : '#6366f1' ?>;
     margin: 14px 0;
 }
 
@@ -62,14 +62,20 @@ body {
 
 .amount-box {
     margin: 18px 0;
+    padding: 14px;
+    text-align: center;
+    <?php if ($thermal): ?>
+    background: transparent;
+    border: 2px solid #000;
+    border-radius: 0;
+    <?php else: ?>
     background: linear-gradient(135deg, #eff6ff, #eef2ff);
     border: 2px solid #c7d2fe;
     border-radius: 10px;
-    padding: 14px;
-    text-align: center;
+    <?php endif; ?>
 }
-.amount-label { font-size: 10px; color: #6366f1; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-.amount-value { font-size: 26px; font-weight: 800; color: #1e3a5f; margin-top: 4px; }
+.amount-label { font-size: 10px; color: <?= $thermal ? '#000' : '#6366f1' ?>; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.amount-value { font-size: 26px; font-weight: 800; color: <?= $thermal ? '#000' : '#1e3a5f' ?>; margin-top: 4px; }
 
 .footer {
     text-align: center;
@@ -81,7 +87,7 @@ body {
 }
 
 @media print {
-    body { padding: 0; background: #fff; }
+    body { padding: 0; background: #fff; <?= $thermal ? '-webkit-print-color-adjust: economy; print-color-adjust: economy;' : '' ?> }
     .no-print { display: none !important; }
     .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
     <?php if ($thermal): ?>
@@ -121,8 +127,9 @@ body {
 
     <?php $isIn = ($payment['payment_type'] ?? $payment['type'] ?? 'in') === 'in'; ?>
     <div style="text-align:center;margin-bottom:14px;">
-        <span style="display:inline-block;padding:4px 18px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
-            background:<?= $isIn ? '#d1fae5' : '#fee2e2' ?>;color:<?= $isIn ? '#065f46' : '#991b1b' ?>;">
+        <span style="display:inline-block;padding:4px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;<?= $thermal
+            ? 'border:2px solid #000;color:#000;background:transparent;'
+            : ('border-radius:20px;background:' . ($isIn ? '#d1fae5' : '#fee2e2') . ';color:' . ($isIn ? '#065f46' : '#991b1b') . ';') ?>">
             <?= $isIn ? '↓ Payment In' : '↑ Payment Out' ?>
         </span>
     </div>
@@ -152,12 +159,12 @@ body {
             <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
         </div>
         <div class="receipt-row">
-            <span class="lbl" style="color:<?= $isIn ? '#059669' : '#dc2626' ?>;">Payment <?= $isIn ? 'Received' : 'Made' ?></span>
-            <span class="val" style="color:<?= $isIn ? '#059669' : '#dc2626' ?>;"><?= $isIn ? '-' : '+' ?> <?= APP_CURRENCY ?> <?= number_format($payment['amount'], DECIMAL_PLACES) ?></span>
+            <span class="lbl" style="<?= $thermal ? 'color:#000;' : ('color:' . ($isIn ? '#059669' : '#dc2626') . ';') ?>">Payment <?= $isIn ? 'Received' : 'Made' ?></span>
+            <span class="val" style="<?= $thermal ? 'color:#000;' : ('color:' . ($isIn ? '#059669' : '#dc2626') . ';') ?>"><?= $isIn ? '-' : '+' ?> <?= APP_CURRENCY ?> <?= number_format($payment['amount'], DECIMAL_PLACES) ?></span>
         </div>
-        <div class="receipt-row" style="border-top:2px solid #1e3a5f;padding-top:8px;margin-top:4px;border-bottom:none;">
-            <span class="lbl" style="font-weight:800;color:#1e3a5f;font-size:12px;">Current Balance</span>
-            <span class="val" style="font-weight:800;color:<?= $currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669') ?>;font-size:13px;">
+        <div class="receipt-row" style="border-top:2px solid <?= $thermal ? '#000' : '#1e3a5f' ?>;padding-top:8px;margin-top:4px;border-bottom:none;">
+            <span class="lbl" style="font-weight:800;color:<?= $thermal ? '#000' : '#1e3a5f' ?>;font-size:12px;">Current Balance</span>
+            <span class="val" style="font-weight:800;color:<?= $thermal ? '#000' : ($currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669')) ?>;font-size:13px;">
                 <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
             </span>
         </div>

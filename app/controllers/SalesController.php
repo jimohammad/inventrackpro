@@ -349,6 +349,10 @@ class SalesController extends BaseController {
             ]);
             $printMode = $this->input('print_mode');
             if ($printMode === '1') {
+                $tpl = $_SESSION['print_template'] ?? 'a5';
+                if ($tpl === 'thermal') {
+                    $this->redirect('?page=sales&action=thermalPrint&id=' . $result['id'] . '&thermal=1&autoprint=1');
+                }
                 $this->redirect('?page=sales&action=print&id=' . $result['id'] . '&autoprint=1');
             }
             if ($printMode === '2') {
@@ -372,6 +376,18 @@ class SalesController extends BaseController {
         if (!$sale) {
             $this->flash('error', 'Sale not found.');
             $this->redirect('?page=sales');
+            return;
+        }
+
+        // Fix inconsistent rows: status "paid" while balance still > 0 after sale returns (legacy Return CASE ELSE status).
+        if (($sale['status'] ?? '') === 'paid' && (float) ($sale['balance'] ?? 0) > 0.001) {
+            $this->saleModel->recomputeBalanceAfterReturns($id);
+            $sale = $this->saleModel->findFull($id);
+            if (!$sale) {
+                $this->flash('error', 'Sale not found.');
+                $this->redirect('?page=sales');
+                return;
+            }
         }
 
         $partyBalance = $this->partyModel->findWithBalance((int)$sale['party_id']);
@@ -681,6 +697,11 @@ class SalesController extends BaseController {
         }
 
         if ($printMode === '1' || $this->input('print_after_save') === '1') {
+            $tpl = $_SESSION['print_template'] ?? 'a5';
+            if ($tpl === 'thermal') {
+                $this->redirect("?page=sales&action=thermalPrint&id={$id}&thermal=1");
+                return;
+            }
             $this->redirect("?page=sales&action=print&id={$id}");
             return;
         }

@@ -51,6 +51,11 @@ RedirectMatch 403 ^/(config|app|backups|database|cron|api/v1|graphify-out|\.clau
     # Pretty URL for public IMEI warranty tracking
     RewriteRule ^imei/?$ index.php?page=imeitrack [L,QSA,NC]
     RewriteRule ^imei/([^/]+)/?$ index.php?page=imeitrack&imei=$1 [L,QSA,NC]
+
+    # Short URL for service repair tracking (IMEI digits or hex token in path)
+    RewriteRule ^service/(\d{14,18})/?$ index.php?page=servicetrack&imei=$1 [L,QSA,NC]
+    RewriteRule ^service/([a-fA-F0-9]{16,64})/?$ index.php?page=servicetrack&token=$1 [L,QSA,NC]
+    RewriteRule ^service/?$ index.php?page=servicetrack [L,QSA,NC]
 </IfModule>
 
 <FilesMatch "^\.env|^\.ht|^\.user\.ini$|^user\.ini$|^\.user$|\.sql$|\.php\.bak$|\.php\.old$|\.php\.swp$|\.php~$|\.log$|\.bak$|\.old$|\.swp$|~$|\.(md|markdown|code-workspace|yml|yaml|toml|lock)$|^(composer\.json|composer\.lock|package\.json|package-lock\.json|yarn\.lock)$">

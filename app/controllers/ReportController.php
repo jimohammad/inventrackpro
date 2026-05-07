@@ -1226,11 +1226,14 @@ class ReportController extends BaseController {
                     - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved' AND date <= ?), 0)
                     - COALESCE((SELECT SUM(grand_total) FROM purchases WHERE party_id = p.id AND status != 'cancelled' AND date <= ?), 0)
                     + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type = 'purchase' AND date <= ?), 0)
+                    + COALESCE((SELECT SUM(paid_kwd)
+                                FROM purchase_orders
+                                WHERE party_id = p.id AND status IN ('paid','draft') AND date <= ?), 0)
                     + COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'purchase_return' AND status = 'approved' AND date <= ?), 0)
                     as balance
              FROM parties p WHERE p.is_active = 1
              ORDER BY p.name",
-            [$date, $date, $date, $date, $date, $date]
+            [$date, $date, $date, $date, $date, $date, $date]
         );
 
         // Split into receivables (positive = they owe us) and payables (negative = we owe them)
@@ -1254,6 +1257,20 @@ class ReportController extends BaseController {
         // Sort by balance descending
         usort($receivables, fn($a, $b) => (float)$b['balance'] <=> (float)$a['balance']);
         usort($payables, fn($a, $b) => (float)$b['balance'] <=> (float)$a['balance']);
+
+        // PO advances (prepaid to suppliers) — displayed explicitly for clarity
+        $poAdvances = $db->fetchAll(
+            "SELECT p.id, p.name, p.party_code,
+                    COALESCE(SUM(po.paid_kwd),0) as amount
+             FROM purchase_orders po
+             JOIN parties p ON p.id = po.party_id
+             WHERE po.status IN ('paid','draft') AND po.date <= ? AND po.paid_kwd > 0
+             GROUP BY po.party_id
+             HAVING amount > 0.001
+             ORDER BY amount DESC",
+            [$date]
+        );
+        $totalPoAdvances = array_sum(array_map(fn($r) => (float)$r['amount'], $poAdvances));
 
         // 3. Stock valuation
         $stockVal = (float)($db->fetchOne(

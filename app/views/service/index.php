@@ -35,6 +35,65 @@ $stages = ServiceController::stages();
 .sv-act.edit:hover { background:rgba(245,158,11,.2); }
 .sv-act.del { background:rgba(239,68,68,.08);color:#ef4444; border:none;cursor:pointer; }
 .sv-act.del:hover { background:rgba(239,68,68,.18); }
+.sv-act.track { background:rgba(14,165,233,.12); color:#0ea5e9; }
+.sv-act.track:hover { background:rgba(14,165,233,.22); }
+.sv-act.track:disabled { opacity:.45; cursor:not-allowed; filter:none; }
+.sv-act.track.copied { background:rgba(34,197,94,.18); color:#16a34a; }
+
+.sv-status-edit {
+    --sv-accent: #6b7280;
+    --sv-bg: rgba(107,114,128,.10);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    white-space:nowrap;
+}
+.sv-status-dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--sv-accent);
+    box-shadow:0 0 0 3px var(--sv-bg);
+    flex-shrink:0;
+}
+.sv-status-edit select {
+    padding:6px 28px 6px 10px;
+    border:1.6px solid rgba(148,163,184,.55);
+    border-radius:999px;
+    background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.04)), var(--sv-bg);
+    color:var(--text-main);
+    font-size:.76rem;
+    font-weight:800;
+    letter-spacing:.1px;
+    outline:none;
+    min-width:140px;
+    transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, filter .12s ease;
+}
+[data-theme="light"] .sv-status-edit select{
+    background:linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,.72)), var(--sv-bg);
+}
+.sv-status-edit select:hover{
+    filter:brightness(1.03);
+}
+.sv-status-edit select:focus{
+    border-color: var(--sv-accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--sv-accent) 18%, transparent);
+}
+.sv-status-edit.is-saving select{
+    opacity:.75;
+    cursor:wait;
+}
+.sv-status-edit.is-saving .sv-status-dot{
+    animation: svPulse 0.9s ease-in-out infinite;
+}
+@keyframes svPulse{
+  0%,100% { transform: scale(1); opacity: .9; }
+  50% { transform: scale(1.25); opacity: .6; }
+}
+.sv-status-saving { font-size:.72rem; color:var(--text-muted); display:none; }
+.sv-row-updated { animation: svFlash 0.9s ease; }
+@keyframes svFlash {
+  0% { background: rgba(16,185,129,.12); }
+  100% { background: transparent; }
+}
 </style>
 
 <div class="sv-head">
@@ -127,6 +186,8 @@ $stages = ServiceController::stages();
                 <?php foreach ($records as $r):
                     $st = $stages[(int)$r['device_stage']] ?? $stages[0];
                     $customer = $r['party_name'] ?: $r['customer_name'];
+                    $trackTok = trim((string)($r['tracking_token'] ?? ''));
+                    $trackUrl = $trackTok !== '' ? app_service_track_url($trackTok) : '';
                 ?>
                 <tr>
                     <td><a href="?page=service&action=detail&id=<?= $r['id'] ?>"><?= htmlspecialchars($r['service_no']) ?></a></td>
@@ -135,8 +196,30 @@ $stages = ServiceController::stages();
                     <td><?= htmlspecialchars(trim($r['device_brand'] . ' ' . $r['device_model']) ?: '—') ?></td>
                     <td class="sv-imei"><?= htmlspecialchars($r['imei']) ?></td>
                     <td><span class="sv-badge" style="background:<?= $st['color'] ?>15;color:<?= $st['color'] ?>;"><i class="bi <?= $st['icon'] ?>"></i> <?= $st['label'] ?></span></td>
-                    <td><span class="sv-badge" style="background:<?= ServiceController::statusColor($r['status']) ?>15;color:<?= ServiceController::statusColor($r['status']) ?>;"><?= $r['status'] ?></span></td>
+                    <td>
+                        <?php if (Auth::can('service', 'edit')): ?>
+                        <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>">
+                            <span class="sv-status-dot" aria-hidden="true"></span>
+                            <select class="sv-status-select" aria-label="Change status">
+                                <?php foreach (['Pending','In Progress','Completed','Replaced'] as $s): ?>
+                                <option value="<?= $s ?>" <?= $r['status']===$s ? 'selected' : '' ?>><?= $s ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="sv-status-saving">Saving…</span>
+                        </div>
+                        <?php else: ?>
+                        <span class="sv-badge" style="background:<?= ServiceController::statusColor($r['status']) ?>15;color:<?= ServiceController::statusColor($r['status']) ?>;"><?= $r['status'] ?></span>
+                        <?php endif; ?>
+                    </td>
                     <td class="sv-actions">
+                        <button type="button"
+                            class="sv-act track svc-copy-track"
+                            data-track-url="<?= htmlspecialchars($trackUrl, ENT_QUOTES, 'UTF-8') ?>"
+                            title="Copy tracking URL"
+                            aria-label="Copy tracking URL"
+                            <?= $trackUrl === '' ? 'disabled' : '' ?>>
+                            <i class="bi bi-link-45deg"></i>
+                        </button>
                         <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $r['id'] ?>&amp;autoprint=1" class="sv-act view" style="background:rgba(5,150,105,.12);color:#059669;" target="_blank" rel="noopener" title="Thermal customer receipt"><i class="bi bi-receipt-cutoff"></i></a>
                         <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
                         <?php if (Auth::can('service', 'edit')): ?>
@@ -158,3 +241,116 @@ $stages = ServiceController::stages();
     </div>
 </div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var csrf = '<?= Auth::csrfToken() ?>';
+
+    function copyTextToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                var ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                ok ? resolve() : reject(new Error('execCommand failed'));
+            } catch (e) {
+                document.body.removeChild(ta);
+                reject(e);
+            }
+        });
+    }
+
+    document.querySelectorAll('.svc-copy-track').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var url = btn.getAttribute('data-track-url') || '';
+            if (!url) {
+                alert('No tracking token for this service.');
+                return;
+            }
+            copyTextToClipboard(url)
+                .then(function() {
+                    btn.classList.add('copied');
+                    var prev = btn.getAttribute('title') || '';
+                    btn.setAttribute('title', 'Copied!');
+                    setTimeout(function() {
+                        btn.classList.remove('copied');
+                        btn.setAttribute('title', prev || 'Copy tracking URL');
+                    }, 1200);
+                })
+                .catch(function() {
+                    prompt('Copy this tracking URL:', url);
+                });
+        });
+    });
+
+    function applyStatusTheme(wrap, status) {
+        var accent = '#6b7280';
+        var bg = 'rgba(107,114,128,.10)';
+        if (status === 'Pending') { accent = '#f59e0b'; bg = 'rgba(245,158,11,.14)'; }
+        if (status === 'In Progress') { accent = '#3b82f6'; bg = 'rgba(59,130,246,.14)'; }
+        if (status === 'Completed') { accent = '#22c55e'; bg = 'rgba(34,197,94,.14)'; }
+        if (status === 'Replaced') { accent = '#8b5cf6'; bg = 'rgba(139,92,246,.14)'; }
+        wrap.style.setProperty('--sv-accent', accent);
+        wrap.style.setProperty('--sv-bg', bg);
+        wrap.setAttribute('data-status', status);
+    }
+
+    document.querySelectorAll('.sv-status-edit').forEach(function(wrap) {
+        var select = wrap.querySelector('.sv-status-select');
+        var saving = wrap.querySelector('.sv-status-saving');
+        if (!select) return;
+
+        applyStatusTheme(wrap, select.value);
+
+        select.addEventListener('change', function() {
+            var id = wrap.getAttribute('data-service-id');
+            var status = select.value;
+            if (!id) return;
+
+            saving.style.display = 'inline';
+            select.disabled = true;
+            wrap.classList.add('is-saving');
+            applyStatusTheme(wrap, status);
+
+            var body = new URLSearchParams();
+            body.set('csrf_token', csrf);
+            body.set('id', id);
+            body.set('status', status);
+
+            fetch('?page=service&action=updateStatus', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (!res || !res.success) {
+                    throw new Error((res && res.message) ? res.message : 'Failed');
+                }
+                var tr = wrap.closest('tr');
+                if (tr) {
+                    tr.classList.remove('sv-row-updated');
+                    void tr.offsetWidth;
+                    tr.classList.add('sv-row-updated');
+                }
+            })
+            .catch(function(err) {
+                alert('Status update failed: ' + (err && err.message ? err.message : 'Unknown error'));
+            })
+            .finally(function() {
+                saving.style.display = 'none';
+                select.disabled = false;
+                wrap.classList.remove('is-saving');
+            });
+        });
+    });
+});
+</script>

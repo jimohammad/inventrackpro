@@ -64,9 +64,9 @@
             <h1>Customer Discounts</h1>
             <p>Give discounts and automatically reduce outstanding customer balances.</p>
         </div>
-        <button id="toggleDiscountForm" class="disc-btn-primary" type="button">
+        <a id="toggleDiscountForm" class="disc-btn-primary" href="?page=discounts&new=1#discountForm" role="button">
             <i class="bi bi-plus-lg me-1"></i> New Discount
-        </button>
+        </a>
     </div>
 
     <div class="disc-card" id="discountForm" style="display:<?= $openNewDiscount ? 'block' : 'none' ?>;">
@@ -75,7 +75,7 @@
             <span class="disc-card-sub">Quick formula: per piece × qty = total</span>
         </div>
         <div class="disc-form-wrap">
-            <form method="POST" action="?page=discounts&action=store">
+            <form method="POST" action="?page=discounts&action=store" id="discountCreateForm">
                 <?= Auth::csrfField() ?>
                 <div class="row g-3">
                     <div class="col-md-2">
@@ -102,17 +102,17 @@
                     </div>
                     <div class="col-md-1">
                         <label class="disc-label">Per Piece</label>
-                        <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0" placeholder="0.000" style="font-weight:700;">
+                        <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:700;">
                     </div>
                     <div class="col-md-1">
                         <label class="disc-label">Qty</label>
-                        <input type="number" id="discQty" class="form-control form-control-sm" min="1" value="1" style="font-weight:700;text-align:center;">
+                        <input type="number" id="discQty" class="form-control form-control-sm" min="1" value="1" required style="font-weight:700;text-align:center;">
                     </div>
                     <div class="col-md-2">
                         <label class="disc-label">Total <span class="text-danger">*</span></label>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text" style="font-weight:800;"><?= APP_CURRENCY ?></span>
-                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:800;color:#059669;">
+                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required readonly placeholder="0.000" style="font-weight:800;color:#059669;background:#f8fafc;">
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -192,13 +192,17 @@
 </div>
 
 <script>
-$(document).ready(function() {
-    $('#discountTable').DataTable({
-        pageLength: 25,
-        order: [],
-        language: { search: '', searchPlaceholder: 'Search discount no, customer, reason...' }
+if (window.jQuery) {
+    jQuery(function($) {
+        if ($.fn.DataTable && $('#discountTable').length) {
+            $('#discountTable').DataTable({
+                pageLength: 25,
+                order: [],
+                language: { search: '', searchPlaceholder: 'Search discount no, customer, reason...' }
+            });
+        }
     });
-});
+}
 
 function calcDiscTotal() {
     var perPiece = parseFloat(document.getElementById('discPerPiece').value) || 0;
@@ -209,23 +213,48 @@ function calcDiscTotal() {
 
 document.addEventListener('DOMContentLoaded', function() {
     var formWrap = document.getElementById('discountForm');
-    var toggleBtn = document.getElementById('toggleDiscountForm');
+    var discountCreateForm = document.getElementById('discountCreateForm');
     var cancelBtn = document.getElementById('cancelDiscountForm');
     var perPiece = document.getElementById('discPerPiece');
     var qty = document.getElementById('discQty');
+    var totalInput = document.getElementById('discTotalAmt');
 
-    function toggleDiscountForm(forceOpen) {
-        if (forceOpen === true) {
-            formWrap.style.display = 'block';
-            return;
-        }
-        formWrap.style.display = formWrap.style.display === 'none' ? 'block' : 'none';
+    if (!formWrap) {
+        return;
     }
-
-    toggleBtn.addEventListener('click', function() { toggleDiscountForm(); });
-    cancelBtn.addEventListener('click', function() { formWrap.style.display = 'none'; });
-    perPiece.addEventListener('input', calcDiscTotal);
-    qty.addEventListener('input', calcDiscTotal);
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() { formWrap.style.display = 'none'; });
+    }
+    if (perPiece) {
+        perPiece.addEventListener('input', calcDiscTotal);
+        perPiece.addEventListener('change', calcDiscTotal);
+        perPiece.addEventListener('keyup', calcDiscTotal);
+    }
+    if (qty) {
+        qty.addEventListener('input', calcDiscTotal);
+        qty.addEventListener('change', calcDiscTotal);
+        qty.addEventListener('keyup', calcDiscTotal);
+    }
+    if (perPiece && qty) {
+        calcDiscTotal();
+    }
+    if (discountCreateForm) {
+        discountCreateForm.addEventListener('submit', function() {
+            calcDiscTotal();
+            if (totalInput) {
+                if (!totalInput.value || parseFloat(totalInput.value) <= 0) {
+                    totalInput.setCustomValidity('Total must be greater than zero (Per Piece x Qty).');
+                } else {
+                    totalInput.setCustomValidity('');
+                }
+            }
+        });
+    }
+    if (totalInput) {
+        totalInput.addEventListener('input', function() {
+            totalInput.setCustomValidity('');
+        });
+    }
 
     document.querySelectorAll('.discount-delete-form').forEach(function(form) {
         form.addEventListener('submit', function(e) {

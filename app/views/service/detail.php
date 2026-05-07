@@ -2,7 +2,7 @@
 $stages = ServiceController::stages();
 $currentStage = (int)$record['device_stage'];
 $curr = APP_CURRENCY;
-$trackUrl = APP_URL . '/?page=servicetrack&token=' . $record['tracking_token'];
+$trackUrl = app_service_track_url((string) $record['tracking_token']);
 ?>
 <style>
 .sd-page { max-width:800px;margin:0 auto; }

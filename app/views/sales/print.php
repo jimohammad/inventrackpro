@@ -95,7 +95,7 @@ body {
 }
 
 .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
-.company-name { font-size: 18px; font-weight: 800; color: #1e3a5f; }
+.company-name { font-size: 18px; font-weight: 800; color: #000; }
 .company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
 
 .receipt-row {
@@ -120,7 +120,7 @@ body {
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #6366f1;
+    color: #000;
     padding-bottom: 6px;
     border-bottom: 1px solid #e5e7eb;
     margin-bottom: 6px;
@@ -148,14 +148,14 @@ body {
 
 .amount-box {
     margin: 14px 0;
-    background: linear-gradient(135deg, #eff6ff, #eef2ff);
-    border: 2px solid #c7d2fe;
+    background: transparent;
+    border: 2px solid #000;
     border-radius: 10px;
     padding: 14px;
     text-align: center;
 }
-.amount-label { font-size: 10px; color: #6366f1; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-.amount-value { font-size: 26px; font-weight: 800; color: #1e3a5f; margin-top: 4px; }
+.amount-label { font-size: 10px; color: #000; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.amount-value { font-size: 26px; font-weight: 800; color: #000; margin-top: 4px; }
 
 .footer {
     text-align: center;
@@ -167,7 +167,7 @@ body {
 }
 
 @media print {
-    body { padding: 0; background: #fff; }
+    body { padding: 0; background: #fff; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
     .no-print { display: none !important; }
     .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
     <?php if ($thermal): ?>
@@ -311,6 +311,11 @@ body {
     $grandTotal       = (float) ($sale['grand_total'] ?? $sale['total'] ?? 0);
     $paid             = (float) ($sale['amount_paid'] ?? $sale['paid_amount'] ?? $sale['paid'] ?? 0);
     $dueAmount        = (float) ($sale['balance_due'] ?? $sale['balance'] ?? max(0, $grandTotal - $paid));
+
+    // Thermal receipt: avoid repeating the same figure as Subtotal, Grand Total, Balance Due, and "This Invoice"
+    $thermalShowSubtotalBreakdown = $totalDisc > 0.001 || $taxAmount > 0.001 || $shipping > 0.001
+        || abs($subtotal - $grandTotal) > 0.001;
+    $thermalShowBalanceDue        = $dueAmount > 0.001 && abs($dueAmount - $grandTotal) > 0.001;
 ?>
 <div class="no-print">
     <button onclick="window.print()"><i>⎙</i> Print</button>
@@ -332,8 +337,7 @@ body {
     </div>
 
     <div style="text-align:center;margin-bottom:14px;">
-        <span style="display:inline-block;padding:4px 18px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
-            background:<?= $isReturn ? '#fee2e2' : '#d1fae5' ?>;color:<?= $isReturn ? '#991b1b' : '#065f46' ?>;">
+        <span style="display:inline-block;padding:4px 12px;border:2px solid #000;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#000;background:transparent;">
             <?= $isReturn ? '↩ Sale Return' : '↗ Sale Invoice' ?>
         </span>
     </div>
@@ -382,10 +386,11 @@ body {
         <?php endforeach; ?>
     </div>
 
+    <?php if ($thermalShowSubtotalBreakdown): ?>
     <div class="totals-section">
         <div class="receipt-row"><span class="lbl">Subtotal</span><span class="val"><?= APP_CURRENCY ?> <?= number_format($subtotal, DECIMAL_PLACES) ?></span></div>
         <?php if ($totalDisc > 0.001): ?>
-        <div class="receipt-row"><span class="lbl" style="color:#059669;">Discount</span><span class="val" style="color:#059669;">- <?= APP_CURRENCY ?> <?= number_format($totalDisc, DECIMAL_PLACES) ?></span></div>
+        <div class="receipt-row"><span class="lbl">Discount</span><span class="val">- <?= APP_CURRENCY ?> <?= number_format($totalDisc, DECIMAL_PLACES) ?></span></div>
         <?php endif; ?>
         <?php if ($taxAmount > 0.001): ?>
         <div class="receipt-row"><span class="lbl">Tax</span><span class="val"><?= APP_CURRENCY ?> <?= number_format($taxAmount, DECIMAL_PLACES) ?></span></div>
@@ -394,14 +399,15 @@ body {
         <div class="receipt-row"><span class="lbl">Shipping</span><span class="val"><?= APP_CURRENCY ?> <?= number_format($shipping, DECIMAL_PLACES) ?></span></div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="amount-box">
         <div class="amount-label">Grand Total</div>
         <div class="amount-value"><?= APP_CURRENCY ?> <?= number_format($grandTotal, DECIMAL_PLACES) ?></div>
     </div>
 
-    <?php if ($dueAmount > 0.001): ?>
-    <div class="receipt-row"><span class="lbl" style="color:#dc2626;font-weight:700;">Balance Due</span><span class="val" style="color:#dc2626;font-weight:800;"><?= APP_CURRENCY ?> <?= number_format($dueAmount, DECIMAL_PLACES) ?></span></div>
+    <?php if ($thermalShowBalanceDue): ?>
+    <div class="receipt-row"><span class="lbl" style="font-weight:700;">Balance Due</span><span class="val" style="font-weight:800;"><?= APP_CURRENCY ?> <?= number_format($dueAmount, DECIMAL_PLACES) ?></span></div>
     <?php endif; ?>
 
     <?php if (!empty($sale['notes'])): ?>
@@ -413,19 +419,15 @@ body {
             <span class="lbl">Previous Balance</span>
             <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
         </div>
-        <div class="receipt-row">
-            <span class="lbl" style="color:#dc2626;">This Invoice</span>
-            <span class="val" style="color:#dc2626;">+ <?= APP_CURRENCY ?> <?= number_format($grandTotal, DECIMAL_PLACES) ?></span>
-        </div>
         <?php if ($paid > 0.001): ?>
         <div class="receipt-row">
-            <span class="lbl" style="color:#059669;">Paid Now</span>
-            <span class="val" style="color:#059669;">- <?= APP_CURRENCY ?> <?= number_format($paid, DECIMAL_PLACES) ?></span>
+            <span class="lbl">Paid Now</span>
+            <span class="val">- <?= APP_CURRENCY ?> <?= number_format($paid, DECIMAL_PLACES) ?></span>
         </div>
         <?php endif; ?>
-        <div class="receipt-row" style="border-top:2px solid #1e3a5f;padding-top:8px;margin-top:4px;border-bottom:none;">
-            <span class="lbl" style="font-weight:800;color:#1e3a5f;font-size:12px;">Current Balance</span>
-            <span class="val" style="font-weight:800;color:<?= $currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669') ?>;font-size:13px;">
+        <div class="receipt-row" style="border-top:2px solid #000;padding-top:8px;margin-top:4px;border-bottom:none;">
+            <span class="lbl" style="font-weight:800;color:#000;font-size:12px;">Current Balance</span>
+            <span class="val" style="font-weight:800;color:#000;font-size:13px;">
                 <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
             </span>
         </div>

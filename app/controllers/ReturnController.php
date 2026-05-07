@@ -4,11 +4,13 @@ require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Return.php';
 require_once __DIR__ . '/../models/Party.php';
 require_once __DIR__ . '/../models/Item.php';
+require_once __DIR__ . '/../models/Sale.php';
 
 class ReturnController extends BaseController {
     private SaleReturn $returnModel;
     private Party      $partyModel;
     private Item       $itemModel;
+    private Sale       $saleModel;
     private string     $debugLogPath;
 
     public function __construct() {
@@ -16,12 +18,17 @@ class ReturnController extends BaseController {
         $this->returnModel = new SaleReturn();
         $this->partyModel  = new Party();
         $this->itemModel   = new Item();
-        $this->debugLogPath = 'G:/My Drive/Iqbalerp_Folder/debug-04f822.log';
+        $this->saleModel   = new Sale();
+        // Debug logging is opt-in via environment flag to avoid writing logs in production.
+        $this->debugLogPath = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'erp-returns-debug.log';
     }
 
     private function debugLog(string $runId, string $hypothesisId, string $location, string $message, array $data = []): void {
+        if (!getenv('ERP_DEBUG_RETURNS')) {
+            return;
+        }
         $payload = [
-            'sessionId'    => '04f822',
+            'sessionId'    => substr((string) session_id(), 0, 12),
             'runId'        => $runId,
             'hypothesisId' => $hypothesisId,
             'location'     => $location,
@@ -177,7 +184,14 @@ class ReturnController extends BaseController {
             $this->logActivity('create_return', 'returns', $result['id'], $result['return_no']);
             $this->flash('success', "Return {$result['return_no']} saved.");
             if ($this->input('print_mode') === '1') {
+                $tpl = $_SESSION['print_template'] ?? 'a5';
+                if ($tpl === 'thermal') {
+                    $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
+                }
                 $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1');
+            }
+            if ($this->input('print_mode') === '2') {
+                $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
             }
             $this->redirect('?page=returns');
         } else {
@@ -327,6 +341,16 @@ class ReturnController extends BaseController {
         $partyBalance = $this->partyModel->findWithBalance($return['party_id']);
         $currentBalance  = (float)($partyBalance['net_balance'] ?? 0);
         $previousBalance = $currentBalance + (float)$return['grand_total']; // before this return
+
+        // A5 vs thermal: explicit query wins; otherwise use session default from layout "Default Print".
+        $tplParam = strtolower(trim((string)($_GET['template'] ?? '')));
+        if ($tplParam === 'a5') {
+            $returnPrintThermal = false;
+        } elseif (isset($_GET['thermal'])) {
+            $returnPrintThermal = true;
+        } else {
+            $returnPrintThermal = (($_SESSION['print_template'] ?? 'a5') === 'thermal');
+        }
 
         include __DIR__ . '/../views/returns/print.php';
     }
@@ -790,30 +814,8 @@ class ReturnController extends BaseController {
             );
             // #endregion
 
-            // Recalculate original sale balance to ensure 100% accuracy
             if (!empty($return['ref_id'])) {
-                $saleId = (int)$return['ref_id'];
-                $saleData = $db->fetchOne("SELECT grand_total, paid_amount FROM sales WHERE id = ?", [$saleId]);
-                if ($saleData) {
-                    $returnsTotalRow = $db->fetchOne(
-                        "SELECT COALESCE(SUM(grand_total), 0) as tot FROM returns WHERE ref_id = ? AND status = 'approved'", 
-                        [$saleId]
-                    );
-                    $returnsTot = (float)($returnsTotalRow['tot'] ?? 0);
-                    $newBalance = max(0, (float)$saleData['grand_total'] - (float)$saleData['paid_amount'] - $returnsTot);
-                    
-                    $db->execute(
-                        "UPDATE sales SET 
-                            balance = ?,
-                            status = CASE 
-                                WHEN ? < 0.001 THEN 'paid'
-                                WHEN paid_amount > 0 THEN 'partial'
-                                ELSE 'confirmed'
-                            END
-                         WHERE id = ?",
-                        [$newBalance, $newBalance, $saleId]
-                    );
-                }
+                $this->saleModel->recomputeBalanceAfterReturns((int) $return['ref_id']);
             }
 
             $db->commit();

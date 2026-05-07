@@ -229,7 +229,8 @@ class ServiceController extends BaseController {
 
         $settings = self::getSettings();
         $stages   = self::stages();
-        $trackUrl = APP_URL . '/?page=servicetrack&token=' . rawurlencode((string) $record['tracking_token']);
+        $tok      = trim((string) ($record['tracking_token'] ?? ''));
+        $trackUrl = $tok !== '' ? app_service_track_url($tok) : '';
 
         include __DIR__ . '/../views/service/thermal_receipt.php';
     }
@@ -265,6 +266,79 @@ class ServiceController extends BaseController {
 
         $this->flash('success', "Stage updated to {$stages[$stage]['label']}");
         $this->redirect('?page=service&action=detail&id=' . $id);
+    }
+
+    /**
+     * Quick status update from the main list page (AJAX-friendly).
+     * Keeps device_stage loosely in sync with status to avoid conflicting state.
+     */
+    public function updateStatus(): void {
+        Auth::authorize('service', 'edit');
+        if (!$this->isPost()) { $this->redirect('?page=service'); return; }
+
+        $id     = $this->inputInt('id');
+        $status = trim($this->input('status'));
+
+        $allowed = ['Pending', 'In Progress', 'Completed', 'Replaced'];
+        if (!$id || !in_array($status, $allowed, true)) {
+            $this->json(['success' => false, 'message' => 'Invalid status.'], 400);
+        }
+
+        $old = $this->db->fetchOne(
+            "SELECT id, service_no, status, device_stage, delivered_date
+             FROM service_records
+             WHERE id = ? AND warehouse_id = ?",
+            [$id, Auth::warehouseId()]
+        );
+        if (!$old) {
+            $this->json(['success' => false, 'message' => 'Record not found.'], 404);
+        }
+
+        $newStage = (int)($old['device_stage'] ?? 0);
+        $delivered = $old['delivered_date'] ?? null;
+
+        // Map status to a reasonable stage (do not auto-deliver)
+        if ($status === 'Pending') {
+            $newStage = 0;
+            $delivered = null;
+        } elseif ($status === 'In Progress') {
+            $newStage = max(1, $newStage);
+            if ($newStage >= 4) $newStage = 1;
+            $delivered = null;
+        } elseif ($status === 'Completed' || $status === 'Replaced') {
+            // Consider repaired/replaced but not delivered yet
+            if ($newStage < 2 || $newStage >= 4) $newStage = 2;
+            $delivered = null;
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                "UPDATE service_records
+                 SET status = ?, device_stage = ?, delivered_date = ?
+                 WHERE id = ? AND warehouse_id = ?",
+                [$status, $newStage, $delivered, $id, Auth::warehouseId()]
+            );
+
+            $this->db->insert(
+                "INSERT INTO service_history (service_id, event_type, old_value, new_value, note, user_id)
+                 VALUES (?,?,?,?,?,?)",
+                [$id, 'status_change', (string)$old['status'], $status, 'Updated from list', Auth::id()]
+            );
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->json(['success' => false, 'message' => 'Update failed.'], 500);
+        }
+
+        $this->json([
+            'success' => true,
+            'id' => $id,
+            'status' => $status,
+            'stage' => $newStage,
+            'message' => "{$old['service_no']} updated.",
+        ]);
     }
 
     public function edit(): void {
@@ -343,39 +417,68 @@ class ServiceController extends BaseController {
      * Public tracking page — no login required
      */
     public function track(): void {
-        $token = trim($this->input('token', '', 'get'));
-        $record = null;
-        $history = [];
+        $tokenGet = trim($this->input('token', '', 'get'));
+        $imeiGet  = trim($this->input('imei', '', 'get'));
+        $trackQuery = $tokenGet !== '' ? $tokenGet : $imeiGet;
 
-        // Basic rate-limiting: max 30 lookups per IP per 5 minutes (protects against token brute-force)
-        if ($token) {
+        $tokenHex   = '';
+        $imeiDigits = '';
+        if ($imeiGet !== '') {
+            $imeiDigits = preg_replace('/\D/', '', $imeiGet);
+        } elseif ($tokenGet !== '') {
+            $onlyDigits = preg_replace('/\D/', '', $tokenGet);
+            $looksLikeImei = strlen($onlyDigits) >= 14 && strlen($onlyDigits) <= 18
+                && (ctype_digit($onlyDigits) || preg_match('/^[\d\s\-]{14,22}$/', $tokenGet));
+            $looksLikeToken = strlen($tokenGet) >= 16 && strlen($tokenGet) <= 64 && ctype_xdigit($tokenGet);
+            if ($looksLikeImei && !$looksLikeToken) {
+                $imeiDigits = $onlyDigits;
+            } elseif ($looksLikeToken) {
+                $tokenHex = strtolower($tokenGet);
+            } else {
+                $tokenHex = strtolower($tokenGet);
+            }
+        }
+
+        $record  = null;
+        $history = [];
+        $lookupAttempt = ($tokenHex !== '' || $imeiDigits !== '');
+
+        // Basic rate-limiting: max 30 lookups per IP per 5 minutes
+        if ($lookupAttempt) {
             $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
             $cacheDir = sys_get_temp_dir() . '/svc_track_rl';
             if (!is_dir($cacheDir)) @mkdir($cacheDir, 0700, true);
             $rlFile = $cacheDir . '/' . md5($ip);
             $now = time();
-            $hits = file_exists($rlFile) ? (array)@json_decode(file_get_contents($rlFile), true) : [];
+            $hits = file_exists($rlFile) ? (array)@json_decode((string)file_get_contents($rlFile), true) : [];
             $hits = array_filter($hits, fn($t) => $t > $now - 300);
             if (count($hits) >= 30) {
                 http_response_code(429);
+                $token = $trackQuery;
                 include __DIR__ . '/../views/public/service_track.php';
                 return;
             }
             $hits[] = $now;
             @file_put_contents($rlFile, json_encode(array_values($hits)));
 
-            // Token must be at least 16 chars (reject obvious brute-force attempts)
-            if (strlen($token) < 16) {
-                include __DIR__ . '/../views/public/service_track.php';
-                return;
+            if ($imeiDigits !== '' && strlen($imeiDigits) >= 14) {
+                $record = $this->db->fetchOne(
+                    "SELECT id, service_no, imei, customer_name, device_brand, device_model, fault_description,
+                            status, device_stage, received_date, delivered_date
+                     FROM service_records
+                     WHERE REPLACE(REPLACE(REPLACE(imei,' ',''),'-',''),'_','') = ?
+                     ORDER BY id DESC LIMIT 1",
+                    [$imeiDigits]
+                );
+            } elseif ($tokenHex !== '' && strlen($tokenHex) >= 16) {
+                $record = $this->db->fetchOne(
+                    "SELECT id, service_no, imei, customer_name, device_brand, device_model, fault_description,
+                            status, device_stage, received_date, delivered_date
+                     FROM service_records WHERE tracking_token = ?",
+                    [$tokenHex]
+                );
             }
 
-            $record = $this->db->fetchOne(
-                "SELECT id, service_no, imei, customer_name, device_brand, device_model, fault_description,
-                        status, device_stage, received_date, delivered_date
-                 FROM service_records WHERE tracking_token = ?",
-                [$token]
-            );
             if ($record) {
                 $history = $this->db->fetchAll(
                     "SELECT event_type, new_value, note, created_at FROM service_history WHERE service_id = ? AND event_type IN ('created','stage_change') ORDER BY id ASC",
@@ -384,6 +487,7 @@ class ServiceController extends BaseController {
             }
         }
 
+        $token = $trackQuery;
         include __DIR__ . '/../views/public/service_track.php';
     }
 }

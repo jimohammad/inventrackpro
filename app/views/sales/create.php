@@ -1390,7 +1390,6 @@ function scanImeiToRow() {
             scanCount++;
             document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
             setScanBarOkShort();
-            flashScanRow(affectedRid);
             calcTotals();
         })
         .catch(() => {

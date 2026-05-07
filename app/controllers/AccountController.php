@@ -33,6 +33,27 @@ class AccountController extends BaseController {
         $_SESSION['account_transfer_nonce'] = bin2hex(random_bytes(16));
         $accountTransferNonce               = $_SESSION['account_transfer_nonce'];
 
+        $editingTransfer = null;
+        $editTransferId  = $this->inputInt('edit_transfer', 0, 'get');
+        if ($editTransferId > 0) {
+            if (!Auth::can('settings', 'edit')) {
+                $this->flash('error', 'You do not have permission to edit transfers.');
+                $this->redirect('?page=accounts');
+            }
+            $editingTransfer = $db->fetchOne(
+                "SELECT t.*, fa.name as from_name, ta.name as to_name
+                 FROM account_transfers t
+                 JOIN accounts fa ON fa.id = t.from_account_id
+                 JOIN accounts ta ON ta.id = t.to_account_id
+                 WHERE t.id = ?",
+                [$editTransferId]
+            );
+            if (!$editingTransfer) {
+                $this->flash('error', 'Transfer not found.');
+                $this->redirect('?page=accounts');
+            }
+        }
+
         if ($selectedAccountId) {
             $selectedAccount = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$selectedAccountId]);
             if ($selectedAccount) {
@@ -288,6 +309,117 @@ class AccountController extends BaseController {
         $to = $db->fetchOne("SELECT name FROM accounts WHERE id = ?", [$toId]);
         $this->flash('success', "Transfer {$transferNo} done. " . number_format($amount, 3) . " moved from {$from['name']} to {$to['name']}.");
         $this->redirect('?page=accounts');
+    }
+
+    /**
+     * Edit an existing account transfer: reverse the old movement on balances, then apply the new one.
+     * transfer_no is preserved.
+     */
+    public function updateTransfer(): void {
+        Auth::authorize('settings', 'edit');
+        if (!$this->isPost()) {
+            $this->redirect('?page=accounts');
+        }
+
+        $id                = $this->inputInt('id');
+        $fromId            = $this->inputInt('from_account_id');
+        $toId              = $this->inputInt('to_account_id');
+        $amount            = $this->inputFloat('amount');
+        $date              = $this->input('date') ?: date('Y-m-d');
+        $notes             = $this->input('notes');
+        $returnAccountId   = $this->inputInt('return_account_id');
+
+        $redirectSuffix = $returnAccountId > 0 ? '&account_id=' . $returnAccountId : '';
+
+        if ($id <= 0 || $fromId === $toId || $amount <= 0) {
+            $this->flash('error', 'Invalid transfer details.');
+            $this->redirect('?page=accounts' . $redirectSuffix);
+        }
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $old = $db->fetchOne("SELECT * FROM account_transfers WHERE id = ? FOR UPDATE", [$id]);
+            if (!$old) {
+                $db->rollback();
+                $this->flash('error', 'Transfer not found.');
+                $this->redirect('?page=accounts' . $redirectSuffix);
+            }
+
+            $accIds = array_values(array_unique(array_filter([
+                (int) $old['from_account_id'],
+                (int) $old['to_account_id'],
+                $fromId,
+                $toId,
+            ])));
+            sort($accIds, SORT_NUMERIC);
+            foreach ($accIds as $aid) {
+                $db->fetchOne("SELECT id FROM accounts WHERE id = ? FOR UPDATE", [$aid]);
+            }
+
+            $oldAmtRounded = round((float) $old['amount'], DECIMAL_PLACES);
+            $newAmtRounded = round($amount, DECIMAL_PLACES);
+            $sameRoute       = (int) $old['from_account_id'] === $fromId && (int) $old['to_account_id'] === $toId;
+
+            if ($sameRoute && $oldAmtRounded === $newAmtRounded) {
+                $db->execute(
+                    "UPDATE account_transfers SET date = ?, notes = ? WHERE id = ?",
+                    [$date, $notes, $id]
+                );
+                $db->commit();
+                $this->logActivity(
+                    'edit_account_transfer',
+                    'account_transfers',
+                    $id,
+                    "Updated date/notes for {$old['transfer_no']}"
+                );
+                $this->flash('success', "Transfer {$old['transfer_no']} updated.");
+                $this->redirect('?page=accounts' . $redirectSuffix);
+            }
+
+            // Reverse original posting
+            $db->execute(
+                "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
+                [$old['amount'], $old['from_account_id']]
+            );
+            $db->execute(
+                "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
+                [$old['amount'], $old['to_account_id']]
+            );
+
+            $fromAcc = $db->fetchOne("SELECT id, name, current_balance FROM accounts WHERE id = ?", [$fromId]);
+            if (!$fromAcc) {
+                throw new Exception('Source account not found.');
+            }
+            if ((float) $fromAcc['current_balance'] < $newAmtRounded) {
+                throw new Exception(
+                    "Insufficient balance in {$fromAcc['name']}. Available: " .
+                    number_format((float) $fromAcc['current_balance'], DECIMAL_PLACES)
+                );
+            }
+
+            $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$amount, $fromId]);
+            $db->execute("UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?", [$amount, $toId]);
+
+            $db->execute(
+                "UPDATE account_transfers SET from_account_id = ?, to_account_id = ?, amount = ?, date = ?, notes = ? WHERE id = ?",
+                [$fromId, $toId, $amount, $date, $notes, $id]
+            );
+
+            $db->commit();
+            $this->logActivity(
+                'edit_account_transfer',
+                'account_transfers',
+                $id,
+                "Updated {$old['transfer_no']} (accounts/amount/date)"
+            );
+            $this->flash('success', "Transfer {$old['transfer_no']} updated.");
+        } catch (Exception $e) {
+            $db->rollback();
+            $this->flash('error', 'Update failed: ' . $e->getMessage());
+        }
+
+        $this->redirect('?page=accounts' . $redirectSuffix);
     }
 
     public function adjust(): void {

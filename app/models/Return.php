@@ -259,19 +259,10 @@ class SaleReturn extends BaseModel {
                 }
             }
 
-            // PREVIOUS FIX: Only reduce balance on linked sale, never inflate paid_amount
+            // Balance + status from grand_total, paid_amount, and all approved returns (no stale "paid")
             if (!empty($data['ref_id'])) {
-                $this->db->execute(
-                    "UPDATE sales SET
-                        balance = GREATEST(0, balance - ?),
-                        status  = CASE
-                            WHEN GREATEST(0, balance - ?) < 0.001 THEN 'paid'
-                            WHEN paid_amount > 0 THEN 'partial'
-                            ELSE status
-                        END
-                     WHERE id = ?",
-                    [$subtotal, $subtotal, $data['ref_id']]
-                );
+                require_once __DIR__ . '/Sale.php';
+                (new Sale())->recomputeBalanceAfterReturns((int) $data['ref_id']);
             }
 
             $this->db->commit();

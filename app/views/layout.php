@@ -6,10 +6,9 @@
     <!-- Preconnect only to CDNs we actually load (cdnjs) -->
     <title><?= $pageTitle ?? 'Dashboard' ?> | <?= APP_NAME ?></title>
     <script>
-        // Apply theme before CSS loads to prevent flash
+        // Force light theme (single-theme app) before CSS loads.
         (function() {
-            const t = localStorage.getItem('invt_theme') || 'dark';
-            document.getElementById('htmlRoot').setAttribute('data-theme', t);
+            document.getElementById('htmlRoot').setAttribute('data-theme', 'light');
         })();
     </script>
 
@@ -17,8 +16,8 @@
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
-    <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css">
+    <!-- Bootswatch (Bootstrap 5) Theme: Litera -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/litera/bootstrap.min.css">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
     <!-- DataTables - only on list pages -->
@@ -293,11 +292,6 @@
         </button>
         <?php endif; ?>
 
-        <!-- Theme Toggle -->
-        <button class="theme-toggle" id="themeToggleBtn" title="Toggle light/dark theme">
-            <i class="bi bi-moon-stars-fill" id="themeIcon"></i>
-        </button>
-
         <!-- User dropdown -->
         <div class="dropdown">
             <button class="btn btn-sm dropdown-toggle d-flex align-items-center gap-2"
@@ -311,6 +305,25 @@
                     <span class="dropdown-item-text" style="color:var(--text-muted);font-size:0.8rem;">
                         <?= ucfirst(Auth::role()) ?>
                     </span>
+                </li>
+                <li>
+                    <?php $curTpl = $_SESSION['print_template'] ?? 'a5'; ?>
+                    <div class="dropdown-item-text" style="padding:8px 16px;">
+                        <div style="font-size:0.72rem;color:var(--text-muted);font-weight:700;letter-spacing:.3px;text-transform:uppercase;margin-bottom:6px;">
+                            Default Print
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button type="button" class="btn btn-sm <?= $curTpl === 'a5' ? 'btn-primary' : 'btn-outline-secondary' ?>" id="tplA5Btn" style="flex:1;">
+                                A5
+                            </button>
+                            <button type="button" class="btn btn-sm <?= $curTpl === 'thermal' ? 'btn-success' : 'btn-outline-secondary' ?>" id="tplThermalBtn" style="flex:1;">
+                                Thermal
+                            </button>
+                        </div>
+                        <div id="tplSavedMsg" style="display:none;margin-top:6px;font-size:0.72rem;color:#059669;font-weight:700;">
+                            Saved
+                        </div>
+                    </div>
                 </li>
                 <li><hr class="dropdown-divider" style="border-color:var(--border-color);"></li>
                 <?php if (Auth::isAdmin()): ?>
@@ -449,6 +462,36 @@ function submitPin() {
 // Close on overlay click / Escape
 document.getElementById('pinModal').addEventListener('click', function(e) { if (e.target === this) closePin(); });
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && document.getElementById('pinModal').style.display === 'flex') closePin(); });
+
+// ── Default print template (session-only) ──
+(function () {
+    var btnA5 = document.getElementById('tplA5Btn');
+    var btnTh = document.getElementById('tplThermalBtn');
+    if (!btnA5 || !btnTh) return;
+
+    function setTpl(tpl) {
+        fetch('?page=settings&action=setPrintTemplate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'csrf_token=<?= Auth::csrfToken() ?>&tpl=' + encodeURIComponent(tpl)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res || !res.success) return;
+                // Quick refresh so all links/buttons use the new default
+                var msg = document.getElementById('tplSavedMsg');
+                if (msg) {
+                    msg.style.display = '';
+                    setTimeout(function () { msg.style.display = 'none'; }, 1200);
+                }
+                setTimeout(function () { window.location.reload(); }, 200);
+            })
+            .catch(function () {});
+    }
+
+    btnA5.addEventListener('click', function () { setTpl('a5'); });
+    btnTh.addEventListener('click', function () { setTpl('thermal'); });
+})();
 
 // Universal PIN protection — intercepts all .pin-protect links and buttons
 document.addEventListener('click', function(e) {

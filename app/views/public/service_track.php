@@ -70,14 +70,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgr
 <div class="pt-wrap">
     <div class="pt-logo">
         <h1>📱 Iqbal Electronics</h1>
-        <p>Service Center — Track Your Device</p>
+        <p>Service repair status — <strong><?= htmlspecialchars(app_service_track_short_label()) ?></strong></p>
     </div>
 
     <!-- Search -->
     <div class="pt-search">
-        <form method="GET">
-            <input type="hidden" name="page" value="servicetrack">
-            <input type="text" name="token" value="<?= htmlspecialchars($token ?? '') ?>" placeholder="Enter tracking code..." autofocus>
+        <form method="GET" action="<?= htmlspecialchars(app_service_track_url(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="text" name="token" value="<?= htmlspecialchars($token ?? '') ?>" placeholder="Tracking code or IMEI…" autocomplete="off" autofocus>
             <button type="submit"><i class="bi bi-search"></i></button>
         </form>
     </div>
@@ -86,7 +85,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgr
     <div class="pt-card pt-notfound">
         <i class="bi bi-search"></i>
         <strong>No record found</strong>
-        <p style="margin-top:6px;">Please check your tracking code and try again.</p>
+        <p style="margin-top:6px;">Check your tracking code or IMEI, or visit <strong><?= htmlspecialchars(app_service_track_short_label()) ?></strong> and try again.</p>
     </div>
 
     <?php elseif ($record): ?>
@@ -157,8 +156,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgr
     <?php else: ?>
     <div class="pt-card pt-notfound">
         <i class="bi bi-ticket-detailed"></i>
-        <strong>Enter your tracking code</strong>
-        <p style="margin-top:6px;">The tracking code was provided when you dropped off your device.</p>
+        <strong>Track your repair</strong>
+        <p style="margin-top:6px;">Enter the <strong>tracking code</strong> from your receipt, or your device <strong>IMEI</strong>, above.</p>
     </div>
     <?php endif; ?>
 

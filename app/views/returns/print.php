@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <title>Return <?= $return['return_no'] ?></title>
-<?php $thermal = isset($_GET['thermal']); ?>
+<?php
+$thermal = isset($returnPrintThermal)
+    ? (bool) $returnPrintThermal
+    : isset($_GET['thermal']);
+?>
 <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -57,24 +61,26 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
 /* ══════════════════════════════════
    THERMAL — Receipt Style
 ══════════════════════════════════ */
-    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; background: #fff; padding: 20px 4px; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; background: #fff; padding: 8px 2px; }
 
-    .no-print { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; margin: -20px -4px 16px; }
-    .no-print button { background: #6366f1; color: #fff; border: none; padding: 6px 16px; border-radius: 5px; font-size: 13px; cursor: pointer; margin-right: 6px; }
-    .no-print button.close-btn { background: #e5e7eb; color: #444; }
+    .no-print { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; margin: -8px -2px 12px; text-align: center; }
+    .no-print a, .no-print button { display: inline-block; background: #6366f1; color: #fff; border: none; padding: 6px 14px; border-radius: 5px; font-size: 13px; cursor: pointer; margin: 4px; text-decoration: none; font-family: system-ui, sans-serif; }
+    .no-print .btn-print { background: #059669; }
+    .no-print .btn-danger { background: #dc2626; }
+    .no-print .btn-secondary { background: #e5e7eb; color: #444; }
 
-    .wrap { max-width: 480px; margin: 0 auto; padding: 16px 6px; border: 1px solid #e5e7eb; border-radius: 10px; }
+    .wrap { max-width: 72mm; margin: 0 auto; padding: 8px 3px; }
 
     .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
-    .company-name { font-size: 18px; font-weight: 800; color: #1e3a5f; }
+    .company-name { font-size: 18px; font-weight: 800; color: #000; }
     .company-info { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.6; }
 
-    .receipt-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #dc2626; margin: 14px 0 6px; }
+    .receipt-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #000; margin: 14px 0 6px; }
     .receipt-subtitle { text-align: center; margin-bottom: 14px; }
 
-    .amount-box { margin: 18px 0; background: linear-gradient(135deg, #fff5f5, #fee2e2); border: 2px solid #fecaca; border-radius: 10px; padding: 14px; text-align: center; }
-    .amount-label { font-size: 10px; color: #dc2626; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-    .amount-value { font-size: 26px; font-weight: 800; color: #991b1b; margin-top: 4px; }
+    .amount-box { margin: 18px 0; background: transparent; border: 2px solid #000; border-radius: 0; padding: 14px; text-align: center; }
+    .amount-label { font-size: 10px; color: #000; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .amount-value { font-size: 26px; font-weight: 800; color: #000; margin-top: 4px; }
 
     .receipt-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
     .receipt-row:last-child { border-bottom: none; }
@@ -92,14 +98,14 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
     .balance-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
     .balance-row .lbl { color: #666; }
     .balance-row .val { font-weight: 600; text-align: right; }
-    .balance-final { display: flex; justify-content: space-between; padding: 8px 0 0; border-top: 2px solid #1e3a5f; margin-top: 4px; }
-    .balance-final .lbl { font-weight: 800; color: #1e3a5f; font-size: 12px; }
+    .balance-final { display: flex; justify-content: space-between; padding: 8px 0 0; border-top: 2px solid #000; margin-top: 4px; }
+    .balance-final .lbl { font-weight: 800; color: #000; font-size: 12px; }
     .balance-final .val { font-weight: 800; font-size: 13px; }
 
     .receipt-footer { text-align: center; margin-top: 18px; padding-top: 14px; border-top: 2px dashed #e5e7eb; font-size: 10px; color: #888; }
 
     @media print {
-        body { padding: 0; background: #fff; }
+        body { padding: 0; background: #fff; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
         .no-print { display: none !important; }
         .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
         @page { margin: 8mm 3mm; }
@@ -215,7 +221,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
 <div class="no-print">
     <button onclick="window.print()">⎙ Print</button>
     <button onclick="exportPDF()" style="background:#dc2626;">⤓ PDF</button>
-    <a href="?page=returns&action=print&id=<?= $return['id'] ?>"
+    <a href="?page=returns&action=print&id=<?= (int) $return['id'] ?>&template=a5"
         style="background:#6366f1;color:#fff;border:none;padding:6px 16px;border-radius:5px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;margin-right:6px;">
         ⬚ A5
     </a>
@@ -235,7 +241,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
     <!-- Title -->
     <div class="receipt-title">Sale Return</div>
     <div class="receipt-subtitle">
-        <span style="display:inline-block;padding:4px 18px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;background:#fee2e2;color:#991b1b;">
+        <span style="display:inline-block;padding:4px 12px;border:2px solid #000;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#000;background:transparent;">
             ↩ Return
         </span>
     </div>
@@ -289,12 +295,12 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
             <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
         </div>
         <div class="balance-row">
-            <span class="lbl" style="color:#dc2626;">Return Deducted</span>
-            <span class="val" style="color:#dc2626;">- <?= APP_CURRENCY ?> <?= number_format($return['grand_total'], DECIMAL_PLACES) ?></span>
+            <span class="lbl">Return Deducted</span>
+            <span class="val">- <?= APP_CURRENCY ?> <?= number_format($return['grand_total'], DECIMAL_PLACES) ?></span>
         </div>
         <div class="balance-final">
             <span class="lbl">Current Balance</span>
-            <span class="val" style="color:<?= $currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669') ?>;">
+            <span class="val" style="color:#000;">
                 <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
             </span>
         </div>

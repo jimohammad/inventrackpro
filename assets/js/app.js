@@ -33,31 +33,6 @@ document.addEventListener('keydown', function(e) {
     if (key === 'o') { e.preventDefault(); window.location.href = '?page=payments&action=create&type=out'; }
 });
 
-// Theme toggle
-const htmlRoot = document.getElementById('htmlRoot');
-const themeBtn = document.getElementById('themeToggleBtn');
-const themeIcon = document.getElementById('themeIcon');
-
-function applyTheme(theme) {
-    htmlRoot?.setAttribute('data-theme', theme);
-    localStorage.setItem('invt_theme', theme);
-    if (themeIcon && themeBtn) {
-        if (theme === 'light') {
-            themeIcon.className = 'bi bi-sun-fill';
-            themeBtn.title = 'Switch to dark mode';
-        } else {
-            themeIcon.className = 'bi bi-moon-stars-fill';
-            themeBtn.title = 'Switch to light mode';
-        }
-    }
-}
-
-applyTheme(localStorage.getItem('invt_theme') || 'dark');
-themeBtn?.addEventListener('click', () => {
-    const current = htmlRoot?.getAttribute('data-theme') || 'dark';
-    applyTheme(current === 'dark' ? 'light' : 'dark');
-});
-
 // Auto-dismiss flash messages
 setTimeout(() => {
     document.querySelectorAll('.flash-msg .alert').forEach(el => {

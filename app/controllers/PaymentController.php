@@ -254,6 +254,10 @@ class PaymentController extends BaseController {
             $this->logActivity('create_payment', 'payments', (int)$id);
             $printMode = (string)($this->input('print_mode') ?? '');
             if ($printMode === '1') {
+                $tpl = $_SESSION['print_template'] ?? 'a5';
+                if ($tpl === 'thermal') {
+                    $this->redirect("?page=payments&action=print&id={$id}&autoprint=1&thermal=1");
+                }
                 $this->redirect("?page=payments&action=print&id={$id}&autoprint=1");
             }
             if ($printMode === '2') {

@@ -18,26 +18,26 @@ header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 
 Auth::startSession();
 
-// #region agent log
-$debugPayload = [
-    'sessionId' => '04f822',
-    'runId' => 'run1',
-    'hypothesisId' => 'H0',
-    'location' => 'index.php:router',
-    'message' => 'Request routed in workspace entrypoint',
-    'data' => [
-        'requestUri' => $_SERVER['REQUEST_URI'] ?? '',
-        'requestMethod' => $_SERVER['REQUEST_METHOD'] ?? '',
-        'queryPage' => $_GET['page'] ?? '',
-        'queryAction' => $_GET['action'] ?? '',
-    ],
-    'timestamp' => (int) round(microtime(true) * 1000),
-];
-$debugLine = json_encode($debugPayload, JSON_UNESCAPED_SLASHES);
-if ($debugLine !== false) {
-    @file_put_contents('G:/My Drive/Iqbalerp_Folder/debug-04f822.log', $debugLine . PHP_EOL, FILE_APPEND | LOCK_EX);
+// Opt-in request debug log (disabled by default).
+if (getenv('ERP_DEBUG_ROUTER')) {
+    $debugPayload = [
+        'sessionId' => substr((string) session_id(), 0, 12),
+        'location'  => 'index.php:router',
+        'message'   => 'Request routed',
+        'data'      => [
+            'requestUri'    => $_SERVER['REQUEST_URI'] ?? '',
+            'requestMethod' => $_SERVER['REQUEST_METHOD'] ?? '',
+            'queryPage'     => $_GET['page'] ?? '',
+            'queryAction'   => $_GET['action'] ?? '',
+        ],
+        'timestamp' => (int) round(microtime(true) * 1000),
+    ];
+    $debugLine = json_encode($debugPayload, JSON_UNESCAPED_SLASHES);
+    if ($debugLine !== false) {
+        $debugPath = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'erp-router-debug.log';
+        @file_put_contents($debugPath, $debugLine . PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
 }
-// #endregion
 
 // Get the requested page from URL e.g. ?page=sales&action=add
 $page   = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['page'] ?? 'dashboard'));

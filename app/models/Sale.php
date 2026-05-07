@@ -143,6 +143,41 @@ class Sale extends BaseModel {
         return $sale;
     }
 
+    /**
+     * Recalculate sales.balance and sales.status from grand_total, paid_amount,
+     * and all approved sale_return rows. Use after creating/editing returns so
+     * status never stays "paid" while balance > 0 (see SaleReturn::create legacy CASE ELSE status).
+     */
+    public function recomputeBalanceAfterReturns(int $saleId): void {
+        if ($saleId <= 0) {
+            return;
+        }
+        $saleData = $this->db->fetchOne(
+            "SELECT grand_total, paid_amount FROM sales WHERE id = ? AND status != 'cancelled'",
+            [$saleId]
+        );
+        if (!$saleData) {
+            return;
+        }
+        $returnsTot = (float) ($this->db->fetchOne(
+            "SELECT COALESCE(SUM(grand_total), 0) AS tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'",
+            [$saleId]
+        )['tot'] ?? 0);
+        $newBalance = max(0, round((float) $saleData['grand_total'] - (float) $saleData['paid_amount'] - $returnsTot, 3));
+        if ($newBalance < 0.001) {
+            $newStatus  = 'paid';
+            $newBalance = 0;
+        } elseif ((float) $saleData['paid_amount'] > 0.001) {
+            $newStatus = 'partial';
+        } else {
+            $newStatus = 'confirmed';
+        }
+        $this->db->execute(
+            'UPDATE sales SET balance = ?, status = ? WHERE id = ?',
+            [$newBalance, $newStatus, $saleId]
+        );
+    }
+
     // Get next invoice number — MUST be called inside a transaction
     // AUDIT FIX F1: FOR UPDATE locks the row to prevent duplicate numbers
     public function nextInvoiceNo(): string {

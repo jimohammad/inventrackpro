@@ -90,4 +90,21 @@ class SettingsController extends BaseController {
         $adminPin = $stored['value'] ?? '0000';
         echo json_encode(['valid' => hash_equals($adminPin, $pin)]);
     }
+
+    /**
+     * Session-only default print template (no DB changes).
+     * Values: a5 | thermal
+     */
+    public function setPrintTemplate(): void {
+        header('Content-Type: application/json');
+        if (!$this->isPost()) { echo json_encode(['error' => 'POST required']); return; }
+        Auth::authorize('settings', 'view');
+
+        $tpl = strtolower(trim((string)($_POST['tpl'] ?? 'a5')));
+        if (!in_array($tpl, ['a5', 'thermal'], true)) {
+            $tpl = 'a5';
+        }
+        $_SESSION['print_template'] = $tpl;
+        echo json_encode(['success' => true, 'template' => $tpl]);
+    }
 }

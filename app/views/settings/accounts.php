@@ -95,6 +95,12 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
 .trf-amount{font-weight:800;color:#1e293b;font-size:0.9rem;}
 [data-theme="dark"] .trf-amount{color:#e2e8f0;}
 .hist-empty{text-align:center;padding:40px;color:var(--text-muted);font-size:0.85rem;}
+.trf-edit{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:8px;border:none;padding:0;
+    background:rgba(245,158,11,.14);color:#b45309;text-decoration:none;
+}
+.trf-edit:hover{color:#92400e;filter:brightness(1.05);}
 </style>
 
 <!-- Header -->
@@ -388,6 +394,70 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     </div>
 </div>
 
+<!-- Edit Transfer Panel -->
+<?php if (!empty($editingTransfer) && Auth::can('settings', 'edit')): ?>
+<div class="acc-panel" id="editTransferPanel" style="display:block;border-color:rgba(245,158,11,0.35);">
+    <div class="acc-panel-header" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05));">
+        <div class="acc-panel-title"><i class="bi bi-pencil-square" style="color:#f59e0b;"></i> Edit Transfer <span style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-left:8px;font-family:monospace;"><?= htmlspecialchars($editingTransfer['transfer_no']) ?></span></div>
+        <a class="panel-close" href="?page=accounts<?= !empty($selectedAccountId) ? '&account_id=' . (int)$selectedAccountId : '' ?>" style="text-decoration:none;" title="Close">×</a>
+    </div>
+    <div class="acc-panel-body">
+        <form method="POST" action="?page=accounts&action=updateTransfer">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$editingTransfer['id'] ?>">
+            <input type="hidden" name="return_account_id" value="<?= (int)($selectedAccountId ?? 0) ?>">
+            <div class="acc-form-row" style="grid-template-columns:1fr 60px 1fr 160px 200px;">
+
+                <div class="acc-field acc-field-green">
+                    <label>From Account <span style="color:#ef4444;">*</span></label>
+                    <select name="from_account_id" id="fromAccEdit" required>
+                        <option value="">Select source account...</option>
+                        <?php foreach ($accounts as $a): ?>
+                        <option value="<?= $a['id'] ?>" data-balance="<?= htmlspecialchars((string)$a['current_balance']) ?>" <?= (int)$editingTransfer['from_account_id'] === (int)$a['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($a['name']) ?> — <?= APP_CURRENCY ?> <?= number_format($a['current_balance'], DECIMAL_PLACES) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div id="fromBalanceEdit" style="margin-top:5px;font-size:0.77rem;color:#10b981;font-weight:600;min-height:16px;"></div>
+                </div>
+
+                <div class="transfer-arrow"><i class="bi bi-arrow-right-circle-fill" style="color:#f59e0b;"></i></div>
+
+                <div class="acc-field acc-field-green">
+                    <label>To Account <span style="color:#ef4444;">*</span></label>
+                    <select name="to_account_id" required>
+                        <option value="">Select destination...</option>
+                        <?php foreach ($accounts as $a): ?>
+                        <option value="<?= $a['id'] ?>" <?= (int)$editingTransfer['to_account_id'] === (int)$a['id'] ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="acc-field acc-field-green">
+                    <label>Amount <span style="color:#ef4444;">*</span></label>
+                    <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required value="<?= htmlspecialchars(number_format((float)$editingTransfer['amount'], DECIMAL_PLACES, '.', ''), ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+
+                <div class="acc-field acc-field-green">
+                    <label>Date</label>
+                    <input type="date" name="date" value="<?= htmlspecialchars($editingTransfer['date'] ?? date('Y-m-d'), ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+            </div>
+            <div class="acc-form-row" style="margin-top:0;">
+                <div class="acc-field acc-field-green" style="grid-column:1/-1;">
+                    <label>Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+                    <input type="text" name="notes" placeholder="Reason for transfer..." value="<?= htmlspecialchars($editingTransfer['notes'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+            </div>
+            <div class="acc-save-row">
+                <a class="btn-panel-cancel" href="?page=accounts<?= !empty($selectedAccountId) ? '&account_id=' . (int)$selectedAccountId : '' ?>" style="display:inline-flex;align-items:center;text-decoration:none;">Cancel</a>
+                <button type="submit" class="btn-panel-save" style="background:linear-gradient(135deg,#f59e0b,#d97706);"><i class="bi bi-check-lg me-1"></i> Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Transfer History -->
 <div class="hist-card">
     <div class="hist-head">
@@ -406,11 +476,14 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                     <th style="text-align:right;">Amount</th>
                     <th>Notes</th>
                     <th>By</th>
+                    <?php if (Auth::can('settings', 'edit')): ?>
+                    <th style="text-align:center;width:56px;">Edit</th>
+                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($transfers)): ?>
-                <tr><td colspan="8"><div class="hist-empty"><i class="bi bi-arrow-left-right" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:8px;"></i>No transfers yet</div></td></tr>
+                <tr><td colspan="<?= Auth::can('settings', 'edit') ? '9' : '8' ?>"><div class="hist-empty"><i class="bi bi-arrow-left-right" style="font-size:2rem;opacity:0.2;display:block;margin-bottom:8px;"></i>No transfers yet</div></td></tr>
                 <?php else: ?>
                 <?php foreach ($transfers as $t): ?>
                 <tr>
@@ -422,6 +495,11 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                     <td style="text-align:right;"><span class="trf-amount"><?= APP_CURRENCY ?> <?= number_format($t['amount'], DECIMAL_PLACES) ?></span></td>
                     <td style="color:var(--text-muted);font-size:0.82rem;max-width:180px;"><?= htmlspecialchars($t['notes'] ?? '—') ?></td>
                     <td style="color:var(--text-muted);font-size:0.78rem;"><?= htmlspecialchars($t['created_by_name'] ?? '—') ?></td>
+                    <?php if (Auth::can('settings', 'edit')): ?>
+                    <td style="text-align:center;">
+                        <a href="?page=accounts&edit_transfer=<?= (int)$t['id'] ?><?= !empty($selectedAccountId) ? '&account_id=' . (int)$selectedAccountId : '' ?>" class="trf-edit pin-protect" title="Edit transfer"><i class="bi bi-pencil"></i></a>
+                    </td>
+                    <?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
                 <?php endif; ?>
@@ -456,8 +534,36 @@ function updateBalance() {
 }
 
 $(document).ready(() => {
-    if (document.getElementById('transferTable').querySelectorAll('tbody tr').length > 5) {
-        $('#transferTable').DataTable({ pageLength: 25, order: [[0, 'desc']], columnDefs: [{ orderable: false, targets: [3] }] });
+    var tt = document.getElementById('transferTable');
+    if (tt && tt.querySelectorAll('tbody tr').length > 5) {
+        var noOrder = [3];
+        <?php if (Auth::can('settings', 'edit')): ?>noOrder.push(8);<?php endif; ?>
+        $('#transferTable').DataTable({ pageLength: 25, order: [[0, 'desc']], columnDefs: [{ orderable: false, targets: noOrder }] });
     }
 });
+
+(function() {
+    var sel = document.getElementById('fromAccEdit');
+    var el = document.getElementById('fromBalanceEdit');
+    if (!sel || !el) return;
+    function upd() {
+        var opt = sel.options[sel.selectedIndex];
+        var bal = parseFloat(opt.getAttribute('data-balance') || '0');
+        if (sel.value) {
+            el.textContent = 'Available: <?= APP_CURRENCY ?> ' + bal.toFixed(<?= (int)DECIMAL_PLACES ?>);
+            el.style.color = bal > 0 ? '#10b981' : '#ef4444';
+        } else {
+            el.textContent = '';
+        }
+    }
+    sel.addEventListener('change', upd);
+    upd();
+})();
+
+<?php if (!empty($editingTransfer)): ?>
+setTimeout(function() {
+    var p = document.getElementById('editTransferPanel');
+    if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}, 80);
+<?php endif; ?>
 </script>

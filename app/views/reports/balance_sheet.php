@@ -117,6 +117,24 @@
             <?php endif; ?>
         </div>
 
+        <!-- Supplier Advances (PO) -->
+        <div class="bs-group">
+            <div class="bs-group-title"><i class="bi bi-box-arrow-up-right"></i> Supplier Advances (Paid on PO)</div>
+            <?php if (empty($poAdvances ?? [])): ?>
+            <div class="bs-row"><span class="name text-muted">No PO advances</span></div>
+            <?php else: ?>
+            <?php foreach (($poAdvances ?? []) as $adv): ?>
+            <div class="bs-row">
+                <span class="name">
+                    <?= htmlspecialchars($adv['name']) ?>
+                    <small><?= htmlspecialchars($adv['party_code'] ?? '') ?></small>
+                </span>
+                <span class="amt green"><?= APP_CURRENCY ?> <?= number_format((float)$adv['amount'], DECIMAL_PLACES) ?></span>
+            </div>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+
         <!-- Stock -->
         <div class="bs-group">
             <div class="bs-group-title"><i class="bi bi-box-seam"></i> Inventory (at cost)</div>

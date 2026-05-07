@@ -1225,7 +1225,7 @@ class ReportController extends BaseController {
                     - COALESCE((SELECT SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount') AND date <= ?), 0)
                     - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved' AND date <= ?), 0)
                     - COALESCE((SELECT SUM(grand_total) FROM purchases WHERE party_id = p.id AND status != 'cancelled' AND date <= ?), 0)
-                    + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type = 'purchase' AND date <= ?), 0)
+                    + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('purchase','purchase_order') AND date <= ?), 0)
                     + COALESCE((SELECT SUM(paid_kwd)
                                 FROM purchase_orders
                                 WHERE party_id = p.id AND status IN ('paid','draft') AND date <= ?), 0)

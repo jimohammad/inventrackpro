@@ -24,6 +24,9 @@ class SettingsController extends BaseController {
                 $key = htmlspecialchars($key);
                 if (!in_array($key, $allowedKeys)) continue;
                 if ($key === 'admin_pin' && trim($val) === '') continue; // keep existing PIN
+                if ($key === 'admin_pin') {
+                    $val = password_hash(trim((string) $val), PASSWORD_DEFAULT);
+                }
                 $db->execute(
                     "INSERT INTO settings (key_name, value) VALUES (?,?)
                      ON DUPLICATE KEY UPDATE value = ?",
@@ -83,12 +86,59 @@ class SettingsController extends BaseController {
 
     public function verifyPin(): void {
         header('Content-Type: application/json');
+        if (!$this->isPost()) { echo json_encode(['valid' => false]); return; }
+        Auth::authorize('settings', 'view');
+
+        $now = time();
+        $fails = (int)($_SESSION['admin_pin_fails'] ?? 0);
+        $lockUntil = (int)($_SESSION['admin_pin_lock_until'] ?? 0);
+        if ($lockUntil > $now) {
+            echo json_encode([
+                'valid' => false,
+                'locked' => true,
+                'retry_after' => $lockUntil - $now,
+            ]);
+            return;
+        }
+
         // Accept PIN via POST for security (avoids URL logging)
         $pin = trim($_POST['pin'] ?? '');
         $db  = Database::getInstance();
         $stored = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'admin_pin'");
         $adminPin = $stored['value'] ?? '0000';
-        echo json_encode(['valid' => hash_equals($adminPin, $pin)]);
+
+        $valid = false;
+        $looksHashed = is_string($adminPin) && substr($adminPin, 0, 2) === '$2';
+        if ($looksHashed) {
+            $valid = password_verify($pin, $adminPin);
+        } else {
+            // Backward compatibility with legacy plain-text pins.
+            $valid = hash_equals((string) $adminPin, (string) $pin);
+            if ($valid) {
+                // Opportunistic migration to a password hash once the correct PIN is presented.
+                $hash = password_hash($pin, PASSWORD_DEFAULT);
+                $db->execute(
+                    "INSERT INTO settings (key_name, value) VALUES ('admin_pin', ?)
+                     ON DUPLICATE KEY UPDATE value = ?",
+                    [$hash, $hash]
+                );
+            }
+        }
+
+        if ($valid) {
+            unset($_SESSION['admin_pin_fails'], $_SESSION['admin_pin_lock_until']);
+            echo json_encode(['valid' => true]);
+            return;
+        }
+
+        $fails++;
+        $_SESSION['admin_pin_fails'] = $fails;
+        if ($fails >= 5) {
+            $_SESSION['admin_pin_lock_until'] = $now + 30;
+            echo json_encode(['valid' => false, 'locked' => true, 'retry_after' => 30]);
+            return;
+        }
+        echo json_encode(['valid' => false]);
     }
 
     /**

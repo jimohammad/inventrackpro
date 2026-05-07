@@ -294,6 +294,7 @@ class ServiceController extends BaseController {
         $allowed = ['Pending', 'In Progress', 'Completed', 'Replaced'];
         if (!$id || !in_array($status, $allowed, true)) {
             $this->json(['success' => false, 'message' => 'Invalid status.'], 400);
+            return;
         }
 
         $old = $this->db->fetchOne(
@@ -304,6 +305,7 @@ class ServiceController extends BaseController {
         );
         if (!$old) {
             $this->json(['success' => false, 'message' => 'Record not found.'], 404);
+            return;
         }
 
         $newStage = (int)($old['device_stage'] ?? 0);
@@ -342,6 +344,7 @@ class ServiceController extends BaseController {
         } catch (Exception $e) {
             $this->db->rollback();
             $this->json(['success' => false, 'message' => 'Update failed.'], 500);
+            return;
         }
 
         $this->json([

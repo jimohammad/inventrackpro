@@ -484,14 +484,31 @@ class PurchaseOrderController extends BaseController {
         if ($po && $po['status'] !== 'converted') {
             $this->db->beginTransaction();
             try {
-                // Reverse account deduction for any paid amount (full or partial)
-                if ($po['account_id'] && (float)$po['paid_kwd'] > 0) {
+                // Reverse each PO payment back to its original account (supports partial multi-account pays).
+                // Mirror Sale::cancel(): reverse account effect first, then delete payment rows.
+                $poPays = $this->db->fetchAll(
+                    "SELECT id, account_id, amount, payment_type
+                     FROM payments
+                     WHERE ref_type = 'purchase_order' AND ref_id = ?
+                     FOR UPDATE",
+                    [$id]
+                );
+                foreach ($poPays as $pay) {
+                    $accId = (int)($pay['account_id'] ?? 0);
+                    $amt   = (float)($pay['amount'] ?? 0);
+                    if ($accId <= 0 || $amt <= 0) {
+                        continue;
+                    }
+                    // payment_type='out' means we previously deducted from account; cancelling should restore it.
+                    // If a legacy row has payment_type='in', reverse the opposite way.
+                    $ptype = (string)($pay['payment_type'] ?? 'out');
+                    $delta = ($ptype === 'out') ? $amt : -$amt;
                     $this->db->execute(
                         "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
-                        [(float)$po['paid_kwd'], $po['account_id']]
+                        [$delta, $accId]
                     );
                 }
-                
+
                 // Delete associated payment records so supplier balance stays accurate
                 $this->db->execute("DELETE FROM payments WHERE ref_type='purchase_order' AND ref_id=?", [$id]);
                 

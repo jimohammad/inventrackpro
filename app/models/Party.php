@@ -86,7 +86,7 @@ class Party extends BaseModel {
                 FROM purchases WHERE party_id IN ($placeholders) AND status != 'cancelled'
                 UNION ALL
                 SELECT party_id, 0, 0, 0, 0, amount, 0
-                FROM payments WHERE party_id IN ($placeholders) AND ref_type = 'purchase'
+                FROM payments WHERE party_id IN ($placeholders) AND ref_type IN ('purchase','purchase_order')
                 UNION ALL
                 SELECT party_id, 0, 0, 0, 0, 0, grand_total
                 FROM `returns` WHERE party_id IN ($placeholders) AND type = 'purchase_return' AND status = 'approved'
@@ -148,7 +148,7 @@ class Party extends BaseModel {
                 FROM purchases WHERE party_id=? AND status!='cancelled'
                 UNION ALL
                 SELECT 0, 0, 0, 0, amount, 0
-                FROM payments WHERE party_id=? AND ref_type='purchase'
+                FROM payments WHERE party_id=? AND ref_type IN ('purchase','purchase_order')
                 UNION ALL
                 SELECT 0, 0, 0, 0, 0, grand_total
                 FROM `returns` WHERE party_id=? AND type='purchase_return' AND status='approved'

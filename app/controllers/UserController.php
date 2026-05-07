@@ -21,6 +21,7 @@ class UserController extends BaseController {
 
     public function create(): void {
         Auth::authorize('settings', 'add');
+        if (!Auth::isAdmin()) { $this->redirect('?page=dashboard'); }
         $pageTitle = 'New User';
         $page      = 'users';
         ob_start();
@@ -31,6 +32,7 @@ class UserController extends BaseController {
 
     public function store(): void {
         Auth::authorize('settings', 'add');
+        if (!Auth::isAdmin()) { $this->redirect('?page=dashboard'); }
         if (!$this->isPost()) { $this->redirect('?page=users'); }
 
         $db   = Database::getInstance();
@@ -49,6 +51,7 @@ class UserController extends BaseController {
 
     public function edit(): void {
         Auth::authorize('settings', 'edit');
+        if (!Auth::isAdmin()) { $this->redirect('?page=dashboard'); }
         $id      = $this->inputInt('id', 0, 'get');
         $db      = Database::getInstance();
         $editUser = $db->fetchOne("SELECT id, name, email, role FROM users WHERE id = ?", [$id]);
@@ -64,14 +67,22 @@ class UserController extends BaseController {
 
     public function update(): void {
         Auth::authorize('settings', 'edit');
+        if (!Auth::isAdmin()) { $this->redirect('?page=dashboard'); }
         if (!$this->isPost()) { $this->redirect('?page=users'); }
 
-        $id  = $this->inputInt('id', 0, 'get');
+        $id  = $this->inputInt('id');
         $db  = Database::getInstance();
+
+        $existing = $db->fetchOne("SELECT id, role FROM users WHERE id = ?", [$id]);
+        if (!$existing) { $this->flash('error', 'User not found.'); $this->redirect('?page=users'); }
 
         // Update basic info
         $fields = "name = ?, email = ?, role = ?";
-        $params = [$this->input('name'), $this->input('email'), $this->input('role')];
+        $role   = $this->input('role');
+        if ($role === '') {
+            $role = (string) ($existing['role'] ?? 'user');
+        }
+        $params = [$this->input('name'), $this->input('email'), $role];
 
         // Only update password if provided
         $pass = $this->input('password');
@@ -107,6 +118,7 @@ class UserController extends BaseController {
 
     public function toggleStatus(): void {
         Auth::authorize('settings', 'edit');
+        if (!Auth::isAdmin()) { $this->redirect('?page=dashboard'); }
         if (!$this->isPost()) { $this->redirect('?page=users'); return; }
         $id  = $this->inputInt('id');
         $db  = Database::getInstance();

@@ -185,7 +185,31 @@ abstract class BaseController {
         $db = Database::getInstance();
         $db->insert(
             "INSERT INTO activity_log (user_id, action, module, ref_id, description, ip_address) VALUES (?,?,?,?,?,?)",
-            [Auth::id(), $action, $module, $refId, $description, $_SERVER['REMOTE_ADDR'] ?? '']
+            [Auth::id(), $action, $module, $refId, $description, self::clientIp()]
         );
+    }
+
+    protected static function clientIp(): string {
+        // Prefer known proxy headers when present; fall back to REMOTE_ADDR.
+        $candidates = [
+            $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '',
+            $_SERVER['HTTP_X_REAL_IP'] ?? '',
+        ];
+        $xff = (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+        if ($xff !== '') {
+            // XFF may contain a list; first is original client.
+            $parts = array_map('trim', explode(',', $xff));
+            if (!empty($parts[0])) {
+                $candidates[] = $parts[0];
+            }
+        }
+        $candidates[] = $_SERVER['REMOTE_ADDR'] ?? '';
+        foreach ($candidates as $ip) {
+            $ip = trim((string) $ip);
+            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+        return '';
     }
 }

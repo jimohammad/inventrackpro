@@ -237,9 +237,12 @@
 
     <!-- Logout at bottom -->
     <div style="padding: 1.5rem;">
-        <a href="?page=logout&action=logout" class="btn btn-outline-secondary btn-sm w-100">
-            <i class="bi bi-box-arrow-right me-1"></i> Logout
-        </a>
+        <form method="post" action="?page=logout&action=logout" class="m-0">
+            <?= Auth::csrfField() ?>
+            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+                <i class="bi bi-box-arrow-right me-1"></i> Logout
+            </button>
+        </form>
     </div>
 </nav>
 
@@ -334,9 +337,12 @@
                 </li>
                 <?php endif; ?>
                 <li>
-                    <a class="dropdown-item" href="?page=logout&action=logout" style="color:var(--danger);">
-                        <i class="bi bi-box-arrow-right me-2"></i>Logout
-                    </a>
+                    <form method="post" action="?page=logout&action=logout" class="m-0 px-2 py-1">
+                        <?= Auth::csrfField() ?>
+                        <button type="submit" class="dropdown-item" style="color:var(--danger);">
+                            <i class="bi bi-box-arrow-right me-2"></i>Logout
+                        </button>
+                    </form>
                 </li>
             </ul>
         </div>

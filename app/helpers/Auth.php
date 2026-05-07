@@ -19,10 +19,13 @@ class Auth {
             }
 
             session_name(SESSION_NAME);
+            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+                || (($_SERVER['HTTP_CF_VISITOR'] ?? '') && str_contains((string) $_SERVER['HTTP_CF_VISITOR'], 'https'));
             session_set_cookie_params([
                 'lifetime' => SESSION_LIFETIME,
                 'path'     => '/',
-                'secure'   => true,  // app runs on HTTPS
+                'secure'   => $isHttps,
                 'httponly' => true,
                 'samesite' => 'Strict'
             ]);

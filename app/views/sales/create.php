@@ -66,6 +66,9 @@
     border-color:#10b981; background:linear-gradient(135deg,#f0fdf4,#ecfdf5);
     color:#065f46; font-weight:600;
 }
+.customer-search-wrap.inv-field { max-width:175px; min-width:175px; flex:0 0 auto; }
+.customer-search-wrap.inv-field input { font-size:0.95rem; padding-top:10px; padding-bottom:10px; }
+.customer-search-wrap.inv-field input[type="date"] { font-size:0.86rem; }
 .inv-meta {
     display:flex; gap:20px; align-items:center;
     margin-left:auto; flex-wrap:wrap;
@@ -432,16 +435,16 @@ table.items-tbl tbody tr.scan-row-flash {
         </div>
 
 
-        <div class="customer-search-wrap" style="max-width:180px;margin-left:auto;">
+        <div class="customer-search-wrap inv-field inv-field-invoice" style="margin-left:auto;">
             <i class="bi bi-hash search-icon" style="color:#6366f1;"></i>
             <input type="text" value="<?= $nextInv ?>" readonly
                 style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#6366f1;font-weight:700;letter-spacing:0.5px;cursor:default;">
         </div>
-        <div class="customer-search-wrap" style="max-width:180px;">
+        <div class="customer-search-wrap inv-field">
             <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
             <input type="date" name="date" value="<?= date('Y-m-d') ?>" style="padding-left:36px;">
         </div>
-        <div class="customer-search-wrap" style="max-width:130px;">
+        <div class="customer-search-wrap inv-field inv-field-time">
             <i class="bi bi-clock search-icon" style="color:#10b981;"></i>
             <input type="text" id="liveClock" value="<?= date('h:i A') ?>" readonly
                 style="padding-left:36px;background:#f8fafc;color:#1e293b;font-weight:700;cursor:default;">

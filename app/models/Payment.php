@@ -201,8 +201,10 @@ class Payment extends BaseModel {
 
     /**
      * Delete a standalone payment and reverse its effects (account + FIFO invoice allocation).
-     * Uses LIFO on purchases/sales to undo createStandalone FIFO — correct when removing a mistaken
-     * duplicate soon after entry; may be wrong if many later payments interleaved (admin use only).
+     * Uses LIFO on purchases/sales to undo createStandalone FIFO. LIFO is only equivalent to FIFO
+     * reversal when no NEWER payments exist for the same party — otherwise this would reverse the
+     * wrong invoices. H1 fix: refuse the delete when newer payments exist; admin must delete the
+     * newer ones first (or rebuild the allocation manually).
      */
     public function deleteWithReversal(int $id): bool {
         $this->lastError = '';
@@ -223,6 +225,28 @@ class Payment extends BaseModel {
             $accId     = (int) $pay['account_id'];
             $partyId   = (int) ($pay['party_id'] ?? 0);
             $whId      = (int) ($pay['warehouse_id'] ?? 0);
+
+            // H1 gate: block delete if any newer payment exists for this party (same in/out direction).
+            // FIFO allocation made when this payment was saved is no longer the last applied, so LIFO
+            // reversal would unwind the wrong invoices and corrupt their balances.
+            if ($partyId > 0) {
+                $newer = $this->db->fetchOne(
+                    "SELECT id, payment_no, date, created_at
+                     FROM payments
+                     WHERE party_id = ? AND payment_type = ? AND ref_type != 'discount'
+                       AND id != ?
+                       AND (created_at > ? OR (created_at = ? AND id > ?))
+                     ORDER BY created_at ASC, id ASC
+                     LIMIT 1",
+                    [$partyId, $type, $id, $pay['created_at'], $pay['created_at'], $id]
+                );
+                if ($newer) {
+                    throw new Exception(
+                        'Cannot delete: a newer payment ' . ($newer['payment_no'] ?? '') . ' exists for this party. '
+                        . 'Delete the newer payments first, or contact support to rebuild the allocation.'
+                    );
+                }
+            }
 
             if ($type === 'in') {
                 $this->db->execute(

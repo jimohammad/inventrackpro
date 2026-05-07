@@ -224,9 +224,11 @@ class SaleReturn extends BaseModel {
                                 );
                             }
 
+                            // H2 fix: also set warehouse_id to the return's warehouse so the IMEI
+                            // record doesn't drift from the stock count we add a few lines above.
                             $this->db->execute(
-                                "UPDATE imei_records SET status='in_stock', sale_id=NULL WHERE id=?",
-                                [$imeiRow['id']]
+                                "UPDATE imei_records SET status='in_stock', sale_id=NULL, warehouse_id=? WHERE id=?",
+                                [$data['warehouse_id'], $imeiRow['id']]
                             );
                             $this->db->insert(
                                 "INSERT INTO return_item_imei (return_item_id, imei_id) VALUES (?,?)",
@@ -248,13 +250,14 @@ class SaleReturn extends BaseModel {
                 } elseif (!empty($data['ref_id'])) {
                     // No IMEIs scanned — auto-restore by sale+item so phones can be re-sold.
                     // Restores exactly the returned quantity, oldest records first.
+                    // H2 fix: also align warehouse_id with the return's warehouse to avoid drift.
                     $this->db->execute(
                         "UPDATE imei_records
-                         SET status='in_stock', sale_id=NULL
+                         SET status='in_stock', sale_id=NULL, warehouse_id=?
                          WHERE sale_id=? AND item_id=? AND status='sold'
                          ORDER BY id
                          LIMIT ?",
-                        [$data['ref_id'], $item['item_id'], (int)$item['quantity']]
+                        [$data['warehouse_id'], $data['ref_id'], $item['item_id'], (int)$item['quantity']]
                     );
                 }
             }

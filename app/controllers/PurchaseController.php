@@ -183,10 +183,22 @@ class PurchaseController extends BaseController {
 
         $invoiceNo = $this->nextInvoiceNo($db);
         $subtotal  = array_sum(array_map(fn($i) => $i['unit_price'] * $i['quantity'], $items));
-        $discount  = $this->inputFloat('discount');
+        // C3 fix: clamp negative discount — a negative value would inflate grand_total above subtotal.
+        $discount  = max(0.0, $this->inputFloat('discount'));
         $tax       = 0;
         $grandTotal = $subtotal - $discount;
         $paid       = $this->inputFloat('paid_amount');
+
+        // C1 fix: reject overpayment so 20 KWD doesn't silently vanish via max(0, balance) below.
+        if ($paid > $grandTotal + 0.001) {
+            $this->flash('error',
+                'Paid amount (' . number_format($paid, 3) . ') exceeds grand total (' . number_format($grandTotal, 3) . '). '
+                . 'Reduce the payment or add it later via the Payments page.'
+            );
+            $this->redirect('?page=purchases&action=create');
+            return;
+        }
+
         $balance    = $grandTotal - $paid;
         $warehouseId = Auth::warehouseId();
 
@@ -252,19 +264,31 @@ class PurchaseController extends BaseController {
 
             // Record payment
             if ($paid > 0) {
-                // AUDIT FIX F1: FOR UPDATE prevents duplicate payment numbers
-                $last  = $db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
-                $num   = $last ? (int) substr($last['payment_no'], 4) : 0;
-                $payNo = 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
-                $db->insert(
-                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    [$payNo, 'purchase', $purchaseId, $this->inputInt('party_id'),
-                     'out',
-                     $this->inputInt('account_id') ?: 1,
-                     $paid, $this->input('payment_method') ?: 'cash',
-                     $this->input('date') ?: date('Y-m-d'), Auth::warehouseId(), Auth::id()]
-                );
+                // C2 fix: shared MAX(numeric) generator + retry on duplicate-key collision.
+                require_once __DIR__ . '/../models/Payment.php';
+                $paymentModel = new Payment();
+                $payNo = $paymentModel->nextPaymentNo();
+                for ($attempt = 1; $attempt <= 3; $attempt++) {
+                    try {
+                        $db->insert(
+                            "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                            [$payNo, 'purchase', $purchaseId, $this->inputInt('party_id'),
+                             'out',
+                             $this->inputInt('account_id') ?: 1,
+                             $paid, $this->input('payment_method') ?: 'cash',
+                             $this->input('date') ?: date('Y-m-d'), Auth::warehouseId(), Auth::id()]
+                        );
+                        break;
+                    } catch (Exception $e) {
+                        $isDuplicatePayNo = str_contains($e->getMessage(), 'Duplicate entry')
+                            && str_contains($e->getMessage(), 'payment_no');
+                        if (!$isDuplicatePayNo || $attempt === 3) {
+                            throw $e;
+                        }
+                        $payNo = $paymentModel->nextPaymentNo();
+                    }
+                }
                 $db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
                     [$paid, $this->inputInt('account_id') ?: 1]

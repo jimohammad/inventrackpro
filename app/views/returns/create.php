@@ -37,6 +37,15 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .imei-btn{background:linear-gradient(135deg,#eff6ff,#e0e7ff);border:1px solid #c7d2fe;color:#6366f1;border-radius:7px;padding:4px 8px;font-size:0.75rem;cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-weight:600;transition:all 0.15s;white-space:nowrap;}
 .imei-btn:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe);transform:translateY(-1px);box-shadow:0 2px 6px rgba(99,102,241,0.2);}
 .imei-btn.has-imei{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-color:#6ee7b7;color:#059669;}
+
+/* Return IMEI scan field (below customer bar) */
+.ret-scan-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px;border:1px solid #e5e7eb;border-top:none;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);}
+.ret-scan-wrap{position:relative;flex:1;min-width:260px;max-width:520px;}
+.ret-scan-wrap .ret-scan-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#059669;font-size:1rem;z-index:2;pointer-events:none;}
+.ret-scan-input{width:100%;padding:11px 16px 11px 40px;border:2px solid #86efac;border-radius:10px;min-height:44px;font-size:1rem;font-family:monospace;letter-spacing:0.5px;background:#fafbff;color:#1e293b;outline:none;transition:all 0.2s;}
+.ret-scan-input:focus{border-color:#059669;background:#fff;box-shadow:0 0 0 3px rgba(5,150,105,0.12);}
+.ret-scan-input::placeholder{font-family:inherit;font-size:0.82rem;letter-spacing:normal;color:#94a3b8;}
+@media (max-width: 640px){.ret-scan-wrap{min-width:0;max-width:100%;flex:1 1 100%;}}
 .add-row-strip{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;cursor:pointer;border-top:2px dashed #c7d2fe;color:#94a3b8;font-size:0.82rem;font-weight:600;transition:all 0.15s;background:#fff;}
 .add-row-strip:hover{background:#f5f7ff;color:#6366f1;border-top-color:#6366f1;}
 .add-row-strip .plus-c{width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.12);display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;color:#6366f1;flex-shrink:0;}
@@ -120,18 +129,14 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
         </div>
     </div>
 
-    <!-- ③ QUICK SCAN BAR -->
-    <div style="border:1px solid #e5e7eb;border-top:none;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);padding:12px 20px;display:flex;align-items:center;gap:12px;">
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-            <i class="bi bi-upc-scan" style="font-size:1.3rem;color:#059669;"></i>
-            <span style="font-size:0.82rem;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:0.5px;">Quick Scan</span>
+    <!-- ③ QUICK SCAN (original position, no label) -->
+    <div class="ret-scan-bar">
+        <div class="ret-scan-wrap">
+            <i class="bi bi-upc-scan ret-scan-icon" aria-hidden="true"></i>
+            <input type="text" id="quickScanInput" class="ret-scan-input"
+                   placeholder="Scan IMEI barcode — auto-detects model & price..." autocomplete="off">
         </div>
-        <input type="text" id="quickScanInput" placeholder="Scan IMEI barcode — auto-detects model & price..."
-               autocomplete="off" style="flex:1;padding:10px 14px;border:2px solid #86efac;border-radius:10px;font-size:0.95rem;
-               font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;outline:none;background:#fff;color:#1e293b;font-weight:600;"
-               onfocus="this.style.borderColor='#059669';this.style.boxShadow='0 0 0 3px rgba(5,150,105,0.15)'"
-               onblur="this.style.borderColor='#86efac';this.style.boxShadow='none'">
-        <div id="quickScanMsg" style="font-size:0.82rem;font-weight:600;min-width:200px;padding:6px 12px;border-radius:8px;display:none;"></div>
+        <div id="quickScanMsg" style="display:none;"></div>
     </div>
 
     <!-- ④ ITEMS TABLE -->

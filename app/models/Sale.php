@@ -193,12 +193,14 @@ class Sale extends BaseModel {
         try {
             $invoiceNo  = $this->nextInvoiceNo();
             $subtotal   = 0;
-            $totalDisc  = (float) ($data['discount'] ?? 0);
+            // C3 fix: clamp negative discounts to 0 — a negative header discount would inflate grand_total.
+            $totalDisc  = max(0.0, (float) ($data['discount'] ?? 0));
             $tax        = 0;
 
             // Calculate subtotal from items
             foreach ($data['items'] as $item) {
-                $lineDisc  = (float) ($item['discount'] ?? 0);
+                // C3 fix: clamp negative line discount to 0 — same inflation risk per line.
+                $lineDisc  = max(0.0, (float) ($item['discount'] ?? 0));
                 $lineTotal = ((float)$item['unit_price'] * (int)$item['quantity']) - $lineDisc;
                 $subtotal += $lineTotal;
             }
@@ -252,7 +254,8 @@ class Sale extends BaseModel {
 
             // Insert each sale item
             foreach ($data['items'] as $item) {
-                $lineDisc  = (float) ($item['discount'] ?? 0);
+                // C3 fix: clamp here too so the stored line value matches the subtotal calculation above.
+                $lineDisc  = max(0.0, (float) ($item['discount'] ?? 0));
                 $lineTotal = ((float)$item['unit_price'] * (int)$item['quantity']) - $lineDisc;
                 $costPrice = $costMap[(int)$item['item_id']] ?? 0;
 
@@ -352,27 +355,39 @@ class Sale extends BaseModel {
         $amount = (float) $data['paid_amount'];
         if ($amount <= 0) return;
 
-        // AUDIT FIX F1: FOR UPDATE prevents duplicate payment numbers
-        $last   = $this->db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $num    = $last ? (int) substr($last['payment_no'], 4) : 0;
-        $payNo  = 'PAY-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
-
-        $this->db->insert(
-            "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, warehouse_id, created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            [
-                $payNo, 'sale', $saleId,
-                $data['party_id'],
-                'in',
-                $data['account_id'] ?? 1,
-                $amount,
-                $data['payment_method'] ?? 'cash',
-                $data['date'] ?? date('Y-m-d'),
-                $data['payment_notes'] ?? null,
-                $data['warehouse_id'] ?? Auth::warehouseId(),
-                Auth::id(),
-            ]
-        );
+        // C2 fix: use MAX(numeric) generator and retry on duplicate-key collision so a concurrent
+        // standalone payment can't crash the sale insert.
+        require_once __DIR__ . '/Payment.php';
+        $paymentModel = new Payment();
+        $payNo = $paymentModel->nextPaymentNo();
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $this->db->insert(
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, warehouse_id, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [
+                        $payNo, 'sale', $saleId,
+                        $data['party_id'],
+                        'in',
+                        $data['account_id'] ?? 1,
+                        $amount,
+                        $data['payment_method'] ?? 'cash',
+                        $data['date'] ?? date('Y-m-d'),
+                        $data['payment_notes'] ?? null,
+                        $data['warehouse_id'] ?? Auth::warehouseId(),
+                        Auth::id(),
+                    ]
+                );
+                break;
+            } catch (Exception $e) {
+                $isDuplicatePayNo = str_contains($e->getMessage(), 'Duplicate entry')
+                    && str_contains($e->getMessage(), 'payment_no');
+                if (!$isDuplicatePayNo || $attempt === 3) {
+                    throw $e;
+                }
+                $payNo = $paymentModel->nextPaymentNo();
+            }
+        }
 
         // Update account balance
         $this->db->execute(
@@ -387,17 +402,28 @@ class Sale extends BaseModel {
     // recordPayment failed, the sale would show updated paid_amount/balance but
     // no corresponding payment record or account update would exist.
     public function addPayment(int $saleId, float $amount, int $accountId, string $method, string $date, string $notes = ''): bool|string {
-        $sale = $this->find($saleId);
-        if (!$sale) return 'Sale not found.';
-
-        // Reject overpayment — amount cannot exceed remaining balance
-        $currentBalance = (float)$sale['balance'];
-        if ($amount > $currentBalance + 0.001) {
-            return 'Payment amount (' . number_format($amount, 3) . ') exceeds remaining balance (' . number_format($currentBalance, 3) . ').';
-        }
+        if (!$this->find($saleId)) return 'Sale not found.';
+        if ($amount <= 0) return 'Payment amount must be greater than zero.';
 
         $this->db->beginTransaction();
         try {
+            // H5 fix: lock the sale row inside the transaction. Two simultaneous addPayment requests
+            // would otherwise both pass the overpayment check on stale balance and double-pay.
+            $sale = $this->db->fetchOne("SELECT * FROM sales WHERE id = ? FOR UPDATE", [$saleId]);
+            if (!$sale) {
+                $this->db->rollback();
+                return 'Sale not found.';
+            }
+            if (($sale['status'] ?? '') === 'cancelled') {
+                $this->db->rollback();
+                return 'Cannot add payment to a cancelled invoice.';
+            }
+            $currentBalance = (float)$sale['balance'];
+            if ($amount > $currentBalance + 0.001) {
+                $this->db->rollback();
+                return 'Payment amount (' . number_format($amount, 3) . ') exceeds remaining balance (' . number_format($currentBalance, 3) . ').';
+            }
+
             $newPaid    = (float)$sale['paid_amount'] + $amount;
             
             $returnsTot = (float)($this->db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$saleId])['tot'] ?? 0);

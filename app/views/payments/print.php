@@ -126,13 +126,6 @@ body {
     <div class="receipt-title">Payment Receipt</div>
 
     <?php $isIn = ($payment['payment_type'] ?? $payment['type'] ?? 'in') === 'in'; ?>
-    <div style="text-align:center;margin-bottom:14px;">
-        <span style="display:inline-block;padding:4px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;<?= $thermal
-            ? 'border:2px solid #000;color:#000;background:transparent;'
-            : ('border-radius:20px;background:' . ($isIn ? '#d1fae5' : '#fee2e2') . ';color:' . ($isIn ? '#065f46' : '#991b1b') . ';') ?>">
-            <?= $isIn ? '↓ Payment In' : '↑ Payment Out' ?>
-        </span>
-    </div>
 
     <div class="amount-box">
         <div class="amount-label">Amount <?= $isIn ? 'Received' : 'Paid' ?></div>

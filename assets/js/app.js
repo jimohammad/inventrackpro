@@ -46,6 +46,14 @@ let activeSearchController = null;
 const searchInput = document.getElementById('globalSearch');
 const searchResults = document.getElementById('searchResults');
 
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 searchInput?.addEventListener('input', function () {
     clearTimeout(searchTimeout);
     const q = this.value.trim();
@@ -73,10 +81,10 @@ searchInput?.addEventListener('input', function () {
                     searchResults.innerHTML = '<div class="search-result-item text-muted">No results found</div>';
                 } else {
                     searchResults.innerHTML = data.results.map(r => `
-                        <a href="${r.url}" class="search-result-item text-decoration-none d-flex align-items-center gap-2">
-                            <span class="search-result-type">${r.type}</span>
-                            <span style="color:var(--text-main)">${r.label}</span>
-                            <small style="color:var(--text-muted);margin-left:auto">${r.sub ?? ''}</small>
+                        <a href="${escHtml(r.url)}" class="search-result-item text-decoration-none d-flex align-items-center gap-2">
+                            <span class="search-result-type">${escHtml(r.type)}</span>
+                            <span style="color:var(--text-main)">${escHtml(r.label)}</span>
+                            <small style="color:var(--text-muted);margin-left:auto">${escHtml(r.sub ?? '')}</small>
                         </a>
                     `).join('');
                 }

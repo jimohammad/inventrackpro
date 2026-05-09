@@ -107,6 +107,8 @@
                         'Expense'      => ['bg' => '#fef3c7', 'color' => '#92400e'],
                         'Transfer In'  => ['bg' => '#e0e7ff', 'color' => '#3730a3'],
                         'Transfer Out' => ['bg' => '#f3e8ff', 'color' => '#6b21a8'],
+                        'Balance Adjustment' => ['bg' => '#ffedd5', 'color' => '#c2410c'],
+                        'PO Payment (no ledger)' => ['bg' => '#fef9c3', 'color' => '#854d0e'],
                     ];
                     $tc = $typeColors[$tx['type']] ?? ['bg' => '#f1f5f9', 'color' => '#475569'];
                 ?>

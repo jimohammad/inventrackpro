@@ -75,7 +75,7 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
         <i class="bi bi-link-45deg" style="color:#16a34a;"></i>
         <span>Customer tracking:</span>
         <a href="<?= htmlspecialchars($trackUrl) ?>" target="_blank" id="trackUrl"><?= htmlspecialchars($trackUrl) ?></a>
-        <button type="button" class="sd-copy" onclick="navigator.clipboard.writeText(document.getElementById('trackUrl').textContent); this.textContent='Copied!';">Copy</button>
+        <button type="button" class="sd-copy" id="svcTrackCopyBtn">Copy</button>
     </div>
 
     <!-- Journey -->
@@ -126,6 +126,18 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
                 <input type="hidden" name="id" value="<?= $record['id'] ?>">
                 <input type="hidden" name="stage" value="3">
                 <button type="submit" class="sd-btn" style="background:transparent;border:1px solid #d1d5db;color:#9ca3af;font-size:0.78rem;padding:4px 10px;" title="Only for factory fault cases"><i class="bi bi-arrow-repeat"></i> Factory Replacement</button>
+            </form>
+            <?php endif; ?>
+
+            <!-- Warranty void / customer damage: return without fixing -->
+            <?php if ($currentStage < 4): ?>
+            <form method="POST" action="?page=service&action=returnNoRepair" style="display:inline;" onsubmit="return confirm('Return this device without fixing (warranty void)?');">
+                <?= Auth::csrfField() ?>
+                <input type="hidden" name="id" value="<?= $record['id'] ?>">
+                <input type="hidden" name="note" value="No repair & delivered (warranty void / customer damage).">
+                <button type="submit" class="sd-btn" style="background:rgba(239,68,68,.1);color:#dc2626;border:1px solid rgba(239,68,68,.18);">
+                    <i class="bi bi-arrow-return-left"></i> Return Without Fixing
+                </button>
             </form>
             <?php endif; ?>
         </div>
@@ -203,3 +215,26 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var btn = document.getElementById('svcTrackCopyBtn');
+    var a = document.getElementById('trackUrl');
+    if (!btn || !a) return;
+
+    btn.addEventListener('click', function () {
+        var text = a.textContent || '';
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                btn.textContent = 'Copied!';
+                setTimeout(function () { btn.textContent = 'Copy'; }, 1200);
+            }).catch(function () {
+                prompt('Copy this URL:', text);
+            });
+        } else {
+            prompt('Copy this URL:', text);
+        }
+    });
+});
+</script>

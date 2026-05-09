@@ -743,48 +743,90 @@ class ReportController extends BaseController {
 
         $results = [];
         foreach ($accounts as $acc) {
-            $id = $acc['id'];
+            $id = (int) $acc['id'];
 
-            // Sum of all payments IN (sales receipts)
+            // Sum of all payments IN (sales receipts), excluding discounts
             $in = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM payments
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM payments
                  WHERE account_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND date <= ?",
                 [$id, $date]
             );
 
-            // Sum of all payments OUT (purchase payments + expenses)
+            // Sum of all payments OUT (supplier payments etc.)
             $out = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM payments
-                 WHERE account_id = ? AND payment_type = 'out' AND date <= ?",
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM payments
+                 WHERE account_id = ? AND payment_type = 'out' AND ref_type != 'discount' AND date <= ?",
                 [$id, $date]
             );
 
             // Expenses from this account
             $exp = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM expenses
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
                  WHERE account_id = ? AND date <= ?",
                 [$id, $date]
             );
 
-            $openingBalance  = (float) $acc['opening_balance'];
-            $totalIn         = (float) $in['total'];
-            $totalOut        = (float) $out['total'];
-            $totalExpenses   = (float) $exp['total'];
-            $calculatedBal   = $openingBalance + $totalIn - $totalOut - $totalExpenses;
-            $recordedBal     = (float) $acc['current_balance'];
+            // Inter-account transfers (same definition as Accounts → Recalculate)
+            $transRow = $db->fetchOne(
+                "SELECT
+                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE to_account_id = ? AND date <= ?), 0) AS in_total,
+                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE from_account_id = ? AND date <= ?), 0) AS out_total",
+                [$id, $date, $id, $date]
+            );
+            $transferNet = (float)($transRow['in_total'] ?? 0) - (float)($transRow['out_total'] ?? 0);
+
+            // Manual balance adjustments (“Adjust Balance” on Accounts page)
+            $adjRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
+                 FROM account_balance_adjustments
+                 WHERE account_id = ? AND date <= ?",
+                [$id, $date]
+            );
+            $adjustmentsNet = (float)($adjRow['net'] ?? 0);
+
+            // PO advances recorded on the PO row but not yet mirrored as payments rows (Accounts activity list uses the same exclusions)
+            $poRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
+                 FROM purchase_orders po
+                 LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
+                 LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
+                 LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
+                    AND pay3.party_id = po.party_id
+                    AND ABS(pay3.amount - po.paid_kwd) < 0.001
+                    AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
+                 WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date <= ?
+                  AND po.status NOT IN ('cancelled')
+                  AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
+                [$id, $date]
+            );
+            $poUnlinkedOut = (float)($poRow['total'] ?? 0);
+
+            $openingBalance  = (float)($acc['opening_balance'] ?? 0);
+            $totalIn         = (float)$in['total'];
+            $totalOut        = (float)$out['total'];
+            $totalExpenses   = (float)$exp['total'];
+            // Mirrors AccountController::recalcBalance, plus orphan PO outs (same heuristic as Accounts → transaction merge)
+            $calculatedBal   = round(
+                $openingBalance + $totalIn - $totalOut - $totalExpenses + $transferNet + $adjustmentsNet - $poUnlinkedOut,
+                3
+            );
+            $recordedBal     = (float)($acc['current_balance'] ?? 0);
             $difference      = round($calculatedBal - $recordedBal, 3);
 
             $results[] = [
-                'account'        => $acc['name'],
-                'type'           => $acc['type'],
-                'opening'        => $openingBalance,
-                'total_in'       => $totalIn,
-                'total_out'      => $totalOut,
-                'total_expenses' => $totalExpenses,
-                'calculated'     => $calculatedBal,
-                'recorded'       => $recordedBal,
-                'difference'     => $difference,
-                'status'         => abs($difference) < 0.001 ? 'ok' : 'mismatch',
+                'account'           => $acc['name'],
+                'type'                => $acc['type'],
+                'opening'             => $openingBalance,
+                'total_in'            => $totalIn,
+                'total_out'           => $totalOut,
+                'total_expenses'      => $totalExpenses,
+                'net_transfers'       => $transferNet,
+                'net_adjustments'     => $adjustmentsNet,
+                'po_unlinked_payouts' => $poUnlinkedOut,
+                'calculated'          => $calculatedBal,
+                'recorded'            => $recordedBal,
+                'difference'          => $difference,
+                'status'              => abs($difference) < 0.001 ? 'ok' : 'mismatch',
             ];
         }
 
@@ -843,14 +885,13 @@ class ReportController extends BaseController {
         if ($accountId) {
             $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$accountId]);
 
-            // Opening balance = current_balance minus all transactions after fromDate
-            // We calculate it by summing all credits and debits before fromDate
+            // Ledger rows for statement period (aligned with Accounts page + reconciliation)
 
             // Payments IN (money received into this account)
             $paymentsIn = $db->fetchAll(
                 "SELECT p.date, p.payment_no as ref, COALESCE(pa.name,'—') as party_name,
                         p.amount as credit, 0 as debit,
-                        'Payment In' as type, p.notes as notes
+                        'Payment In' as type, p.notes as notes, p.id as sort_id
                  FROM payments p
                  LEFT JOIN parties pa ON pa.id = p.party_id
                  WHERE p.account_id = ? AND p.payment_type = 'in' AND p.ref_type != 'discount' AND p.date BETWEEN ? AND ?
@@ -862,10 +903,10 @@ class ReportController extends BaseController {
             $paymentsOut = $db->fetchAll(
                 "SELECT p.date, p.payment_no as ref, COALESCE(pa.name,'—') as party_name,
                         0 as credit, p.amount as debit,
-                        'Payment Out' as type, p.notes as notes
+                        'Payment Out' as type, p.notes as notes, p.id as sort_id
                  FROM payments p
                  LEFT JOIN parties pa ON pa.id = p.party_id
-                 WHERE p.account_id = ? AND p.payment_type = 'out' AND p.date BETWEEN ? AND ?
+                 WHERE p.account_id = ? AND p.payment_type = 'out' AND p.ref_type != 'discount' AND p.date BETWEEN ? AND ?
                  ORDER BY p.date, p.id",
                 [$accountId, $fromDate, $toDate]
             );
@@ -874,7 +915,7 @@ class ReportController extends BaseController {
             $expenses = $db->fetchAll(
                 "SELECT e.date, e.expense_no as ref, COALESCE(ec.name,'—') as party_name,
                         0 as credit, e.amount as debit,
-                        'Expense' as type, e.description as notes
+                        'Expense' as type, e.description as notes, e.id as sort_id
                  FROM expenses e
                  LEFT JOIN expense_categories ec ON ec.id = e.category_id
                  WHERE e.account_id = ? AND e.date BETWEEN ? AND ?
@@ -886,7 +927,7 @@ class ReportController extends BaseController {
             $transfersIn = $db->fetchAll(
                 "SELECT t.date, t.transfer_no as ref, fa.name as party_name,
                         t.amount as credit, 0 as debit,
-                        'Transfer In' as type, t.notes as notes
+                        'Transfer In' as type, t.notes as notes, t.id as sort_id
                  FROM account_transfers t
                  JOIN accounts fa ON fa.id = t.from_account_id
                  WHERE t.to_account_id = ? AND t.date BETWEEN ? AND ?
@@ -898,7 +939,7 @@ class ReportController extends BaseController {
             $transfersOut = $db->fetchAll(
                 "SELECT t.date, t.transfer_no as ref, ta.name as party_name,
                         0 as credit, t.amount as debit,
-                        'Transfer Out' as type, t.notes as notes
+                        'Transfer Out' as type, t.notes as notes, t.id as sort_id
                  FROM account_transfers t
                  JOIN accounts ta ON ta.id = t.to_account_id
                  WHERE t.from_account_id = ? AND t.date BETWEEN ? AND ?
@@ -906,34 +947,114 @@ class ReportController extends BaseController {
                 [$accountId, $fromDate, $toDate]
             );
 
-            // Merge and sort all transactions by date
-            $transactions = array_merge($paymentsIn, $paymentsOut, $expenses, $transfersIn, $transfersOut);
-            usort($transactions, fn($a, $b) => strcmp($a['date'], $b['date']));
+                // Manual adjustments (aligned with Accounts page)
+                $adjustmentsStmt = $db->fetchAll(
+                    "SELECT aba.date,
+                            CONCAT('ADJ-', LPAD(aba.id, 6, '0')) as ref,
+                            'Manual adjustment' as party_name,
+                            CASE WHEN aba.direction = 'add' THEN aba.amount ELSE 0 END as credit,
+                            CASE WHEN aba.direction = 'subtract' THEN aba.amount ELSE 0 END as debit,
+                            'Balance Adjustment' as type,
+                            CASE WHEN aba.reason IS NOT NULL AND aba.reason != '' THEN aba.reason ELSE NULL END as notes,
+                            aba.id as sort_id
+                     FROM account_balance_adjustments aba
+                     WHERE aba.account_id = ? AND aba.date BETWEEN ? AND ?
+                     ORDER BY aba.date, aba.id",
+                    [$accountId, $fromDate, $toDate]
+                );
 
-            // Calculate opening balance (sum of all transactions before fromDate)
-            $beforeCredits = (float)($db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                 WHERE account_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND date < ?", [$accountId, $fromDate]
-            )['t'] ?? 0);
-            $beforeDebits = (float)($db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                 WHERE account_id = ? AND payment_type = 'out' AND date < ?", [$accountId, $fromDate]
-            )['t'] ?? 0);
-            $beforeExpenses = (float)($db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as t FROM expenses
-                 WHERE account_id = ? AND date < ?", [$accountId, $fromDate]
-            )['t'] ?? 0);
-            $beforeTransIn = (float)($db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
-                 WHERE to_account_id = ? AND date < ?", [$accountId, $fromDate]
-            )['t'] ?? 0);
-            $beforeTransOut = (float)($db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
-                 WHERE from_account_id = ? AND date < ?", [$accountId, $fromDate]
-            )['t'] ?? 0);
+                // PO paid amounts without a mirrored payments row
+                $poStmt = $db->fetchAll(
+                    "SELECT po.date, po.po_no as ref, p.name as party_name,
+                            0 as credit, po.paid_kwd as debit,
+                            'PO Payment (no ledger)' as type,
+                            CONCAT(po.currency, ' @ ', po.exchange_rate) as notes,
+                            po.id as sort_id
+                     FROM purchase_orders po
+                     JOIN parties p ON p.id = po.party_id
+                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
+                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
+                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
+                        AND pay3.party_id = po.party_id
+                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
+                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
+                     WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date BETWEEN ? AND ?
+                      AND po.status NOT IN ('cancelled')
+                      AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL
+                     ORDER BY po.date, po.id",
+                    [$accountId, $fromDate, $toDate]
+                );
 
-            $openingBalance = (float)($account['opening_balance'] ?? 0)
-                + $beforeCredits - $beforeDebits - $beforeExpenses + $beforeTransIn - $beforeTransOut;
+                // Merge; stable-sort by date + ledger id within each source
+                $transactions = array_merge(
+                    $paymentsIn,
+                    $paymentsOut,
+                    $expenses,
+                    $transfersIn,
+                    $transfersOut,
+                    $adjustmentsStmt,
+                    $poStmt
+                );
+                usort($transactions, function ($a, $b) {
+                    $da = (string) ($a['date'] ?? '');
+                    $dbt = (string) ($b['date'] ?? '');
+                    if ($da !== $dbt) {
+                        return strcmp($da, $dbt);
+                    }
+                    return ((int) ($a['sort_id'] ?? 0)) <=> ((int) ($b['sort_id'] ?? 0));
+                });
+
+                // Opening balance components before from_date
+                $beforeCredits = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
+                     WHERE account_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND date < ?",
+                    [$accountId, $fromDate]
+                )['t'] ?? 0);
+                $beforeDebits = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
+                     WHERE account_id = ? AND payment_type = 'out' AND ref_type != 'discount' AND date < ?",
+                    [$accountId, $fromDate]
+                )['t'] ?? 0);
+                $beforeExpenses = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM expenses
+                     WHERE account_id = ? AND date < ?",
+                    [$accountId, $fromDate]
+                )['t'] ?? 0);
+                $beforeTransIn = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
+                     WHERE to_account_id = ? AND date < ?",
+                    [$accountId, $fromDate]
+                )['t'] ?? 0);
+                $beforeTransOut = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
+                     WHERE from_account_id = ? AND date < ?",
+                    [$accountId, $fromDate]
+                )['t'] ?? 0);
+                $beforeAdjNet = (float) ($db->fetchOne(
+                    "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
+                     FROM account_balance_adjustments
+                     WHERE account_id = ? AND date < ?",
+                    [$accountId, $fromDate]
+                )['net'] ?? 0);
+                $beforePoRow = $db->fetchOne(
+                    "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
+                     FROM purchase_orders po
+                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
+                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
+                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
+                        AND pay3.party_id = po.party_id
+                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
+                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
+                     WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date < ?
+                      AND po.status NOT IN ('cancelled')
+                      AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
+                    [$accountId, $fromDate]
+                );
+                $beforePoOut = (float) ($beforePoRow['total'] ?? 0);
+
+                $openingBalance = (float) ($account['opening_balance'] ?? 0)
+                    + $beforeCredits - $beforeDebits - $beforeExpenses + $beforeTransIn - $beforeTransOut
+                    + $beforeAdjNet - $beforePoOut;
 
             // Add running balance to each row
             $running = $openingBalance;

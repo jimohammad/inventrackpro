@@ -117,13 +117,18 @@ $stages = ServiceController::stages();
         <div class="sv-stat-icon" style="background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;box-shadow:0 3px 10px rgba(59,130,246,.35);"><i class="bi bi-tools"></i></div>
         <div><div class="sv-stat-value"><?= $counts['in_progress'] ?? 0 ?></div><div class="sv-stat-label">In Progress</div></div>
     </a>
-    <a href="?page=service&status=Completed" class="sv-stat" style="<?= $filters['status']==='Completed' ? 'border-color:#22c55e;box-shadow:0 4px 14px rgba(34,197,94,.18);' : '' ?>">
+    <a href="?page=service&status=Fixed" class="sv-stat" style="<?= $filters['status']==='Fixed' ? 'border-color:#22c55e;box-shadow:0 4px 14px rgba(34,197,94,.18);' : '' ?>">
         <div class="sv-stat-icon" style="background:linear-gradient(135deg,#22c55e,#4ade80);color:#fff;box-shadow:0 3px 10px rgba(34,197,94,.35);"><i class="bi bi-check-circle"></i></div>
-        <div><div class="sv-stat-value"><?= $counts['completed'] ?? 0 ?></div><div class="sv-stat-label">Completed</div></div>
+        <div><div class="sv-stat-value"><?= $counts['fixed'] ?? 0 ?></div><div class="sv-stat-label">Fixed</div></div>
     </a>
     <a href="?page=service&status=Replaced" class="sv-stat" style="<?= $filters['status']==='Replaced' ? 'border-color:#8b5cf6;box-shadow:0 4px 14px rgba(139,92,246,.18);' : '' ?>">
         <div class="sv-stat-icon" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);color:#fff;box-shadow:0 3px 10px rgba(139,92,246,.35);"><i class="bi bi-arrow-repeat"></i></div>
         <div><div class="sv-stat-value"><?= $counts['replaced'] ?? 0 ?></div><div class="sv-stat-label">Replaced</div></div>
+    </a>
+
+    <a href="?page=service&status=No+Repair" class="sv-stat" style="<?= $filters['status']==='No Repair' ? 'border-color:#ef4444;box-shadow:0 4px 14px rgba(239,68,68,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#ef4444,#f87171);color:#fff;box-shadow:0 3px 10px rgba(239,68,68,.35);"><i class="bi bi-shield-x"></i></div>
+        <div><div class="sv-stat-value"><?= $counts['no_repair'] ?? 0 ?></div><div class="sv-stat-label">No Repair</div></div>
     </a>
     <a href="?page=service&stage=4" class="sv-stat" style="<?= $filters['stage']==='4' ? 'border-color:#10b981;box-shadow:0 4px 14px rgba(16,185,129,.18);' : '' ?>">
         <div class="sv-stat-icon" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.35);"><i class="bi bi-bag-check"></i></div>
@@ -143,8 +148,8 @@ $stages = ServiceController::stages();
             <label>Status</label>
             <select name="status" onchange="this.form.submit()">
                 <option value="">All</option>
-                <?php foreach (['Pending','In Progress','Completed','Replaced'] as $s): ?>
-                <option value="<?= $s ?>" <?= $filters['status']===$s?'selected':'' ?>><?= $s ?></option>
+                <?php foreach (ServiceController::allowedStatuses() as $s): ?>
+                <option value="<?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?>" <?= $filters['status']===$s?'selected':'' ?>><?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -201,8 +206,8 @@ $stages = ServiceController::stages();
                         <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>">
                             <span class="sv-status-dot" aria-hidden="true"></span>
                             <select class="sv-status-select" aria-label="Change status">
-                                <?php foreach (['Pending','In Progress','Completed','Replaced'] as $s): ?>
-                                <option value="<?= $s ?>" <?= $r['status']===$s ? 'selected' : '' ?>><?= $s ?></option>
+                                <?php foreach (ServiceController::allowedStatuses() as $s): ?>
+                                <option value="<?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?>" <?= $r['status']===$s ? 'selected' : '' ?>><?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <span class="sv-status-saving">Saving…</span>
@@ -296,8 +301,12 @@ document.addEventListener('DOMContentLoaded', function() {
         var bg = 'rgba(107,114,128,.10)';
         if (status === 'Pending') { accent = '#f59e0b'; bg = 'rgba(245,158,11,.14)'; }
         if (status === 'In Progress') { accent = '#3b82f6'; bg = 'rgba(59,130,246,.14)'; }
-        if (status === 'Completed') { accent = '#22c55e'; bg = 'rgba(34,197,94,.14)'; }
+        if (status === 'Fixed') { accent = '#22c55e'; bg = 'rgba(34,197,94,.14)'; }
+        if (status === 'Fixed & Delivered') { accent = '#10b981'; bg = 'rgba(16,185,129,.14)'; }
         if (status === 'Replaced') { accent = '#8b5cf6'; bg = 'rgba(139,92,246,.14)'; }
+        if (status === 'Replaced & Delivered') { accent = '#7c3aed'; bg = 'rgba(124,58,237,.14)'; }
+        if (status === 'No Repair') { accent = '#ef4444'; bg = 'rgba(239,68,68,.14)'; }
+        if (status === 'No Repair & Delivered') { accent = '#b91c1c'; bg = 'rgba(185,28,28,.14)'; }
         wrap.style.setProperty('--sv-accent', accent);
         wrap.style.setProperty('--sv-bg', bg);
         wrap.setAttribute('data-status', status);

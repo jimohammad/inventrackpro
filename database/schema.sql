@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
     type            ENUM('cash', 'bank', 'mobile_wallet', 'other') DEFAULT 'cash',
+    gl_code         VARCHAR(10) DEFAULT NULL,
     account_no      VARCHAR(100),
     bank_name       VARCHAR(255),
     opening_balance DECIMAL(15,3) DEFAULT 0.000,
@@ -118,6 +119,22 @@ CREATE TABLE IF NOT EXISTS account_transfers (
     FOREIGN KEY (from_account_id) REFERENCES accounts(id),
     FOREIGN KEY (to_account_id) REFERENCES accounts(id),
     FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Manual balance corrections (Adjust Balance); included in balance recalculation
+CREATE TABLE IF NOT EXISTS account_balance_adjustments (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    account_id      INT NOT NULL,
+    direction       ENUM('add', 'subtract') NOT NULL,
+    amount          DECIMAL(15,3) NOT NULL,
+    reason          VARCHAR(500) DEFAULT NULL,
+    date            DATE NOT NULL,
+    created_by      INT DEFAULT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_aba_account_date (account_id, date),
+    INDEX idx_aba_account_id (account_id)
 );
 
 -- ============================================================

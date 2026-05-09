@@ -6,12 +6,28 @@ class ServiceController extends BaseController {
 
     private Database $db;
 
+    /** Allowed status values for service records. */
+    public static function allowedStatuses(): array {
+        return [
+            'Pending',
+            'In Progress',
+            // legacy values (keep for existing data / filtering)
+            'Returned (No Repair)',
+            'Fixed',
+            'Replaced',
+            'No Repair',
+            'Fixed & Delivered',
+            'Replaced & Delivered',
+            'No Repair & Delivered',
+        ];
+    }
+
     /** Stage definitions */
     public static function stages(): array {
         return [
             0 => ['label' => 'Received',   'icon' => 'bi-inbox',        'color' => '#f59e0b'],
             1 => ['label' => 'In Service', 'icon' => 'bi-tools',        'color' => '#3b82f6'],
-            2 => ['label' => 'Repaired',   'icon' => 'bi-check-circle', 'color' => '#22c55e'],
+            2 => ['label' => 'Fixed',      'icon' => 'bi-check-circle', 'color' => '#22c55e'],
             4 => ['label' => 'Delivered',  'icon' => 'bi-bag-check',    'color' => '#10b981'],
         ];
     }
@@ -20,8 +36,15 @@ class ServiceController extends BaseController {
         return match($status) {
             'Pending'     => '#f59e0b',
             'In Progress' => '#3b82f6',
-            'Completed'   => '#22c55e',
+            'Completed'   => '#22c55e', // legacy (same as Fixed)
+            'Delivered'   => '#10b981',
+            'Returned (No Repair)' => '#ef4444',
+            'Fixed'       => '#22c55e',
+            'Fixed & Delivered' => '#10b981',
             'Replaced'    => '#8b5cf6',
+            'Replaced & Delivered' => '#7c3aed',
+            'No Repair' => '#ef4444',
+            'No Repair & Delivered' => '#b91c1c',
             default       => '#6b7280',
         };
     }
@@ -94,8 +117,12 @@ class ServiceController extends BaseController {
                 COUNT(*) as total,
                 SUM(status = 'Pending') as pending,
                 SUM(status = 'In Progress') as in_progress,
-                SUM(status = 'Completed') as completed,
+                SUM(status = 'Fixed') as fixed,
                 SUM(status = 'Replaced') as replaced,
+                SUM(status = 'No Repair') as no_repair,
+                SUM(status = 'Fixed & Delivered') as fixed_delivered,
+                SUM(status = 'Replaced & Delivered') as replaced_delivered,
+                SUM(status = 'No Repair & Delivered') as no_repair_delivered,
                 SUM(device_stage = 4) as delivered
              FROM service_records WHERE warehouse_id = ?",
             [$whId]
@@ -259,8 +286,13 @@ class ServiceController extends BaseController {
         if (!$old) { $this->redirect('?page=service'); return; }
 
         $newStatus = $old['status'];
-        if ($stage >= 4) $newStatus = ($old['status'] === 'Replaced') ? 'Replaced' : 'Completed';
-        elseif ($stage === 3) $newStatus = 'Replaced';
+        if ($stage >= 4) {
+            // Delivered stage: choose delivered outcome based on prior status
+            if (in_array($old['status'], ['Replaced', 'Replaced & Delivered'], true)) $newStatus = 'Replaced & Delivered';
+            elseif (in_array($old['status'], ['No Repair', 'No Repair & Delivered'], true)) $newStatus = 'No Repair & Delivered';
+            else $newStatus = 'Fixed & Delivered';
+        } elseif ($stage === 3) $newStatus = 'Replaced';
+        elseif ($stage === 2) $newStatus = ($old['status'] === 'Replaced') ? 'Replaced' : 'Fixed';
         elseif ($stage >= 1) $newStatus = 'In Progress';
 
         $delivered = $stage >= 4 ? date('Y-m-d') : null;
@@ -291,7 +323,7 @@ class ServiceController extends BaseController {
         $id     = $this->inputInt('id');
         $status = trim($this->input('status'));
 
-        $allowed = ['Pending', 'In Progress', 'Completed', 'Replaced'];
+        $allowed = self::allowedStatuses();
         if (!$id || !in_array($status, $allowed, true)) {
             $this->json(['success' => false, 'message' => 'Invalid status.'], 400);
             return;
@@ -319,10 +351,19 @@ class ServiceController extends BaseController {
             $newStage = max(1, $newStage);
             if ($newStage >= 4) $newStage = 1;
             $delivered = null;
-        } elseif ($status === 'Completed' || $status === 'Replaced') {
-            // Consider repaired/replaced but not delivered yet
+        } elseif ($status === 'Fixed') {
             if ($newStage < 2 || $newStage >= 4) $newStage = 2;
             $delivered = null;
+        } elseif ($status === 'Replaced') {
+            $newStage = 3;
+            $delivered = null;
+        } elseif ($status === 'No Repair') {
+            $newStage = max(1, $newStage);
+            if ($newStage >= 4) $newStage = 1;
+            $delivered = null;
+        } elseif ($status === 'Fixed & Delivered' || $status === 'Replaced & Delivered' || $status === 'No Repair & Delivered') {
+            $newStage = 4;
+            $delivered = date('Y-m-d');
         }
 
         $this->db->beginTransaction();
@@ -354,6 +395,69 @@ class ServiceController extends BaseController {
             'stage' => $newStage,
             'message' => "{$old['service_no']} updated.",
         ]);
+    }
+
+    /**
+     * Return device to customer without fixing (warranty void / customer damage).
+     */
+    public function returnNoRepair(): void {
+        Auth::authorize('service', 'edit');
+        if (!$this->isPost()) { $this->redirect('?page=service'); return; }
+
+        $id = $this->inputInt('id');
+        $note = trim((string)$this->input('note'));
+        if ($note === '') $note = 'No repair & delivered (warranty void / customer damage).';
+
+        $old = $this->db->fetchOne(
+            "SELECT id, service_no, status, device_stage
+             FROM service_records
+             WHERE id = ? AND warehouse_id = ?",
+            [$id, Auth::warehouseId()]
+        );
+        if (!$old) { $this->flash('error', 'Service record not found'); $this->redirect('?page=service'); return; }
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->execute(
+                "UPDATE service_records
+                 SET status = ?, device_stage = 4, delivered_date = ?
+                 WHERE id = ? AND warehouse_id = ?",
+                ['No Repair & Delivered', date('Y-m-d'), $id, Auth::warehouseId()]
+            );
+
+            // Keep public tracking history consistent (it shows stage_change events)
+            $stages = self::stages();
+            $this->db->insert(
+                "INSERT INTO service_history (service_id, event_type, old_value, new_value, note, user_id)
+                 VALUES (?,?,?,?,?,?)",
+                [
+                    $id,
+                    'stage_change',
+                    'stage_' . (string)$old['device_stage'],
+                    'stage_4 (' . $stages[4]['label'] . ')',
+                    $note,
+                    Auth::id(),
+                ]
+            );
+
+            if ((string)$old['status'] !== 'No Repair & Delivered') {
+                $this->db->insert(
+                    "INSERT INTO service_history (service_id, event_type, old_value, new_value, note, user_id)
+                     VALUES (?,?,?,?,?,?)",
+                    [$id, 'status_change', (string)$old['status'], 'No Repair & Delivered', $note, Auth::id()]
+                );
+            }
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->flash('error', 'Failed to return without repair.');
+            $this->redirect('?page=service&action=detail&id=' . $id);
+            return;
+        }
+
+        $this->flash('success', "{$old['service_no']} marked as No Repair & Delivered.");
+        $this->redirect('?page=service&action=detail&id=' . $id);
     }
 
     public function edit(): void {

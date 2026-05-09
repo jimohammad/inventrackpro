@@ -143,6 +143,24 @@ body {
 .item-line .col-rate { width: 70px; text-align: right; color: #666; }
 .item-line .col-amt  { width: 80px; text-align: right; font-weight: 700; }
 
+.items-total-qty-row {
+    padding-top: 6px;
+    margin-top: 4px;
+    border-top: 1px solid #000;
+}
+.items-total-qty-row .item-line { margin-top: 0; }
+/* Extra-specific + !important: thermal drivers often ignore numeric weights; <strong> reinforces. */
+.items-total-qty-row .item-line .col-item,
+.items-total-qty-row .item-line .col-qty {
+    font-weight: bold !important;
+    font-size: 12px !important;
+    color: #000 !important;
+}
+.items-total-qty-row .item-line .col-item {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .totals-section { margin-top: 12px; }
 .totals-section .receipt-row { border-bottom: none; padding: 4px 0; }
 
@@ -316,6 +334,11 @@ body {
     $thermalShowSubtotalBreakdown = $totalDisc > 0.001 || $taxAmount > 0.001 || $shipping > 0.001
         || abs($subtotal - $grandTotal) > 0.001;
     $thermalShowBalanceDue        = $dueAmount > 0.001 && abs($dueAmount - $grandTotal) > 0.001;
+
+    $totalQty = 0.0;
+    foreach ($itemsList as $__it) {
+        $totalQty += (float) ($__it['quantity'] ?? $__it['qty'] ?? 0);
+    }
 ?>
 <div class="no-print">
     <button onclick="window.print()"><i>⎙</i> Print</button>
@@ -384,6 +407,14 @@ body {
             </div>
         </div>
         <?php endforeach; ?>
+        <div class="items-total-qty-row">
+            <div class="item-line">
+                <div class="col-item"><strong>Total Qty</strong></div>
+                <div class="col-qty"><strong><?= rtrim(rtrim(number_format($totalQty, 2, '.', ''), '0'), '.') ?></strong></div>
+                <div class="col-rate"></div>
+                <div class="col-amt"></div>
+            </div>
+        </div>
     </div>
 
     <?php if ($thermalShowSubtotalBreakdown): ?>

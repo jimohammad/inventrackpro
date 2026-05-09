@@ -30,7 +30,7 @@ abstract class BaseController {
         if (self::$accountsCache === null) {
             $db = Database::getInstance();
             self::$accountsCache = $db->fetchAll(
-                "SELECT id, name, type, current_balance, is_default, sort_order
+                "SELECT id, name, type, gl_code, opening_balance, current_balance, is_default, sort_order
                  FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
             );
             foreach (self::$accountsCache as &$acc) {

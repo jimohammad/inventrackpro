@@ -192,11 +192,13 @@
     </a>
     <?php endif; ?>
 
-    <?php if (Auth::can('payments', 'view') || Auth::can('expenses', 'view')): ?>
+    <?php if (Auth::can('payments', 'view') || Auth::can('expenses', 'view') || Auth::can('settings', 'view')): ?>
     <div class="sidebar-label">Finance</div>
+    <?php if (Auth::can('settings', 'view')): ?>
     <a href="?page=accounts" class="sidebar-link <?= ($page ?? '') === 'accounts' ? 'active' : '' ?>">
         <i class="bi bi-wallet2"></i> Accounts
     </a>
+    <?php endif; ?>
     <a href="?page=landedcost" class="sidebar-link <?= ($page ?? '') === 'landedcost' ? 'active' : '' ?>">
         <i class="bi bi-calculator"></i> Landed Cost
     </a>

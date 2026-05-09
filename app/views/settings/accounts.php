@@ -194,7 +194,7 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
             <span style="font-size:.78rem;"><span style="color:#10b981;font-weight:700;">↑ IN <?= APP_CURRENCY ?> <?= number_format($txnIn, DECIMAL_PLACES) ?></span>&nbsp;&nbsp;<span style="color:#ef4444;font-weight:700;">↓ OUT <?= APP_CURRENCY ?> <?= number_format($txnOut, DECIMAL_PLACES) ?></span></span>
             <?php if (Auth::can('settings','edit')): ?>
             <form method="POST" action="?page=accounts&action=recalcBalance" style="display:inline;"
-                  onsubmit="return confirm('Recalculate this account balance from ledger?\\n\\nThis sets current_balance = opening_balance + payments - expenses + transfers.\\n\\nNote: Manual Adjust Balance changes are not stored separately and may be overridden by recalculation.');">
+                  onsubmit="return confirm('Recalculate this account balance from ledger?\\n\\nUses: opening_balance + payments (excl. discount) − expenses + transfers + manual adjustments − PO paid amounts that have no linked payment row.');">
                 <?= Auth::csrfField() ?>
                 <input type="hidden" name="account_id" value="<?= (int)$selectedAccount['id'] ?>">
                 <button type="submit" class="btn btn-sm btn-outline-primary pin-protect" style="font-size:.78rem;">
@@ -226,6 +226,7 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                 'expense'    => ['label'=>'Expense',    'color'=>'#ef4444', 'bg'=>'rgba(239,68,68,.1)',   'icon'=>'bi-receipt'],
                 'transfer'   => ['label'=>'Transfer',   'color'=>'#6366f1', 'bg'=>'rgba(99,102,241,.1)',  'icon'=>'bi-arrow-left-right'],
                 'po_payment' => ['label'=>'PO Payment', 'color'=>'#f59e0b', 'bg'=>'rgba(245,158,11,.1)', 'icon'=>'bi-box-arrow-in-down'],
+                'adjustment' => ['label'=>'Adjustment', 'color'=>'#d97706', 'bg'=>'rgba(245,158,11,.18)', 'icon'=>'bi-sliders'],
                 default      => ['label'=>$txn['txn_type'], 'color'=>'#6b7280', 'bg'=>'rgba(107,114,128,.1)', 'icon'=>'bi-circle'],
             };
         ?>
@@ -278,10 +279,15 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                     <label>Amount <span style="color:#ef4444;">*</span></label>
                     <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required>
                 </div>
+                <div class="acc-field">
+                    <label>Date</label>
+                    <input type="date" name="adj_date" value="<?= date('Y-m-d') ?>">
+                </div>
             </div>
             <div class="acc-field" style="margin-top:14px;">
                 <label>Reason</label>
                 <input type="text" name="reason" placeholder="e.g. Cash count adjustment, short change, excess found...">
+                <p style="font-size:0.72rem;color:var(--text-muted);margin:8px 0 0;">Each adjustment is stored and included when you use Recalculate.</p>
             </div>
             <div class="acc-save-row">
                 <button type="button" class="btn-panel-cancel" onclick="togglePanel('adjustPanel')">Cancel</button>

@@ -9,6 +9,13 @@ class AccountController extends BaseController {
 
         $db       = Database::getInstance();
         $accounts = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY name");
+        foreach ($accounts as &$accRow) {
+            $accRow['normalized_type'] = parent::normalizeAccountType(
+                (string) ($accRow['type'] ?? ''),
+                (string) ($accRow['name'] ?? '')
+            );
+        }
+        unset($accRow);
 
         // Recent transfers
         $transfers = $db->fetchAll(
@@ -130,7 +137,22 @@ class AccountController extends BaseController {
                     [$selectedAccountId]
                 );
 
-                $accountTxns = array_merge($payments, $expenses, $txnTransfers, $poPayments);
+                $balanceAdjustments = $db->fetchAll(
+                    "SELECT 'adjustment' as txn_type, aba.id,
+                            CONCAT('ADJ-', LPAD(aba.id, 6, '0')) as ref_no,
+                            aba.date,
+                            CASE WHEN aba.direction = 'add' THEN aba.amount ELSE -aba.amount END as amount,
+                            TRIM(CONCAT(UPPER(aba.direction), CASE WHEN aba.reason IS NOT NULL AND aba.reason != '' THEN CONCAT(' — ', aba.reason) ELSE '' END)) as note,
+                            'Manual adjustment' as party,
+                            NULL as invoice_ref
+                     FROM account_balance_adjustments aba
+                     WHERE aba.account_id = ?
+                     ORDER BY aba.date DESC, aba.id DESC
+                     LIMIT 200",
+                    [$selectedAccountId]
+                );
+
+                $accountTxns = array_merge($payments, $expenses, $txnTransfers, $poPayments, $balanceAdjustments);
                 usort($accountTxns, fn($a, $b) => strcmp($b['date'] . $b['id'], $a['date'] . $a['id']));
                 $accountTxns = array_slice($accountTxns, 0, 200);
             }
@@ -147,11 +169,8 @@ class AccountController extends BaseController {
 
     /**
      * Admin/authorized tool: rebuild accounts.current_balance from ledger tables.
-     * Uses accounts.opening_balance as baseline.
-     *
-     * NOTE: Manual "Adjust Balance" changes are NOT separately stored, so future recalcs will
-     * override them. Use Adjust Balance only for permanent corrections, and recalc only when
-     * you want the ledger to be the source of truth.
+     * Uses accounts.opening_balance as baseline, plus payments, expenses, transfers,
+     * account_balance_adjustments, and PO paid_kwd booked on orders without matching payments rows.
      */
     public function recalcBalance(): void {
         Auth::authorize('settings', 'edit');
@@ -200,7 +219,32 @@ class AccountController extends BaseController {
             );
             $transferNet = (float)($trRow['in_total'] ?? 0) - (float)($trRow['out_total'] ?? 0);
 
-            $newBalance = round($opening + $paymentsNet - $expensesTotal + $transferNet, 3);
+            $adjRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
+                 FROM account_balance_adjustments
+                 WHERE account_id = ?",
+                [$accountId]
+            );
+            $adjustmentsNet = (float)($adjRow['net'] ?? 0);
+
+            // PO payouts recorded on PO only until a mirror payment exists (aligned with reconciliation & Accounts ledger)
+            $poRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
+                 FROM purchase_orders po
+                 LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
+                 LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
+                 LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
+                    AND pay3.party_id = po.party_id
+                    AND ABS(pay3.amount - po.paid_kwd) < 0.001
+                    AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
+                 WHERE po.account_id = ? AND po.paid_kwd > 0
+                  AND po.status NOT IN ('cancelled')
+                  AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
+                [$accountId]
+            );
+            $poUnlinkedOut = (float)($poRow['total'] ?? 0);
+
+            $newBalance = round($opening + $paymentsNet - $expensesTotal + $transferNet + $adjustmentsNet - $poUnlinkedOut, 3);
             $oldBalance = (float)($acc['current_balance'] ?? 0);
 
             $db->execute("UPDATE accounts SET current_balance = ? WHERE id = ?", [$newBalance, $accountId]);
@@ -230,10 +274,28 @@ class AccountController extends BaseController {
         Auth::authorize('settings', 'add');
         if (!$this->isPost()) { $this->redirect('?page=accounts'); }
 
+        $name = trim($this->input('name'));
+        if ($name === '') {
+            $this->flash('error', 'Account name is required.');
+            $this->redirect('?page=accounts');
+        }
+
+        $typeAllowed = ['cash', 'bank', 'mobile_wallet', 'other'];
+        $typeRaw     = strtolower(trim($this->input('type', 'cash')));
+        $type        = in_array($typeRaw, $typeAllowed, true) ? $typeRaw : 'cash';
+
+        $glRaw = trim($this->input('gl_code'));
+        $gl    = $glRaw !== ''
+            ? (function_exists('mb_substr') ? mb_substr($glRaw, 0, 10, 'UTF-8') : substr($glRaw, 0, 10))
+            : null;
+
+        $opening = round($this->inputFloat('opening_balance'), DECIMAL_PLACES);
+
         $db = Database::getInstance();
         $db->insert(
-            "INSERT INTO accounts (name, type, gl_code, current_balance) VALUES (?,?,?,?)",
-            [$this->input('name'), $this->input('type'), $this->input('gl_code') ?: null, $this->inputFloat('opening_balance')]
+            "INSERT INTO accounts (name, type, gl_code, opening_balance, current_balance)
+             VALUES (?,?,?,?,?)",
+            [$name, $type, $gl, $opening, $opening]
         );
 
         $this->flash('success', 'Account created.');
@@ -268,16 +330,27 @@ class AccountController extends BaseController {
             $this->redirect('?page=accounts');
         }
 
-        // Check source balance
-        $from = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$fromId]);
-        if (!$from) { $this->flash('error', 'Source account not found.'); $this->redirect('?page=accounts'); }
-        if ($from['current_balance'] < $amount) {
-            $this->flash('error', "Insufficient balance in {$from['name']}. Available: " . number_format($from['current_balance'], 3));
-            $this->redirect('?page=accounts');
-        }
-
         $db->beginTransaction();
         try {
+            $from = $db->fetchOne("SELECT id, name, current_balance FROM accounts WHERE id = ? FOR UPDATE", [$fromId]);
+            $to   = $db->fetchOne("SELECT id, name FROM accounts WHERE id = ? FOR UPDATE", [$toId]);
+
+            if (!$from) {
+                $db->rollback();
+                $this->flash('error', 'Source account not found.');
+                $this->redirect('?page=accounts');
+            }
+            if (!$to) {
+                $db->rollback();
+                $this->flash('error', 'Destination account not found.');
+                $this->redirect('?page=accounts');
+            }
+            if ((float) $from['current_balance'] < $amount) {
+                $db->rollback();
+                $this->flash('error', "Insufficient balance in {$from['name']}. Available: " . number_format($from['current_balance'], DECIMAL_PLACES));
+                $this->redirect('?page=accounts');
+            }
+
             // Generate transfer number (locked inside transaction)
             $row = $db->fetchOne(
                 "SELECT COALESCE(MAX(CAST(SUBSTRING(transfer_no, 5) AS UNSIGNED)), 0) AS max_no
@@ -300,14 +373,12 @@ class AccountController extends BaseController {
             );
 
             $db->commit();
+            $this->flash('success', "Transfer {$transferNo} done. " . number_format($amount, DECIMAL_PLACES) . " moved from {$from['name']} to {$to['name']}.");
         } catch (Exception $e) {
             $db->rollback();
             $this->flash('error', 'Transfer failed. Please try again.');
-            $this->redirect('?page=accounts');
         }
 
-        $to = $db->fetchOne("SELECT name FROM accounts WHERE id = ?", [$toId]);
-        $this->flash('success', "Transfer {$transferNo} done. " . number_format($amount, 3) . " moved from {$from['name']} to {$to['name']}.");
         $this->redirect('?page=accounts');
     }
 
@@ -445,22 +516,46 @@ class AccountController extends BaseController {
             return;
         }
 
-        if ($type === 'subtract' && (float)$account['current_balance'] < $amount) {
-            $this->flash('error', "Insufficient balance. Available: " . APP_CURRENCY . " " . number_format($account['current_balance'], DECIMAL_PLACES));
+        if ($type !== 'add' && $type !== 'subtract') {
+            $this->flash('error', 'Invalid adjustment type.');
             $this->redirect('?page=accounts');
             return;
         }
 
+        $adjDateRaw = trim((string)$this->input('adj_date'));
+        $adjDate    = preg_match('/^\d{4}-\d{2}-\d{2}$/', $adjDateRaw) ? $adjDateRaw : date('Y-m-d');
+        $reasonTrim = trim($reason) !== '' ? trim($reason) : null;
+
         $db->beginTransaction();
         try {
+            $locked = $db->fetchOne("SELECT id, name, current_balance FROM accounts WHERE id = ? FOR UPDATE", [$accountId]);
+            if (!$locked) {
+                $db->rollback();
+                $this->flash('error', 'Account not found.');
+                $this->redirect('?page=accounts');
+                return;
+            }
+            if ($type === 'subtract' && (float) $locked['current_balance'] < $amount) {
+                $db->rollback();
+                $this->flash('error', "Insufficient balance. Available: " . APP_CURRENCY . " " . number_format($locked['current_balance'], DECIMAL_PLACES));
+                $this->redirect('?page=accounts');
+                return;
+            }
+
             if ($type === 'add') {
                 $db->execute("UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?", [$amount, $accountId]);
             } else {
                 $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$amount, $accountId]);
             }
 
+            $db->insert(
+                "INSERT INTO account_balance_adjustments (account_id, direction, amount, reason, date, created_by)
+                 VALUES (?,?,?,?,?,?)",
+                [$accountId, $type, round($amount, DECIMAL_PLACES), $reasonTrim, $adjDate, Auth::id() ?: null]
+            );
+
             $this->logActivity('adjust_account', 'accounts', $accountId,
-                ($type === 'add' ? '+' : '-') . number_format($amount, DECIMAL_PLACES) . " on {$account['name']}" . ($reason ? " — {$reason}" : ''));
+                ($type === 'add' ? '+' : '-') . number_format($amount, DECIMAL_PLACES) . " on {$locked['name']}" . ($reasonTrim ? " — {$reasonTrim}" : ''));
 
             $db->commit();
         } catch (Exception $e) {
@@ -515,13 +610,23 @@ class AccountController extends BaseController {
             "SELECT COUNT(*) as c FROM account_transfers WHERE to_account_id = ?", [$id]
         )['c'] ?? 0);
 
-        $total = $payments + $expenses + $transfersFrom + $transfersTo;
+        $adjustments = (int)($db->fetchOne(
+            "SELECT COUNT(*) as c FROM account_balance_adjustments WHERE account_id = ?", [$id]
+        )['c'] ?? 0);
 
-        if ($total > 0) {
+        $purchaseOrders = (int)($db->fetchOne(
+            "SELECT COUNT(*) as c FROM purchase_orders WHERE account_id = ?", [$id]
+        )['c'] ?? 0);
+
+        $total = $payments + $expenses + $transfersFrom + $transfersTo + $adjustments;
+
+        if ($total > 0 || $purchaseOrders > 0) {
             $details = [];
             if ($payments)     $details[] = "{$payments} payment(s)";
             if ($expenses)     $details[] = "{$expenses} expense(s)";
             if ($transfersFrom + $transfersTo > 0) $details[] = ($transfersFrom + $transfersTo) . " transfer(s)";
+            if ($adjustments)  $details[] = "{$adjustments} balance adjustment(s)";
+            if ($purchaseOrders) $details[] = "{$purchaseOrders} purchase order(s) linked to this account";
             $this->flash('error', "Cannot delete \"{$account['name']}\" — it has " . implode(', ', $details) . " linked to it.");
             $this->redirect('?page=accounts');
         }

@@ -204,6 +204,35 @@ class PurchaseController extends BaseController {
 
         $status = $balance < 0.001 ? 'paid' : ($paid > 0 ? 'partial' : 'confirmed');
 
+        // Duplicate-PO guard: if this supplier already has an unconverted PO for the same total in
+        // this warehouse, the user is almost certainly re-keying a PO that should have been
+        // converted via "Convert to Purchase Invoice". Without this guard, BOTH the PO payment
+        // ('purchase_order') and this Purchase payment ('purchase') get inserted and the bank
+        // account is debited twice.
+        $partyIdGuard = $this->inputInt('party_id');
+        $openPo = $db->fetchOne(
+            "SELECT id, po_no, subtotal_kwd, paid_kwd, status
+             FROM purchase_orders
+             WHERE party_id = ?
+               AND warehouse_id = ?
+               AND status IN ('draft','paid')
+               AND ABS(subtotal_kwd - ?) < 0.001
+             ORDER BY id DESC
+             LIMIT 1",
+            [$partyIdGuard, $warehouseId, $grandTotal]
+        );
+        if ($openPo) {
+            $this->flash('error',
+                'Blocked to prevent a duplicate payment: this supplier already has an open Purchase Order '
+                . $openPo['po_no'] . ' for ' . number_format((float)$openPo['subtotal_kwd'], DECIMAL_PLACES)
+                . ' KWD that has not been converted yet. Open that PO and click "Convert to Purchase Invoice" '
+                . 'instead — creating a fresh Purchase here would record the same payment twice and '
+                . 'double-deduct the bank account.'
+            );
+            $this->redirect('?page=purchaseorders&action=show&id=' . (int)$openPo['id']);
+            return;
+        }
+
         $db->beginTransaction();
         try {
             $purchaseId = $db->insert(

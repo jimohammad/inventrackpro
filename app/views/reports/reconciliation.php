@@ -59,6 +59,9 @@ if (!empty($mismatches)):
                         <th class="px-3 py-2 text-end">Total In</th>
                         <th class="px-3 py-2 text-end">Total Out</th>
                         <th class="px-3 py-2 text-end">Expenses</th>
+                        <th class="px-3 py-2 text-end">Transfers ±</th>
+                        <th class="px-3 py-2 text-end">Adj ±</th>
+                        <th class="px-3 py-2 text-end">PO (no pay)</th>
                         <th class="px-3 py-2 text-end">Calculated</th>
                         <th class="px-3 py-2 text-end">Recorded</th>
                         <th class="px-3 py-2 text-end">Difference</th>
@@ -74,6 +77,13 @@ if (!empty($mismatches)):
                         <td class="px-3 py-2 text-end" style="color:var(--success);">+<?= number_format($r['total_in'], DECIMAL_PLACES) ?></td>
                         <td class="px-3 py-2 text-end" style="color:var(--danger);">-<?= number_format($r['total_out'], DECIMAL_PLACES) ?></td>
                         <td class="px-3 py-2 text-end" style="color:var(--danger);">-<?= number_format($r['total_expenses'], DECIMAL_PLACES) ?></td>
+                        <td class="px-3 py-2 text-end" style="color:<?= ($r['net_transfers'] ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' ?>;">
+                            <?= ($r['net_transfers'] ?? 0) >= 0 ? '+' : '' ?><?= number_format($r['net_transfers'] ?? 0, DECIMAL_PLACES) ?>
+                        </td>
+                        <td class="px-3 py-2 text-end" style="color:<?= ($r['net_adjustments'] ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' ?>;">
+                            <?= ($r['net_adjustments'] ?? 0) >= 0 ? '+' : '' ?><?= number_format($r['net_adjustments'] ?? 0, DECIMAL_PLACES) ?>
+                        </td>
+                        <td class="px-3 py-2 text-end" style="color:var(--danger);">-<?= number_format($r['po_unlinked_payouts'] ?? 0, DECIMAL_PLACES) ?></td>
                         <td class="px-3 py-2 text-end fw-600"><?= number_format($r['calculated'], DECIMAL_PLACES) ?></td>
                         <td class="px-3 py-2 text-end fw-600"><?= number_format($r['recorded'], DECIMAL_PLACES) ?></td>
                         <td class="px-3 py-2 text-end fw-600" style="color:<?= $r['status'] === 'mismatch' ? 'var(--danger)' : 'var(--success)' ?>;">
@@ -99,7 +109,6 @@ if (!empty($mismatches)):
 });</script>
 <p class="text-muted mt-3" style="font-size:0.78rem;">
     <i class="bi bi-info-circle me-1"></i>
-    Calculated = Opening Balance + Total In - Total Out - Expenses.
-    Recorded = current balance stored in the system.
-    Any difference means a payment or adjustment was made outside normal workflow.
+    As of the selected date, <strong>Calculated</strong> = Opening + Total In − Total Out − Expenses + Transfers (net) + Adjustments (net) − PO (no pay). “PO (no pay)” sums purchase-order paid amounts linked to this account where no matching payments row exists (same heuristic as the Accounts transaction list).
+    Recorded uses each account’s live <strong>current_balance</strong> (typically “today,” not rewound by this report date unless you reconcile only after aligning balances).
 </p>

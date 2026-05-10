@@ -53,6 +53,11 @@ class StockTransferController extends BaseController {
             $this->redirect('?page=transfers&action=create');
         }
 
+        if (!Auth::isAdmin() && Auth::warehouseId() !== $fromWh && Auth::warehouseId() !== $toWh) {
+            $this->flash('error', 'You can only transfer from or to your assigned warehouse.');
+            $this->redirect('?page=transfers&action=create');
+        }
+
         $last    = $db->fetchOne("SELECT transfer_no FROM stock_transfers ORDER BY id DESC LIMIT 1 FOR UPDATE");
         $num     = $last ? (int) substr($last['transfer_no'], strlen(TRANSFER_PREFIX)) : 0;
         $transNo = TRANSFER_PREFIX . str_pad($num + 1, 6, '0', STR_PAD_LEFT);

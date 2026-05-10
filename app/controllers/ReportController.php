@@ -44,6 +44,7 @@ class ReportController extends BaseController {
 
         $date = $this->input('date', date('Y-m-d'), 'get');
         $db   = Database::getInstance();
+        $whId = Auth::warehouseId();
 
         // Sales
         $sales = $db->fetchAll(
@@ -53,8 +54,8 @@ class ReportController extends BaseController {
              FROM sales s
              JOIN parties p ON p.id = s.party_id
              LEFT JOIN users u ON u.id = s.created_by
-             WHERE s.date = ? AND s.status != 'cancelled'
-             ORDER BY s.created_at ASC", [$date]
+             WHERE s.date = ? AND s.status != 'cancelled' AND s.warehouse_id = ?
+             ORDER BY s.created_at ASC", [$date, $whId]
         );
 
         // Purchases
@@ -65,8 +66,8 @@ class ReportController extends BaseController {
              FROM purchases pr
              JOIN parties p ON p.id = pr.party_id
              LEFT JOIN users u ON u.id = pr.created_by
-             WHERE pr.date = ? AND pr.status != 'cancelled'
-             ORDER BY pr.created_at ASC", [$date]
+             WHERE pr.date = ? AND pr.status != 'cancelled' AND pr.warehouse_id = ?
+             ORDER BY pr.created_at ASC", [$date, $whId]
         );
 
         // Payments In (received from customers) — exclude discounts
@@ -77,8 +78,8 @@ class ReportController extends BaseController {
              FROM payments py
              JOIN parties p ON p.id = py.party_id
              LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.payment_type = 'in' AND py.ref_type != 'discount'
-             ORDER BY py.created_at ASC", [$date]
+             WHERE py.date = ? AND py.payment_type = 'in' AND py.ref_type != 'discount' AND py.warehouse_id = ?
+             ORDER BY py.created_at ASC", [$date, $whId]
         );
 
         // Discounts given (separate from cash)
@@ -89,8 +90,8 @@ class ReportController extends BaseController {
              FROM payments py
              JOIN parties p ON p.id = py.party_id
              LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.ref_type = 'discount'
-             ORDER BY py.created_at ASC", [$date]
+             WHERE py.date = ? AND py.ref_type = 'discount' AND py.warehouse_id = ?
+             ORDER BY py.created_at ASC", [$date, $whId]
         );
 
         // Payments Out (paid to suppliers)
@@ -101,8 +102,8 @@ class ReportController extends BaseController {
              FROM payments py
              JOIN parties p ON p.id = py.party_id
              LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.payment_type = 'out'
-             ORDER BY py.created_at ASC", [$date]
+             WHERE py.date = ? AND py.payment_type = 'out' AND py.warehouse_id = ?
+             ORDER BY py.created_at ASC", [$date, $whId]
         );
 
         // Returns
@@ -113,8 +114,8 @@ class ReportController extends BaseController {
              FROM returns r
              JOIN parties p ON p.id = r.party_id
              LEFT JOIN users u ON u.id = r.created_by
-             WHERE r.date = ? AND r.status != 'cancelled'
-             ORDER BY r.created_at ASC", [$date]
+             WHERE r.date = ? AND r.status != 'cancelled' AND r.warehouse_id = ?
+             ORDER BY r.created_at ASC", [$date, $whId]
         );
 
         // Expenses
@@ -125,8 +126,8 @@ class ReportController extends BaseController {
              FROM expenses e
              LEFT JOIN expense_categories ec ON ec.id = e.category_id
              LEFT JOIN users u ON u.id = e.created_by
-             WHERE e.date = ?
-             ORDER BY e.created_at ASC", [$date]
+             WHERE e.date = ? AND e.warehouse_id = ?
+             ORDER BY e.created_at ASC", [$date, $whId]
         );
 
         // Merge and sort by created_at
@@ -167,6 +168,7 @@ class ReportController extends BaseController {
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $whId     = Auth::warehouseId();
 
         $data = $this->db->fetchAll(
             "SELECT s.id, s.invoice_no, s.date, p.name as party_name,
@@ -175,9 +177,9 @@ class ReportController extends BaseController {
              FROM sales s
              JOIN parties p ON p.id = s.party_id
              LEFT JOIN users u ON u.id = s.created_by
-             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled'
+             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled' AND s.warehouse_id = ?
              ORDER BY s.date DESC",
-            [$fromDate, $toDate]
+            [$fromDate, $toDate, $whId]
         );
 
         $summary = $this->db->fetchOne(
@@ -186,8 +188,8 @@ class ReportController extends BaseController {
                     SUM(paid_amount) as paid,
                     SUM(balance) as balance
              FROM sales
-             WHERE date BETWEEN ? AND ? AND status != 'cancelled'",
-            [$fromDate, $toDate]
+             WHERE date BETWEEN ? AND ? AND status != 'cancelled' AND warehouse_id = ?",
+            [$fromDate, $toDate, $whId]
         );
 
         $parties   = $this->db->fetchAll("SELECT id, name FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name");
@@ -241,12 +243,13 @@ class ReportController extends BaseController {
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $whId     = Auth::warehouseId();
 
         // Sales revenue
         $salesRev = $this->db->fetchOne(
             "SELECT COALESCE(SUM(grand_total),0) as revenue FROM sales
-             WHERE date BETWEEN ? AND ? AND status != 'cancelled'",
-            [$fromDate, $toDate]
+             WHERE date BETWEEN ? AND ? AND status != 'cancelled' AND warehouse_id = ?",
+            [$fromDate, $toDate, $whId]
         )['revenue'];
 
         // Cost of goods — uses cost_price locked at sale time (falls back to current purchase_price for pre-migration rows)
@@ -255,14 +258,14 @@ class ReportController extends BaseController {
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
              JOIN sales s ON s.id = si.sale_id
-             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled'",
-            [$fromDate, $toDate]
+             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled' AND s.warehouse_id = ?",
+            [$fromDate, $toDate, $whId]
         )['cost'];
 
         // Expenses
         $expenses = $this->db->fetchOne(
-            "SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE date BETWEEN ? AND ?",
-            [$fromDate, $toDate]
+            "SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE date BETWEEN ? AND ? AND warehouse_id = ?",
+            [$fromDate, $toDate, $whId]
         )['total'];
 
         $grossProfit = $salesRev - $cogs;
@@ -276,9 +279,9 @@ class ReportController extends BaseController {
              FROM sales s
              JOIN sale_items si ON si.sale_id = s.id
              JOIN items i ON i.id = si.item_id
-             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled'
+             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled' AND s.warehouse_id = ?
              GROUP BY s.date ORDER BY s.date",
-            [$fromDate, $toDate]
+            [$fromDate, $toDate, $whId]
         );
 
         $pageTitle = 'Profit & Loss';
@@ -705,22 +708,23 @@ class ReportController extends BaseController {
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $whId     = Auth::warehouseId();
 
         $data = $this->db->fetchAll(
             "SELECT py.*, pa.name as party_name, a.name as account_name
              FROM payments py
              LEFT JOIN parties pa ON pa.id = py.party_id
              LEFT JOIN accounts a ON a.id = py.account_id
-             WHERE py.date BETWEEN ? AND ?
+             WHERE py.date BETWEEN ? AND ? AND py.warehouse_id = ?
              ORDER BY py.date DESC",
-            [$fromDate, $toDate]
+            [$fromDate, $toDate, $whId]
         );
 
         $totals = $this->db->fetchAll(
             "SELECT payment_method, SUM(amount) as total, COUNT(*) as count
-             FROM payments WHERE date BETWEEN ? AND ?
+             FROM payments WHERE date BETWEEN ? AND ? AND warehouse_id = ?
              GROUP BY payment_method",
-            [$fromDate, $toDate]
+            [$fromDate, $toDate, $whId]
         );
 
         $pageTitle = 'Payments Report';
@@ -1152,9 +1156,10 @@ class ReportController extends BaseController {
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
         $partyId  = $this->inputInt('party_id', 0, 'get');
         $search   = $this->input('search', '', 'get');
+        $whId     = Auth::warehouseId();
 
-        $where  = "WHERE r.type = 'sale_return' AND r.date BETWEEN ? AND ?";
-        $params = [$fromDate, $toDate];
+        $where  = "WHERE r.type = 'sale_return' AND r.date BETWEEN ? AND ? AND r.warehouse_id = ?";
+        $params = [$fromDate, $toDate, $whId];
 
         if ($partyId) { $where .= " AND r.party_id = ?"; $params[] = $partyId; }
         if ($search)  {

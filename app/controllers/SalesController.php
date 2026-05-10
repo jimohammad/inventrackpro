@@ -379,6 +379,12 @@ class SalesController extends BaseController {
             return;
         }
 
+        if ((int)$editSale['warehouse_id'] !== Auth::warehouseId()) {
+            $this->flash('error', 'This sale belongs to a different warehouse.');
+            $this->redirect('?page=sales');
+            return;
+        }
+
         if ($editSale['status'] === 'cancelled') {
             $this->flash('error', 'Cancelled invoices cannot be edited.');
             $this->redirect('?page=sales&action=detail&id=' . $id);

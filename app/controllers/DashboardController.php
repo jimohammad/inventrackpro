@@ -121,33 +121,21 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Pending balances — compute aggregates directly (no PHP loop over all parties)
-            $balAgg = $db->fetchOne(
-                "SELECT
-                    SUM(CASE WHEN bal > 0.001 THEN bal ELSE 0 END) as rec_total,
-                    SUM(CASE WHEN bal > 0.001 THEN 1 ELSE 0 END) as rec_count,
-                    SUM(CASE WHEN bal < -0.001 THEN ABS(bal) ELSE 0 END) as pay_total,
-                    SUM(CASE WHEN bal < -0.001 THEN 1 ELSE 0 END) as pay_count
-                 FROM (
-                    SELECT p.opening_balance
-                        + COALESCE(s.total, 0)
-                        - COALESCE(ps.total, 0)
-                        - COALESCE(rs.total, 0)
-                        - COALESCE(pr.total, 0)
-                        + COALESCE(pp.total, 0)
-                        + COALESCE(rp.total, 0) as bal
-                    FROM parties p
-                    LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM sales WHERE status != 'cancelled' GROUP BY party_id) s ON s.party_id = p.id
-                    LEFT JOIN (SELECT party_id, SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) as total FROM payments WHERE ref_type IN ('sale','discount') GROUP BY party_id) ps ON ps.party_id = p.id
-                    LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE type = 'sale_return' AND status = 'approved' GROUP BY party_id) rs ON rs.party_id = p.id
-                    LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM purchases WHERE status != 'cancelled' GROUP BY party_id) pr ON pr.party_id = p.id
-                    LEFT JOIN (SELECT party_id, SUM(amount) as total FROM payments WHERE ref_type = 'purchase' GROUP BY party_id) pp ON pp.party_id = p.id
-                    LEFT JOIN (SELECT party_id, SUM(grand_total) as total FROM returns WHERE type = 'purchase_return' AND status = 'approved' GROUP BY party_id) rp ON rp.party_id = p.id
-                    WHERE p.is_active = 1
-                 ) party_bal"
+            // Pending balances — scoped to current warehouse using invoice-level balances
+            $recRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(balance), 0) as total, COUNT(*) as count
+                 FROM sales
+                 WHERE warehouse_id = ? AND status NOT IN ('cancelled','paid') AND balance > 0.001",
+                [$whId]
             );
-            $pendingReceivables = ['total' => (float)($balAgg['rec_total'] ?? 0), 'count' => (int)($balAgg['rec_count'] ?? 0)];
-            $pendingPayables    = ['total' => (float)($balAgg['pay_total'] ?? 0), 'count' => (int)($balAgg['pay_count'] ?? 0)];
+            $payRow = $db->fetchOne(
+                "SELECT COALESCE(SUM(balance), 0) as total, COUNT(*) as count
+                 FROM purchases
+                 WHERE warehouse_id = ? AND status NOT IN ('cancelled','paid') AND balance > 0.001",
+                [$whId]
+            );
+            $pendingReceivables = ['total' => (float)($recRow['total'] ?? 0), 'count' => (int)($recRow['count'] ?? 0)];
+            $pendingPayables    = ['total' => (float)($payRow['total'] ?? 0), 'count' => (int)($payRow['count'] ?? 0)];
 
             // Low stock — filtered by warehouse
             $lowStockItems = $db->fetchAll(

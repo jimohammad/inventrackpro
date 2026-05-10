@@ -426,6 +426,12 @@ class ReturnController extends BaseController {
                     );
                     $imeiLinkCount = (int)($imeiLinkCountRow['c'] ?? 0);
 
+                    // Lock stock row for the duration of this item's update
+                    $db->fetchOne(
+                        "SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
+                        [(int)$oldItem['item_id'], $warehouseId]
+                    );
+
                     // Handle deletion — remove item and reverse its stock effect
                     if (!empty($row['deleted'])) {
                         if ($imeiLinkCount > 0) {
@@ -491,8 +497,7 @@ class ReturnController extends BaseController {
                             throw new Exception("Insufficient stock to reduce return quantity for item {$oldItem['item_id']}.");
                         }
                     }
-                    if ($qtyDiff != 0) {
-                    }
+
                     if ($isImeiItem) {
                         $currentLinks = $db->fetchAll(
                             "SELECT rii.imei_id, ir.imei

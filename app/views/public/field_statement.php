@@ -124,11 +124,17 @@
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;color:#4338ca;">
                     <?php if ($t['type'] === 'Sale'): ?>
-                    <a href="javascript:void(0)" onclick="showInvoice('<?= $t['ref_no'] ?>')" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
-                        <?= $t['ref_no'] ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i>
+                    <?php
+                        $refNoJs = json_encode(
+                            (string)($t['ref_no'] ?? ''),
+                            JSON_HEX_QUOT | JSON_HEX_APOS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE
+                        );
+                    ?>
+                    <a href="javascript:void(0)" onclick="showInvoice(<?= $refNoJs ?>)" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
+                        <?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i>
                     </a>
                     <?php else: ?>
-                    <?= $t['ref_no'] ?>
+                    <?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>
                     <?php endif; ?>
                 </td>
                 <td style="text-align:right;"><?= $debit > 0 ? APP_CURRENCY . ' ' . number_format($debit, DECIMAL_PLACES) : '—' ?></td>
@@ -174,7 +180,16 @@
 </div>
 
 <script>
-var stmtToken = '<?= htmlspecialchars($token) ?>';
+var stmtToken = <?= json_encode((string)$token, JSON_HEX_QUOT | JSON_HEX_APOS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 function showInvoice(refNo) {
     document.getElementById('invModal').style.display = 'flex';
@@ -186,7 +201,7 @@ function showInvoice(refNo) {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.error) {
-                document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + data.error + '</div>';
+                document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + escapeHtml(data.error) + '</div>';
                 return;
             }
             var inv = data.invoice;
@@ -201,7 +216,7 @@ function showInvoice(refNo) {
 
             items.forEach(function(it) {
                 html += '<tr style="border-bottom:1px solid #f1f5f9;">';
-                html += '<td style="padding:8px 10px;font-weight:500;">' + it.item_name + '</td>';
+                html += '<td style="padding:8px 10px;font-weight:500;">' + escapeHtml(it.item_name) + '</td>';
                 html += '<td style="padding:8px 10px;text-align:center;">' + it.quantity + '</td>';
                 html += '<td style="padding:8px 10px;text-align:right;">' + parseFloat(it.unit_price).toFixed(3) + '</td>';
                 html += '<td style="padding:8px 10px;text-align:right;font-weight:600;">' + parseFloat(it.total).toFixed(3) + '</td>';

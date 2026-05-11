@@ -30,9 +30,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css">
     <?php endif; ?>
 
-    <link rel="preload" href="assets/css/layout.css?v=20260502" as="style">
-    <link rel="preload" href="assets/js/app.js?v=20260502" as="script">
-    <link rel="stylesheet" href="assets/css/layout.css?v=20260502">
+    <link rel="preload" href="assets/css/layout.css?v=<?= htmlspecialchars(ASSETS_VER) ?>" as="style">
+    <link rel="preload" href="assets/js/app.js?v=<?= htmlspecialchars(ASSETS_VER) ?>" as="script">
+    <link rel="stylesheet" href="assets/css/layout.css?v=<?= htmlspecialchars(ASSETS_VER) ?>">
 </head>
 <body>
 
@@ -379,10 +379,15 @@
 <?php if (isset($page) && $page === 'reports'): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <?php endif; ?>
-<script src="assets/js/app.js?v=20260502"></script>
+<script src="assets/js/app.js?v=<?= htmlspecialchars(ASSETS_VER) ?>"></script>
 
 <?php if (isset($extraJs)): ?>
-<script><?= $extraJs ?></script>
+<?php
+    // Prevent breaking out of the <script> tag if $extraJs contains "</script".
+    // $extraJs must remain server-controlled (never user input).
+    $extraJsSafe = str_replace('</script', '<\/script', (string)$extraJs);
+?>
+<script><?= $extraJsSafe ?></script>
 <?php endif; ?>
 
 <!-- Admin PIN Verification Modal -->

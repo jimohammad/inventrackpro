@@ -306,7 +306,15 @@ function showPartyBalance() {
     var amount = document.getElementById('balAmount');
     if (!sel || !sel.value) { box.classList.remove('show','owes','youowe','clear'); return; }
 
-    label.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Loading...';
+    function setBalLabel(iconClass, text) {
+        label.textContent = '';
+        var i = document.createElement('i');
+        i.className = 'bi ' + iconClass + ' me-1';
+        label.appendChild(i);
+        label.appendChild(document.createTextNode(text));
+    }
+
+    setBalLabel('bi-hourglass-split', 'Loading...');
     amount.textContent = '';
     box.className = 'pf-bal show clear';
 
@@ -319,15 +327,15 @@ function showPartyBalance() {
             box.className = 'pf-bal show';
             if (bal > 0.001) {
                 box.classList.add('owes');
-                label.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i> <?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>';
+                setBalLabel('bi-exclamation-triangle-fill', '<?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>');
                 amount.textContent = curr + ' ' + bal.toFixed(3);
             } else if (bal < -0.001) {
                 box.classList.add('youowe');
-                label.innerHTML = '<i class="bi bi-info-circle-fill me-1"></i> <?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>';
+                setBalLabel('bi-info-circle-fill', '<?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>');
                 amount.textContent = curr + ' ' + Math.abs(bal).toFixed(3);
             } else {
                 box.classList.add('clear');
-                label.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Account Clear';
+                setBalLabel('bi-check-circle-fill', 'Account Clear');
                 amount.textContent = curr + ' 0.000';
             }
             box.classList.remove('pf-bal-pop');

@@ -32,12 +32,13 @@ class LandedCostController extends BaseController {
         Auth::authorize('purchases', 'add');
         $db = $this->db();
 
-        // All non-cancelled purchases for selection
+        // Non-cancelled purchases for this warehouse
         $purchases = $db->fetchAll(
             "SELECT p.id, p.invoice_no, p.date, p.grand_total, par.name as supplier_name
              FROM purchases p JOIN parties par ON par.id = p.party_id
-             WHERE p.status != 'cancelled'
-             ORDER BY p.date DESC, p.id DESC LIMIT 100"
+             WHERE p.status != 'cancelled' AND p.warehouse_id = ?
+             ORDER BY p.date DESC, p.id DESC LIMIT 100",
+            [Auth::warehouseId()]
         );
         $accounts  = self::getAccounts();
         $nextNo    = $this->nextShipmentNo();

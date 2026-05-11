@@ -77,6 +77,7 @@
         <div class="disc-form-wrap">
             <form method="POST" action="?page=discounts&action=store" id="discountCreateForm">
                 <?= Auth::csrfField() ?>
+                <input type="hidden" name="discount_form_nonce" value="<?= htmlspecialchars($discountFormNonce ?? '') ?>">
                 <div class="row g-3">
                     <div class="col-md-2">
                         <label class="disc-label">Date</label>

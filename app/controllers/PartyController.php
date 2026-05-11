@@ -202,7 +202,9 @@ class PartyController extends BaseController {
             $this->redirect('?page=parties');
         }
 
-        // All invoices for this agent — all time
+        $whId = Auth::warehouseId();
+
+        // All invoices for this agent — scoped to current warehouse
         $invoices = $db->fetchAll(
             "SELECT s.id, s.invoice_no, s.date, s.grand_total, s.paid_amount, s.balance, s.status,
                     w.name as warehouse_name,
@@ -211,23 +213,23 @@ class PartyController extends BaseController {
              FROM sales s
              LEFT JOIN warehouses w ON w.id = s.warehouse_id
              LEFT JOIN sale_items si ON si.sale_id = s.id
-             WHERE s.party_id = ? AND s.status != 'cancelled'
+             WHERE s.party_id = ? AND s.warehouse_id = ? AND s.status != 'cancelled'
              GROUP BY s.id
              ORDER BY s.date ASC, s.id ASC",
-            [$id]
+            [$id, $whId]
         );
 
-        // All payments for this agent
+        // All payments for this agent — scoped to current warehouse
         $payments = $db->fetchAll(
             "SELECT py.*, a.name as account_name
              FROM payments py
              LEFT JOIN accounts a ON a.id = py.account_id
-             WHERE py.party_id = ? AND py.payment_type = 'in'
+             WHERE py.party_id = ? AND py.warehouse_id = ? AND py.payment_type = 'in'
              ORDER BY py.date ASC, py.id ASC",
-            [$id]
+            [$id, $whId]
         );
 
-        // Current IMEIs with this agent (dispatched but not returned/sold-final)
+        // Current IMEIs with this agent — scoped to current warehouse
         $imeis = $db->fetchAll(
             "SELECT ir.imei, ir.status, ir.updated_at,
                     i.name as item_name, i.sku,
@@ -236,9 +238,9 @@ class PartyController extends BaseController {
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
              LEFT JOIN sales s ON s.id = ir.sale_id
-             WHERE s.party_id = ? AND ir.status = 'sold' AND s.status != 'cancelled'
+             WHERE s.party_id = ? AND s.warehouse_id = ? AND ir.status = 'sold' AND s.status != 'cancelled'
              ORDER BY s.date ASC",
-            [$id]
+            [$id, $whId]
         );
 
         // Summary numbers

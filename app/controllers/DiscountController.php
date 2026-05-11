@@ -25,6 +25,9 @@ class DiscountController extends BaseController {
             "SELECT id, name FROM items WHERE is_active = 1 ORDER BY name"
         );
 
+        $discountFormNonce = bin2hex(random_bytes(16));
+        $_SESSION['discount_form_nonce'] = $discountFormNonce;
+
         $pageTitle = 'Customer Discounts';
         $page      = 'discounts';
 
@@ -37,6 +40,13 @@ class DiscountController extends BaseController {
     public function store(): void {
         Auth::authorize('settings', 'add');
         if (!$this->isPost()) { $this->redirect('?page=discounts'); }
+
+        $nonce = $_POST['discount_form_nonce'] ?? '';
+        if (empty($_SESSION['discount_form_nonce']) || !hash_equals($_SESSION['discount_form_nonce'], $nonce)) {
+            $this->flash('error', 'Duplicate submission or expired form. Please try again.');
+            $this->redirect('?page=discounts');
+        }
+        unset($_SESSION['discount_form_nonce']);
 
         $partyId = $this->inputInt('party_id');
         $itemId  = $this->inputInt('item_id') ?: null;

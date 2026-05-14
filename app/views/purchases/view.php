@@ -6,7 +6,7 @@
         <span class="badge ms-2 badge-<?= $purchase['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($purchase['status']) ?></span>
     </div>
     <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
-        <a href="?page=purchases&action=print&id=<?= $purchase['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
+        <a href="?page=purchases&action=print&id=<?= $purchase['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
         <?php if (Auth::can('purchases','delete') && ($purchase['status'] ?? '') !== 'cancelled'): ?>
@@ -93,6 +93,15 @@
                 <div class="d-flex justify-content-between mb-2"><span class="text-muted">Paid</span><span style="color:var(--success);font-weight:600;"><?= APP_CURRENCY ?> <?= number_format($purchase['paid_amount'], DECIMAL_PLACES) ?></span></div>
                 <hr style="border-color:var(--border-color);">
                 <div class="d-flex justify-content-between"><span class="fw-bold">Balance</span><span style="font-weight:700;color:<?= $purchase['balance'] > 0 ? 'var(--warning)':'var(--success)' ?>;"><?= APP_CURRENCY ?> <?= number_format($purchase['balance'], DECIMAL_PLACES) ?></span></div>
+                <p class="small text-muted mb-0 mt-2" style="line-height:1.45;">
+                    <strong>Invoice balance</strong> = amount still due on <em>this</em> bill (grand total minus payments linked to this purchase). Recording a supplier payment reduces this when allocated to this invoice. Your overall position with the supplier is <strong>Net balance</strong> on
+                    <?php if (Auth::can('suppliers', 'view') || Auth::can('customers', 'view')): ?>
+                    <a href="?page=parties&amp;action=detail&amp;id=<?= (int)($purchase['party_id'] ?? 0) ?>">their party ledger</a>
+                    <?php else: ?>
+                    their party ledger
+                    <?php endif; ?>
+                    (sales, purchases, returns, and all payments). If that ledger does not list this purchase, check for a <strong>duplicate supplier</strong> with the same name — match <strong>Account No</strong> here to the party you open in Party Master.
+                </p>
             </div>
         </div>
 

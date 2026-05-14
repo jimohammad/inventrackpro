@@ -19,6 +19,31 @@
 </div>
 
 
+<?php
+$bulkPrintQ = ['page' => 'sales', 'action' => 'bulkPrint'];
+if (!empty($filters['voided_only'])) {
+    $bulkPrintQ['view'] = 'voided';
+}
+if (!empty($filters['include_voided'])) {
+    $bulkPrintQ['include_voided'] = '1';
+}
+if (($filters['search'] ?? '') !== '') {
+    $bulkPrintQ['search'] = (string) $filters['search'];
+}
+if (($filters['status'] ?? '') !== '') {
+    $bulkPrintQ['status'] = (string) $filters['status'];
+}
+if (!empty($filters['party_id'])) {
+    $bulkPrintQ['party_id'] = (string) (int) $filters['party_id'];
+}
+if (($filters['from_date'] ?? '') !== '') {
+    $bulkPrintQ['from_date'] = (string) $filters['from_date'];
+}
+if (($filters['to_date'] ?? '') !== '') {
+    $bulkPrintQ['to_date'] = (string) $filters['to_date'];
+}
+$bulkPrintHref = '?' . http_build_query($bulkPrintQ);
+?>
 <!-- Filters -->
 <form method="GET" action="" style="background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
     <input type="hidden" name="page" value="sales">
@@ -74,6 +99,12 @@
                style="padding:8px 16px;background:#fff;color:#64748b;border:1.5px solid #c7d2fe;border-radius:10px;font-weight:600;font-size:0.85rem;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all 0.15s;"
                onmouseover="this.style.borderColor='#94a3b8'" onmouseout="this.style.borderColor='#c7d2fe'">
                 <i class="bi bi-x-circle"></i> Clear
+            </a>
+            <a href="<?= htmlspecialchars($bulkPrintHref) ?>" target="_blank" rel="noopener noreferrer"
+               title="A5 invoices in date order (needs From and To dates). Opens in a new tab."
+               style="padding:8px 16px;background:#fff;color:#b91c1c;border:1.5px solid #fecaca;border-radius:10px;font-weight:600;font-size:0.85rem;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all 0.15s;"
+               onmouseover="this.style.borderColor='#f87171'" onmouseout="this.style.borderColor='#fecaca'">
+                <i class="bi bi-file-earmark-pdf"></i> Print / PDF (range)
             </a>
         </div>
 
@@ -133,17 +164,17 @@
                                     <i class="bi bi-eye"></i>
                                 </a>
                                 <a href="?page=sales&action=print&id=<?= $s['id'] ?>&thermal=1&autoprint=1"
-                                   target="_blank"
+                                   target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:var(--success);border:none;" title="Print">
                                     <i class="bi bi-printer"></i>
                                 </a>
                                 <a href="?page=sales&action=thermalPrint&id=<?= $s['id'] ?>&thermal=1&autoprint=1"
-                                   target="_blank"
+                                   target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(5,150,105,0.15);color:#059669;border:none;" title="Thermal Print">
                                     <i class="bi bi-receipt"></i>
                                 </a>
                                 <a href="?page=sales&action=print&id=<?= $s['id'] ?>&autopdf=1"
-                                   target="_blank"
+                                   target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:none;" title="Download PDF">
                                     <i class="bi bi-file-earmark-pdf"></i>
                                 </a>
@@ -178,6 +209,7 @@ $(document).ready(function() {
     $('#salesTable').DataTable({
         pageLength: 25,
         order: [[2, 'desc']],
+        deferRender: true,
         language: { search: '', searchPlaceholder: 'Search...' },
         columnDefs: [{ orderable: false, targets: [6] }]
     });

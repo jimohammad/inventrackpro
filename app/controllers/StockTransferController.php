@@ -75,18 +75,15 @@ class StockTransferController extends BaseController {
                 $qty    = (int) $row['quantity'];
                 $itemId = (int) $row['item_id'];
 
-                // Item info — need has_imei + imei_optional to decide whether scan is required
                 $itemInfo = $db->fetchOne("SELECT name, has_imei, COALESCE(imei_optional,0) as imei_optional FROM items WHERE id = ?", [$itemId]);
                 if (!$itemInfo) throw new Exception("Invalid item ID {$itemId}.");
 
-                // Parse scanned IMEIs from this row
                 $imeis = [];
                 if (!empty($row['imeis'])) {
                     $imeis = array_filter(array_map('trim', explode("\n", $row['imeis'])));
                     $imeis = array_values(array_unique($imeis));
                 }
 
-                // For IMEI items, scan count MUST match qty (strict — partial not allowed)
                 if ($itemInfo['has_imei'] && empty($itemInfo['imei_optional'])) {
                     if (count($imeis) !== $qty) {
                         throw new Exception("Item \"{$itemInfo['name']}\": scanned {$qty} IMEIs required, got " . count($imeis) . ".");
@@ -98,7 +95,6 @@ class StockTransferController extends BaseController {
                     [$transferId, $itemId, $qty]
                 );
 
-                // Deduct from source (atomic check prevents negative stock)
                 $affected = $db->execute(
                     "UPDATE stock SET quantity = quantity - ? WHERE item_id = ? AND warehouse_id = ? AND quantity >= ?",
                     [$qty, $itemId, $fromWh, $qty]
@@ -108,7 +104,6 @@ class StockTransferController extends BaseController {
                     throw new Exception("Insufficient stock for \"{$itemInfo['name']}\". Available: " . ($stock['quantity'] ?? 0) . ", Requested: {$qty}.");
                 }
 
-                // Add to destination (create row if not exists)
                 $exists = $db->fetchOne("SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ?", [$itemId, $toWh]);
                 if ($exists) {
                     $db->execute("UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?", [$qty, $itemId, $toWh]);
@@ -116,24 +111,15 @@ class StockTransferController extends BaseController {
                     $db->insert("INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?,?,?)", [$itemId, $toWh, $qty]);
                 }
 
-                // Move IMEIs: validate each, update warehouse_id, link to transfer
                 foreach ($imeis as $imei) {
                     $rec = $db->fetchOne(
                         "SELECT id, status, warehouse_id, item_id FROM imei_records WHERE imei = ?",
                         [$imei]
                     );
-                    if (!$rec) {
-                        throw new Exception("IMEI {$imei} not registered in system.");
-                    }
-                    if ((int)$rec['item_id'] !== $itemId) {
-                        throw new Exception("IMEI {$imei} belongs to a different item.");
-                    }
-                    if ($rec['status'] !== 'in_stock') {
-                        throw new Exception("IMEI {$imei} not in stock (status: {$rec['status']}).");
-                    }
-                    if ((int)$rec['warehouse_id'] !== $fromWh) {
-                        throw new Exception("IMEI {$imei} is not in the source warehouse.");
-                    }
+                    if (!$rec) throw new Exception("IMEI {$imei} not registered in system.");
+                    if ((int)$rec['item_id'] !== $itemId) throw new Exception("IMEI {$imei} belongs to a different item.");
+                    if ($rec['status'] !== 'in_stock') throw new Exception("IMEI {$imei} not in stock (status: {$rec['status']}).");
+                    if ((int)$rec['warehouse_id'] !== $fromWh) throw new Exception("IMEI {$imei} is not in the source warehouse.");
 
                     $db->execute(
                         "UPDATE imei_records SET warehouse_id = ?, notes = CONCAT_WS(' | ', notes, ?) WHERE id = ?",
@@ -157,7 +143,6 @@ class StockTransferController extends BaseController {
         $this->redirect('?page=transfers');
     }
 
-    // AJAX: validate IMEI for transfer (must be in_stock + at source warehouse + matching item)
     public function validateImei(): void {
         Auth::authorize('inventory', 'add');
         header('Content-Type: application/json');

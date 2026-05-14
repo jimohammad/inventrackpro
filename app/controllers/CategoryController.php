@@ -1,17 +1,8 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
-require_once __DIR__ . '/../models/Item.php';
 
 class CategoryController extends BaseController {
-    private Item $itemModel;
-    private \PDO $db;
-
-    public function __construct() {
-        parent::__construct();
-        $this->itemModel = new Item();
-        $this->db = Database::getInstance()->getConnection();
-    }
 
     public function index(): void {
         Auth::authorize('inventory', 'view');

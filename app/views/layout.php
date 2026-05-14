@@ -174,6 +174,11 @@
     <a href="?page=openingstock" class="sidebar-link <?= ($page ?? '') === 'openingstock' ? 'active' : '' ?>">
         <i class="bi bi-box-arrow-in-down"></i> Opening Stock
     </a>
+    <?php if (Auth::can('mandoob_inventory', 'view')): ?>
+    <a href="?page=mandoob_inventory" class="sidebar-link <?= ($page ?? '') === 'mandoob_inventory' ? 'active' : '' ?>">
+        <i class="bi bi-truck-front"></i> Mandoob Inventory
+    </a>
+    <?php endif; ?>
     <?php if (Auth::isAdmin() || Auth::can('imei', 'view')): ?>
     <a href="?page=imei&action=register" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'register' ? 'active' : '' ?>">
         <i class="bi bi-upc-scan"></i> IMEI Scanner
@@ -312,7 +317,7 @@
                     </span>
                 </li>
                 <li>
-                    <?php $curTpl = $_SESSION['print_template'] ?? 'a5'; ?>
+                    <?php $curTpl = Auth::printTemplate(); ?>
                     <div class="dropdown-item-text" style="padding:8px 16px;">
                         <div style="font-size:0.72rem;color:var(--text-muted);font-weight:700;letter-spacing:.3px;text-transform:uppercase;margin-bottom:6px;">
                             Default Print

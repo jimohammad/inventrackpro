@@ -50,7 +50,7 @@ class SupplierContactController extends BaseController {
                 $this->input('wechat_2') ?: null,
                 $this->input('country') ?: 'Dubai',
                 $this->input('product_type') ?: 'Mobile Phones',
-                $this->input('notes') ?: null,
+                null,
                 Auth::id(),
             ]
         );

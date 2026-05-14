@@ -67,6 +67,27 @@ abstract class BaseController {
         return self::$warehousesCache;
     }
 
+    /**
+     * Clear persisted dashboard stat cards after writes that affect sales, stock,
+     * receivables, payables, or recent activity.
+     */
+    protected static function clearDashboardCache(?int $warehouseId = null): void {
+        $cacheDir = dirname(__DIR__, 2) . '/backups/cache';
+        if (!is_dir($cacheDir)) {
+            return;
+        }
+
+        $pattern = $warehouseId && $warehouseId > 0
+            ? $cacheDir . DIRECTORY_SEPARATOR . 'dash_*_' . $warehouseId . '_*.cache'
+            : $cacheDir . DIRECTORY_SEPARATOR . 'dash_*.cache';
+
+        foreach (glob($pattern) ?: [] as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+    }
+
     public function __construct() {
         Auth::startSession();
         $page = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['page'] ?? 'dashboard'));

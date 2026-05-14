@@ -204,6 +204,7 @@ class SalesController extends BaseController {
         ]);
 
         if ($result['success']) {
+            self::clearDashboardCache($this->inputInt('warehouse_id'));
             $this->logActivity('create_sale', 'sales', $result['id'], "Invoice {$result['invoice_no']}");
             $this->flash('success', "Sale {$result['invoice_no']} saved successfully.");
 
@@ -229,7 +230,7 @@ class SalesController extends BaseController {
             ]);
             $printMode = $this->input('print_mode');
             if ($printMode === '1') {
-                $tpl = $_SESSION['print_template'] ?? 'a5';
+                $tpl = Auth::printTemplate();
                 if ($tpl === 'thermal') {
                     $this->redirect('?page=sales&action=thermalPrint&id=' . $result['id'] . '&thermal=1&autoprint=1');
                 }
@@ -328,6 +329,57 @@ class SalesController extends BaseController {
         include __DIR__ . '/../views/sales/print.php';
     }
 
+    /**
+     * A5 bulk invoice print/PDF for the current list filters (requires from_date + to_date).
+     * Same warehouse / void rules as the sales index; up to 200 invoices (chronological).
+     */
+    public function bulkPrint(): void {
+        Auth::authorize('sales', 'view');
+
+        $viewVoided    = Auth::isAdmin() && ($this->input('view', '', 'get') === 'voided');
+        $includeVoided = Auth::isAdmin() && ($this->input('include_voided', '', 'get') === '1');
+
+        $filters = [
+            'search'         => $this->inputSearch('search', '', 'get'),
+            'status'         => $this->input('status', '', 'get'),
+            'party_id'       => $this->inputInt('party_id', 0, 'get'),
+            'from_date'      => $this->input('from_date', '', 'get'),
+            'to_date'        => $this->input('to_date', '', 'get'),
+            'voided_only'    => $viewVoided,
+            'include_voided' => $includeVoided && !$viewVoided,
+        ];
+
+        $dateOk = (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['from_date'])
+            && (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['to_date']);
+        if (!$dateOk) {
+            $filters['from_date'] = '';
+            $filters['to_date']   = '';
+        }
+
+        $missingDates = !$dateOk;
+        $truncated    = false;
+        $bulkSales    = [];
+        $settings     = self::getSettings();
+
+        if (!$missingDates) {
+            $pack      = $this->saleModel->getIdsForBulkPrint($filters, 200);
+            $truncated = (bool) ($pack['truncated'] ?? false);
+            foreach ($pack['ids'] as $sid) {
+                $sale = $this->saleModel->findForPrint($sid);
+                if (!$sale) {
+                    continue;
+                }
+                $partyBalance = $this->partyModel->findWithBalance((int) $sale['party_id']);
+                $currentBalance = (float) ($partyBalance['net_balance'] ?? 0);
+                $sale['prev_balance']  = $currentBalance - (float) $sale['balance'];
+                $sale['total_balance'] = $currentBalance;
+                $bulkSales[] = $sale;
+            }
+        }
+
+        include __DIR__ . '/../views/sales/bulk_print.php';
+    }
+
     // Add payment to existing sale (AJAX)
     public function addPayment(): void {
         Auth::authorize('sales', 'edit');
@@ -354,6 +406,7 @@ class SalesController extends BaseController {
 
         $ok = $this->saleModel->addPayment($id, $amount, $accId, $method, $date, $notes);
         if ($ok === true) {
+            self::clearDashboardCache((int) ($sale['warehouse_id'] ?? 0));
             echo json_encode(['success' => true]);
             return;
         } else {
@@ -418,6 +471,12 @@ class SalesController extends BaseController {
 
         if (!$sale) {
             $this->flash('error', 'Sale not found.');
+            $this->redirect('?page=sales');
+            return;
+        }
+
+        if ((int)$sale['warehouse_id'] !== Auth::warehouseId()) {
+            $this->flash('error', 'This sale belongs to a different warehouse.');
             $this->redirect('?page=sales');
             return;
         }
@@ -576,6 +635,7 @@ class SalesController extends BaseController {
         }
 
         $this->logActivity('edit_sale', 'sales', $id, "Edited {$sale['invoice_no']}: items/prices updated");
+        self::clearDashboardCache((int) ($sale['warehouse_id'] ?? 0));
         $this->flash('success', "Invoice {$sale['invoice_no']} updated.");
 
         $printMode = $this->input('print_mode');
@@ -585,7 +645,7 @@ class SalesController extends BaseController {
         }
 
         if ($printMode === '1' || $this->input('print_after_save') === '1') {
-            $tpl = $_SESSION['print_template'] ?? 'a5';
+            $tpl = Auth::printTemplate();
             if ($tpl === 'thermal') {
                 $this->redirect("?page=sales&action=thermalPrint&id={$id}&thermal=1");
                 return;
@@ -924,6 +984,7 @@ class SalesController extends BaseController {
 
             $db->commit();
             $this->logActivity('add_items_to_sale', 'sales', $id, "Added " . count($items) . " item(s) to {$sale['invoice_no']}");
+            self::clearDashboardCache($whId);
             $this->flash('success', "Added " . count($items) . " item(s) to {$sale['invoice_no']}.");
             $this->redirect("?page=sales&action=detail&id={$id}");
         } catch (Exception $e) {
@@ -954,6 +1015,7 @@ class SalesController extends BaseController {
             return;
         }
         if ($this->saleModel->cancel($id)) {
+            self::clearDashboardCache((int) ($sale['warehouse_id'] ?? 0));
             $this->logActivity('cancel_sale', 'sales', $id);
             $this->flash('success', 'Sale cancelled successfully.');
         } else {
@@ -986,9 +1048,11 @@ class SalesController extends BaseController {
             return;
         }
 
+        $sale = $this->saleModel->find($id);
         $result = $this->saleModel->reopenCancelled($id);
 
         if (!empty($result['success'])) {
+            self::clearDashboardCache((int) ($sale['warehouse_id'] ?? 0));
             $this->logActivity('reopen_sale', 'sales', $id, 'Reinstated voided invoice (stock/IMEI); payments must be re-entered if applicable');
             $this->flash('success', 'Invoice reinstated: stock deducted and serials marked sold again. Payment rows were not restored — record receipts in Payments if the customer paid.');
             $this->redirect('?page=sales&action=detail&id=' . $id);

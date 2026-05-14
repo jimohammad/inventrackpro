@@ -51,10 +51,11 @@ class Auth {
         session_regenerate_id(true);
 
         // Set session data
-        $_SESSION['user_id']   = $user['id'];
-        $_SESSION['user_name'] = $user['name'];
-        $_SESSION['user_role'] = $user['role'];
-        $_SESSION['logged_in'] = true;
+        $_SESSION['user_id']    = $user['id'];
+        $_SESSION['user_email'] = (string) ($user['email'] ?? '');
+        $_SESSION['user_name']  = $user['name'];
+        $_SESSION['user_role']  = $user['role'];
+        $_SESSION['logged_in']  = true;
 
         // Load permissions into session (select only required columns)
         $perms = $db->fetchAll(
@@ -119,6 +120,38 @@ class Auth {
     // Get currently logged in user name
     public static function name(): string {
         return $_SESSION['user_name'] ?? 'Unknown';
+    }
+
+    /** Login email (session); backfills from DB once if missing on legacy sessions. */
+    public static function email(): string {
+        if (!empty($_SESSION['user_email'])) {
+            return (string) $_SESSION['user_email'];
+        }
+        $id = self::id();
+        if ($id === null) {
+            return '';
+        }
+        $row = Database::getInstance()->fetchOne('SELECT email FROM users WHERE id = ?', [$id]);
+        $em  = (string) ($row['email'] ?? '');
+        if ($em !== '') {
+            $_SESSION['user_email'] = $em;
+        }
+        return $em;
+    }
+
+    /**
+     * Default print layout for receipts/invoices (session override).
+     * Values: a5 | thermal. jimohammad@gmail.com defaults to thermal when not explicitly set.
+     */
+    public static function printTemplate(): string {
+        if (isset($_SESSION['print_template'])) {
+            $tpl = (string) $_SESSION['print_template'];
+            return in_array($tpl, ['a5', 'thermal'], true) ? $tpl : 'a5';
+        }
+        if (strcasecmp(self::email(), 'jimohammad@gmail.com') === 0) {
+            return 'thermal';
+        }
+        return 'a5';
     }
 
     // Get user role

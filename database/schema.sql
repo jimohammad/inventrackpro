@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS parties (
     statement_token VARCHAR(64),
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    INDEX idx_parties_active_type_name (is_active, type, name)
 );
 
 -- ============================================================
@@ -243,7 +244,11 @@ CREATE TABLE IF NOT EXISTS purchases (
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_purchases_wh_created (warehouse_id, created_at),
+    INDEX idx_purchases_party_wh (party_id, warehouse_id),
+    INDEX idx_purchases_party_status_date (party_id, status, date),
+    INDEX idx_purchases_date_status (date, status)
 );
 
 CREATE TABLE IF NOT EXISTS purchase_items (
@@ -335,7 +340,11 @@ CREATE TABLE IF NOT EXISTS sales (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_sales_wh_created (warehouse_id, created_at),
+    INDEX idx_sales_party_wh (party_id, warehouse_id),
+    INDEX idx_sales_party_status_date (party_id, status, date),
+    INDEX idx_sales_date_status (date, status)
 );
 
 CREATE TABLE IF NOT EXISTS sale_items (
@@ -382,7 +391,11 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (account_id) REFERENCES accounts(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_payments_party_date (party_id, date),
+    INDEX idx_payments_party_reftype (party_id, ref_type),
+    INDEX idx_payments_party_wh (party_id, warehouse_id),
+    INDEX idx_payments_ref (ref_type, ref_id)
 );
 
 -- ============================================================
@@ -406,7 +419,10 @@ CREATE TABLE IF NOT EXISTS returns (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_returns_party_status_date (party_id, status, date),
+    INDEX idx_returns_party_wh (party_id, warehouse_id),
+    INDEX idx_returns_ref_type_status (ref_id, type, status)
 );
 
 CREATE TABLE IF NOT EXISTS return_items (
@@ -486,7 +502,8 @@ CREATE TABLE IF NOT EXISTS expenses (
     FOREIGN KEY (account_id) REFERENCES accounts(id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
     FOREIGN KEY (party_id) REFERENCES parties(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_expenses_party_date (party_id, date)
 );
 
 -- ============================================================
@@ -663,6 +680,32 @@ CREATE TABLE IF NOT EXISTS activity_log (
     ip_address  VARCHAR(45),
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- ============================================================
+-- MANDOOB INVENTORY (van physical stock count schedule)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mandoob_inventory_schedules (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    warehouse_id     INT NOT NULL,
+    party_id         INT DEFAULT NULL,
+    name             VARCHAR(255) NOT NULL,
+    phone            VARCHAR(40) DEFAULT NULL,
+    interval_months  TINYINT UNSIGNED NOT NULL DEFAULT 3,
+    last_count_date  DATE DEFAULT NULL,
+    next_due_date    DATE DEFAULT NULL,
+    notes            TEXT,
+    is_active        TINYINT(1) NOT NULL DEFAULT 1,
+    created_by       INT DEFAULT NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
+    FOREIGN KEY (party_id) REFERENCES parties(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE KEY uniq_mandoob_wh_party (warehouse_id, party_id),
+    INDEX idx_mandoob_wh_due (warehouse_id, next_due_date),
+    INDEX idx_mandoob_wh_active (warehouse_id, is_active)
 );
 
 -- ============================================================

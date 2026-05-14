@@ -171,7 +171,7 @@
                                 <a href="?page=discounts&action=edit&id=<?= $d['id'] ?>" class="btn disc-edit pin-protect" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
-                                <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" target="_blank" class="btn disc-print" title="Print">
+                                <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" target="_blank" rel="noopener noreferrer" class="btn disc-print" title="Print">
                                     <i class="bi bi-printer"></i>
                                 </a>
                                 <form method="POST" action="?page=discounts&action=delete" style="display:inline;" class="discount-delete-form" data-amount="<?= number_format($d['amount'], DECIMAL_PLACES) ?>">

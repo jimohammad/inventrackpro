@@ -6,6 +6,8 @@
  */
 
 require_once __DIR__ . '/config/app.php';
+require_once __DIR__ . '/app/helpers/WebExceptionHandler.php';
+WebExceptionHandler::register();
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/app/helpers/Auth.php';
 require_once __DIR__ . '/app/controllers/BaseController.php';
@@ -78,6 +80,7 @@ $routes = [
     'transfers'       => 'StockTransferController',
     'accounts'        => 'AccountController',
     'openingstock'    => 'OpeningStockController',
+    'mandoob_inventory' => 'MandoobInventoryController',
     'fieldstatement'  => 'FieldStatementController',
     'landedcost'      => 'LandedCostController',
     'discounts'       => 'DiscountController',

@@ -261,7 +261,9 @@
             <button type="submit" class="pf-btn print" onclick="document.getElementById('printMode').value='1'">
                 <i class="bi bi-printer"></i> Save &amp; Print
             </button>
-            <button type="submit" class="pf-btn print" style="background:linear-gradient(135deg,#059669,#047857);" onclick="document.getElementById('printMode').value='2'">
+            <button type="submit" class="pf-btn print" id="btnPayThermal" style="background:linear-gradient(135deg,#059669,#047857);"
+                title="<?= $isReceive ? 'Ctrl+S / Cmd+S or F12: save and open thermal receipt' : '' ?>"
+                onclick="document.getElementById('printMode').value='2'">
                 <i class="bi bi-receipt"></i> Save &amp; Thermal
             </button>
         </div>
@@ -359,6 +361,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.disabled = true;
             });
         });
+        <?php if ($isReceive): ?>
+        payForm.addEventListener('keydown', function(e) {
+            if (((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) || e.key === 'F12') {
+                e.preventDefault();
+                var pm = document.getElementById('printMode');
+                if (pm) pm.value = '2';
+                if (typeof payForm.requestSubmit === 'function') {
+                    payForm.requestSubmit();
+                } else {
+                    var tb = document.getElementById('btnPayThermal');
+                    if (tb) tb.click();
+                }
+            }
+        }, true);
+        <?php endif; ?>
     }
 
     // Page-entry reveal animation (staggered)
@@ -374,7 +391,18 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(checkReady);
             var $p = jQuery('#partySelect');
             $p.select2({ placeholder: 'Search party by name or phone...' });
-            $p.on('select2:select', function() { showPartyBalance(); });
+            $p.on('select2:select', function() {
+                showPartyBalance();
+                <?php if ($isReceive): ?>
+                var amtEl = document.getElementById('amt1');
+                if (amtEl) {
+                    setTimeout(function() {
+                        amtEl.focus();
+                        try { amtEl.select(); } catch (e) { /* some browsers */ }
+                    }, 50);
+                }
+                <?php endif; ?>
+            });
             $p.on('select2:clear',  function() { document.getElementById('partyBal').classList.remove('show'); });
             if ($p.val()) showPartyBalance();
             <?php if ($isReceive): ?>

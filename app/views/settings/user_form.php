@@ -25,8 +25,11 @@
     <h1 class="page-title mb-0"><?= isset($editUser) ? 'Edit User' : 'New User' ?></h1>
 </div>
 
-<form method="POST" action="?page=users&action=<?= isset($editUser) ? 'update&id='.$editUser['id'] : 'store' ?>">
+<form method="POST" action="?page=users&action=<?= isset($editUser) ? 'update&id='.(int)$editUser['id'] : 'store' ?>">
     <?= Auth::csrfField() ?>
+    <?php if (isset($editUser)): ?>
+    <input type="hidden" name="id" value="<?= (int) $editUser['id'] ?>">
+    <?php endif; ?>
 <div class="row g-3">
 
     <div class="col-md-4">
@@ -123,6 +126,7 @@
                         'service'   => ['Service Center',  'bi-tools'],
                         'warranty'  => ['Warranty Replace', 'bi-shield-check'],
                         'supplier_contacts' => ['Supplier Contacts', 'bi-building'],
+                        'mandoob_inventory' => ['Mandoob Inventory', 'bi-truck-front'],
                         'settings'  => ['Settings',   'bi-gear'],
                     ];
                     foreach ($modules as $mod => [$label, $icon]):
@@ -202,10 +206,10 @@
 
 <script>
 const presets = {
-    admin:   { dashboard:[1,1,1,1], sales:[1,1,1,1], purchases:[1,1,1,1], returns:[1,1,1,1], inventory:[1,1,1,1], stock:[1,1,1,1], payments:[1,1,1,1], expenses:[1,1,1,1], customers:[1,1,1,1], suppliers:[1,1,1,1], reports:[1,1,1,1], imei:[1,1,1,1], service:[1,1,1,1], warranty:[1,1,1,1], supplier_contacts:[1,1,1,1], settings:[1,1,1,1] },
-    manager: { dashboard:[1,0,0,0], sales:[1,1,1,0], purchases:[1,1,1,0], returns:[1,1,1,0], inventory:[1,1,1,0], stock:[1,0,0,0], payments:[1,1,0,0], expenses:[1,1,0,0], customers:[1,1,1,0], suppliers:[1,1,1,0], reports:[1,0,0,0], imei:[1,1,1,0], service:[1,1,1,0], warranty:[1,1,1,0], supplier_contacts:[1,1,1,0], settings:[0,0,0,0] },
-    cashier: { dashboard:[1,0,0,0], sales:[1,1,0,0], purchases:[0,0,0,0], returns:[1,1,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,1,0,0], expenses:[0,0,0,0], customers:[1,1,0,0], suppliers:[0,0,0,0], reports:[0,0,0,0], imei:[1,1,0,0], service:[1,1,1,0], warranty:[1,1,0,0], supplier_contacts:[0,0,0,0], settings:[0,0,0,0] },
-    viewer:  { dashboard:[1,0,0,0], sales:[1,0,0,0], purchases:[1,0,0,0], returns:[1,0,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,0,0,0], expenses:[1,0,0,0], customers:[1,0,0,0], suppliers:[1,0,0,0], reports:[1,0,0,0], imei:[1,0,0,0], service:[1,0,0,0], warranty:[1,0,0,0], supplier_contacts:[0,0,0,0], settings:[0,0,0,0] },
+    admin:   { dashboard:[1,1,1,1], sales:[1,1,1,1], purchases:[1,1,1,1], returns:[1,1,1,1], inventory:[1,1,1,1], stock:[1,1,1,1], payments:[1,1,1,1], expenses:[1,1,1,1], customers:[1,1,1,1], suppliers:[1,1,1,1], reports:[1,1,1,1], imei:[1,1,1,1], service:[1,1,1,1], warranty:[1,1,1,1], supplier_contacts:[1,1,1,1], mandoob_inventory:[1,1,1,1], settings:[1,1,1,1] },
+    manager: { dashboard:[1,0,0,0], sales:[1,1,1,0], purchases:[1,1,1,0], returns:[1,1,1,0], inventory:[1,1,1,0], stock:[1,0,0,0], payments:[1,1,0,0], expenses:[1,1,0,0], customers:[1,1,1,0], suppliers:[1,1,1,0], reports:[1,0,0,0], imei:[1,1,1,0], service:[1,1,1,0], warranty:[1,1,1,0], supplier_contacts:[1,1,1,0], mandoob_inventory:[1,1,1,0], settings:[0,0,0,0] },
+    cashier: { dashboard:[1,0,0,0], sales:[1,1,0,0], purchases:[0,0,0,0], returns:[1,1,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,1,0,0], expenses:[0,0,0,0], customers:[1,1,0,0], suppliers:[0,0,0,0], reports:[0,0,0,0], imei:[1,1,0,0], service:[1,1,1,0], warranty:[1,1,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[0,0,0,0], settings:[0,0,0,0] },
+    viewer:  { dashboard:[1,0,0,0], sales:[1,0,0,0], purchases:[1,0,0,0], returns:[1,0,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,0,0,0], expenses:[1,0,0,0], customers:[1,0,0,0], suppliers:[1,0,0,0], reports:[1,0,0,0], imei:[1,0,0,0], service:[1,0,0,0], warranty:[1,0,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[1,0,0,0], settings:[0,0,0,0] },
 };
 const rptPresets = {
     admin:   1,
@@ -237,7 +241,9 @@ function syncRowAll(mod) {
     if (allBox) allBox.checked = cbs.every(cb => cb.checked);
 }
 function checkAllModules(state) {
-    document.querySelectorAll('.perm-table .perm-check:not(.rpt-check)').forEach(cb => cb.checked = state);
+    document.querySelectorAll('.perm-table .perm-check:not(.row-all):not(.rpt-check)').forEach(function (cb) {
+        cb.checked = state;
+    });
 }
 function checkAllReports(state) {
     document.querySelectorAll('.rpt-check').forEach(cb => cb.checked = state);

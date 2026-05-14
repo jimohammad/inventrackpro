@@ -20,6 +20,53 @@ class ReturnController extends BaseController {
         $this->saleModel   = new Sale();
     }
 
+    /**
+     * Buffer the full HTML response for returns screens. On any Throwable, discard all
+     * nested buffers and emit a standalone returns error page (no half-rendered layout).
+     */
+    private function runReturnsHtml(callable $body): void {
+        $baseLevel = ob_get_level();
+        ob_start();
+        try {
+            $body();
+            $out = ob_get_clean();
+            if ($out !== false && $out !== '') {
+                echo $out;
+            }
+        } catch (\Throwable $e) {
+            while (ob_get_level() > $baseLevel) {
+                ob_end_clean();
+            }
+            error_log('[returns] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            if (!headers_sent()) {
+                http_response_code(500);
+                header('Content-Type: text/html; charset=UTF-8');
+            }
+            include __DIR__ . '/../views/returns/module_error.php';
+        }
+    }
+
+    /**
+     * AJAX JSON handlers: never leak HTML/PHP warnings into JSON consumers.
+     */
+    private function runReturnsJson(callable $body, string $failureJson): void {
+        $baseLevel = ob_get_level();
+        try {
+            $body();
+        } catch (\Throwable $e) {
+            while (ob_get_level() > $baseLevel) {
+                ob_end_clean();
+            }
+            error_log('[returns-json] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            if (!headers_sent()) {
+                http_response_code(500);
+                header('Content-Type: application/json; charset=UTF-8');
+            }
+            echo $failureJson;
+            exit;
+        }
+    }
+
     private function parsePostedImeis($rawImeis): array {
         if (!is_string($rawImeis) || $rawImeis === '') {
             return [];
@@ -39,294 +86,324 @@ class ReturnController extends BaseController {
     }
 
     public function index(): void {
-        Auth::authorize('returns', 'view');
-        $filters = [
-            'from_date' => $this->input('from_date', date('Y-m-01'), 'get'),
-            'to_date'   => $this->input('to_date', date('Y-m-d'), 'get'),
-            'status'    => $this->input('status', '', 'get'),
-        ];
-        $returns   = $this->returnModel->getAll($filters);
-        $pageTitle = 'Sale Returns';
-        $page      = 'returns';
+        $this->runReturnsHtml(function (): void {
+            Auth::authorize('returns', 'view');
+            $filters = [
+                'from_date' => $this->input('from_date', date('Y-m-01'), 'get'),
+                'to_date'   => $this->input('to_date', date('Y-m-d'), 'get'),
+                'status'    => $this->input('status', '', 'get'),
+            ];
+            $returns   = $this->returnModel->getAll($filters);
+            $pageTitle = 'Sale Returns';
+            $page      = 'returns';
 
-        ob_start();
-        include __DIR__ . '/../views/returns/index.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+            ob_start();
+            include __DIR__ . '/../views/returns/index.php';
+            $content = ob_get_clean();
+            include __DIR__ . '/../views/layout.php';
+        });
     }
 
     public function create(): void {
-        Auth::authorize('returns', 'add');
-        $parties    = []; // Loaded via AJAX search
-        $warehouses = self::getWarehouses();
-        $pageTitle  = 'New Return';
-        $page       = 'returns';
+        $this->runReturnsHtml(function (): void {
+            Auth::authorize('returns', 'add');
+            $parties    = []; // Loaded via AJAX search
+            $warehouses = self::getWarehouses();
+            $pageTitle  = 'New Return';
+            $page       = 'returns';
 
-        // One-time token to prevent double-submit duplicate returns
-        $_SESSION['return_form_nonce'] = bin2hex(random_bytes(16));
-        $returnFormNonce               = $_SESSION['return_form_nonce'];
+            // One-time token to prevent double-submit duplicate returns
+            $_SESSION['return_form_nonce'] = bin2hex(random_bytes(16));
+            $returnFormNonce               = $_SESSION['return_form_nonce'];
 
-        ob_start();
-        include __DIR__ . '/../views/returns/create.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+            ob_start();
+            include __DIR__ . '/../views/returns/create.php';
+            $content = ob_get_clean();
+            include __DIR__ . '/../views/layout.php';
+        });
     }
 
     public function store(): void {
-        Auth::authorize('returns', 'add');
+        try {
+            Auth::authorize('returns', 'add');
 
-        if (!$this->isPost()) {
-            $this->redirect('?page=returns&action=create');
-            return;
-        }
-
-        $postedNonce = isset($_POST['return_form_nonce']) ? trim((string)$_POST['return_form_nonce']) : '';
-        $sessNonce   = $_SESSION['return_form_nonce'] ?? '';
-        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
-            $this->flash('warning', 'This return form was already submitted or expired. Please check Returns list before trying again.');
-            $this->redirect('?page=returns');
-            return;
-        }
-        unset($_SESSION['return_form_nonce']);
-
-        $rawItems = $_POST['items'] ?? [];
-        $items    = [];
-
-        foreach ($rawItems as $row) {
-            if (empty($row['item_id']) || empty($row['quantity'])) continue;
-            $imeis = [];
-            if (!empty($row['imeis'])) {
-                $imeis = array_filter(array_map('trim', explode("\n", $row['imeis'])));
-            }
-            $items[] = [
-                'item_id'    => (int)   $row['item_id'],
-                'quantity'   => (int)   $row['quantity'],
-                'unit_price' => (float) $row['unit_price'],
-                'imeis'      => $imeis,
-            ];
-        }
-
-        if (empty($items)) {
-            $this->flash('error', 'Add at least one item.');
-            $this->redirect('?page=returns&action=create');
-            return;
-        }
-
-        $refId   = $this->inputInt('ref_id') ?: null;
-        $partyId = $this->inputInt('party_id');
-        $db      = Database::getInstance();
-
-        // Sale return must use the invoice's party_id. Otherwise a duplicate customer
-        // name can be selected and the return posts to the wrong ledger while sales
-        // stay on the original account (shows 0 invoices + orphan return).
-        if ($refId) {
-            $sale = $db->fetchOne(
-                "SELECT id, party_id, status, warehouse_id FROM sales WHERE id = ? AND warehouse_id = ?",
-                [$refId, Auth::warehouseId()]
-            );
-            if (!$sale) {
-                $this->flash('error', 'Selected invoice was not found.');
+            if (!$this->isPost()) {
                 $this->redirect('?page=returns&action=create');
                 return;
             }
-            if ($sale['status'] === 'cancelled') {
-                $this->flash('error', 'Cannot post a return against a cancelled invoice.');
+
+            $postedNonce = isset($_POST['return_form_nonce']) ? trim((string)$_POST['return_form_nonce']) : '';
+            $sessNonce   = $_SESSION['return_form_nonce'] ?? '';
+            if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+                $this->flash('warning', 'This return form was already submitted or expired. Please check Returns list before trying again.');
+                $this->redirect('?page=returns');
+                return;
+            }
+            unset($_SESSION['return_form_nonce']);
+
+            $rawItems = $_POST['items'] ?? [];
+            $items    = [];
+
+            foreach ($rawItems as $row) {
+                if (empty($row['item_id']) || empty($row['quantity'])) continue;
+                $imeis = [];
+                if (!empty($row['imeis'])) {
+                    $imeis = array_filter(array_map('trim', explode("\n", $row['imeis'])));
+                }
+                $items[] = [
+                    'item_id'    => (int)   $row['item_id'],
+                    'quantity'   => (int)   $row['quantity'],
+                    'unit_price' => (float) $row['unit_price'],
+                    'imeis'      => $imeis,
+                ];
+            }
+
+            if (empty($items)) {
+                $this->flash('error', 'Add at least one item.');
                 $this->redirect('?page=returns&action=create');
                 return;
             }
-            $partyId = (int) $sale['party_id'];
-        } elseif ($partyId <= 0) {
-            $this->flash('error', 'Please select a customer.');
-            $this->redirect('?page=returns&action=create');
-            return;
-        }
 
-        $result = $this->returnModel->create([
-            'ref_id'       => $refId,
-            'party_id'     => $partyId,
-            'warehouse_id' => Auth::warehouseId(),
-            'date'         => $this->input('date'),
-            'reason'       => $this->input('reason'),
-            'items'        => $items,
-        ]);
+            $refId   = $this->inputInt('ref_id') ?: null;
+            $partyId = $this->inputInt('party_id');
+            $db      = Database::getInstance();
 
-        if ($result['success']) {
-            $this->logActivity('create_return', 'returns', $result['id'], $result['return_no']);
-            $this->flash('success', "Return {$result['return_no']} saved.");
-            if ($this->input('print_mode') === '1') {
-                $tpl = $_SESSION['print_template'] ?? 'a5';
-                if ($tpl === 'thermal') {
+            // Sale return must use the invoice's party_id. Otherwise a duplicate customer
+            // name can be selected and the return posts to the wrong ledger while sales
+            // stay on the original account (shows 0 invoices + orphan return).
+            if ($refId) {
+                $sale = $db->fetchOne(
+                    "SELECT id, party_id, status, warehouse_id FROM sales WHERE id = ? AND warehouse_id = ?",
+                    [$refId, Auth::warehouseId()]
+                );
+                if (!$sale) {
+                    $this->flash('error', 'Selected invoice was not found.');
+                    $this->redirect('?page=returns&action=create');
+                    return;
+                }
+                if ($sale['status'] === 'cancelled') {
+                    $this->flash('error', 'Cannot post a return against a cancelled invoice.');
+                    $this->redirect('?page=returns&action=create');
+                    return;
+                }
+                $partyId = (int) $sale['party_id'];
+            } elseif ($partyId <= 0) {
+                $this->flash('error', 'Please select a customer.');
+                $this->redirect('?page=returns&action=create');
+                return;
+            }
+
+            $result = $this->returnModel->create([
+                'ref_id'       => $refId,
+                'party_id'     => $partyId,
+                'warehouse_id' => Auth::warehouseId(),
+                'date'         => $this->input('date'),
+                'reason'       => $this->input('reason'),
+                'items'        => $items,
+            ]);
+
+            if ($result['success']) {
+                $this->logActivity('create_return', 'returns', $result['id'], $result['return_no']);
+                $this->flash('success', "Return {$result['return_no']} saved.");
+                if ($this->input('print_mode') === '1') {
+                    $tpl = Auth::printTemplate();
+                    if ($tpl === 'thermal') {
+                        $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
+                        return;
+                    }
+                    $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1');
+                    return;
+                }
+                if ($this->input('print_mode') === '2') {
                     $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
                     return;
                 }
-                $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1');
+                $this->redirect('?page=returns');
+                return;
+            } else {
+                $this->flash('error', $result['error']);
+                $this->redirect('?page=returns&action=create');
                 return;
             }
-            if ($this->input('print_mode') === '2') {
-                $this->redirect('?page=returns&action=print&id=' . $result['id'] . '&autoprint=1&thermal=1');
-                return;
-            }
-            $this->redirect('?page=returns');
-            return;
-        } else {
-            $this->flash('error', $result['error']);
+        } catch (\Throwable $e) {
+            error_log('[returns-store] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $this->flash('error', 'Could not save the return. Please try again.');
             $this->redirect('?page=returns&action=create');
-            return;
         }
     }
 
     // AJAX: search sale invoices for ref lookup
     public function searchSales(): void {
-        Auth::authorize('returns', 'add');
-        header('Content-Type: application/json');
-        $q = trim($_GET['q'] ?? '');
-        if (strlen($q) < 1) { echo json_encode([]); return; }
-        $db   = Database::getInstance();
-        $like = "%$q%";
-        $rows = $db->fetchAll(
-            "SELECT s.id, s.party_id, s.invoice_no, p.name as party_name, s.grand_total, s.date
-             FROM sales s
-             JOIN parties p ON p.id = s.party_id
-             WHERE s.status != 'cancelled'
-               AND s.warehouse_id = ?
-               AND (s.invoice_no LIKE ? OR p.name LIKE ?)
-             ORDER BY s.date DESC LIMIT 15",
-            [Auth::warehouseId(), $like, $like]
-        );
-        echo json_encode($rows);
+        $this->runReturnsJson(function (): void {
+            Auth::authorize('returns', 'add');
+            header('Content-Type: application/json');
+            $q = trim($_GET['q'] ?? '');
+            if (strlen($q) < 1) { echo json_encode([]); return; }
+            $db   = Database::getInstance();
+            $like = "%$q%";
+            $rows = $db->fetchAll(
+                "SELECT s.id, s.party_id, s.invoice_no, p.name as party_name, s.grand_total, s.date
+                 FROM sales s
+                 JOIN parties p ON p.id = s.party_id
+                 WHERE s.status != 'cancelled'
+                   AND s.warehouse_id = ?
+                   AND (s.invoice_no LIKE ? OR p.name LIKE ?)
+                 ORDER BY s.date DESC LIMIT 15",
+                [Auth::warehouseId(), $like, $like]
+            );
+            echo json_encode($rows);
+        }, '[]');
     }
 
     // AJAX: Lookup IMEI — returns item info with CURRENT sale price
     public function lookupImei(): void {
-        Auth::authorize('returns', 'add');
-        header('Content-Type: application/json');
-        $imei = trim($_GET['imei'] ?? '');
+        $failJson = '{"found":false,"accepted":false,"message":"Something went wrong. Please try again."}';
+        $this->runReturnsJson(function (): void {
+            Auth::authorize('returns', 'add');
+            header('Content-Type: application/json');
+            $imei = trim($_GET['imei'] ?? '');
 
-        if (!$imei || !ctype_digit($imei) || strlen($imei) < 14 || strlen($imei) > 15) {
-            echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Invalid IMEI (must be 14-15 digits).']);
-            return;
-        }
+            if (!$imei || !ctype_digit($imei) || strlen($imei) < 14 || strlen($imei) > 15) {
+                echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Invalid IMEI (must be 14-15 digits).']);
+                return;
+            }
 
-        $db = Database::getInstance();
+            $db = Database::getInstance();
 
-        // Find IMEI record + item with historical sale_price if sold, fallback to current sale_price
-        $row = $db->fetchOne(
-            "SELECT ir.id as imei_id, ir.imei, ir.status, ir.item_id, ir.sale_id, ir.warehouse_id as imei_warehouse_id,
-                    i.name as item_name, i.sku, i.sale_price, i.has_imei,
-                    s.invoice_no as sold_invoice, s.party_id as sale_party_id, p.name as party_name,
-                    si.unit_price as historical_price
-             FROM imei_records ir
-             JOIN items i ON i.id = ir.item_id
-             LEFT JOIN sales s ON s.id = ir.sale_id
-             LEFT JOIN parties p ON p.id = s.party_id
-             LEFT JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
-             WHERE ir.imei = ?
-               AND ir.warehouse_id = ?",
-            [$imei, Auth::warehouseId()]
-        );
+            // Find IMEI record + item with historical sale_price if sold, fallback to current sale_price
+            $row = $db->fetchOne(
+                "SELECT ir.id as imei_id, ir.imei, ir.status, ir.item_id, ir.sale_id, ir.warehouse_id as imei_warehouse_id,
+                        i.name as item_name, i.sku, i.sale_price, i.has_imei,
+                        s.invoice_no as sold_invoice, s.party_id as sale_party_id, p.name as party_name,
+                        si.unit_price as historical_price
+                 FROM imei_records ir
+                 JOIN items i ON i.id = ir.item_id
+                 LEFT JOIN sales s ON s.id = ir.sale_id
+                 LEFT JOIN parties p ON p.id = s.party_id
+                 LEFT JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
+                 WHERE ir.imei = ?
+                   AND ir.warehouse_id = ?",
+                [$imei, Auth::warehouseId()]
+            );
 
-        // IMEI NOT in system — still accept it, cashier picks item manually
-        if (!$row) {
+            // IMEI NOT in system — still accept it, cashier picks item manually
+            if (!$row) {
+                echo json_encode([
+                    'found'    => false,
+                    'accepted' => true,
+                    'imei'     => $imei,
+                    'message'  => 'IMEI not in system — select item model manually.',
+                ]);
+                return;
+            }
+
+            if ($row['status'] !== 'sold') {
+                echo json_encode(['found' => false, 'accepted' => false, 'message' => "IMEI is not currently sold and cannot be returned."]);
+                return;
+            }
+
+            // Return item data with historical price + link to originating sale/customer for correct ledger/ref_id
+            $saleId  = !empty($row['sale_id']) ? (int)$row['sale_id'] : null;
+            $partyId = !empty($row['sale_party_id']) ? (int)$row['sale_party_id'] : null;
+            $unitPrice = isset($row['historical_price']) ? $row['historical_price'] : $row['sale_price'];
             echo json_encode([
-                'found'    => false,
-                'accepted' => true,
-                'imei'     => $imei,
-                'message'  => 'IMEI not in system — select item model manually.',
+                'found'      => true,
+                'accepted'   => true,
+                'item_id'    => (int)$row['item_id'],
+                'item_name'  => $row['item_name'],
+                'sku'        => $row['sku'] ?? '',
+                'sale_price' => number_format((float)$unitPrice, 3, '.', ''),
+                'has_imei'   => (bool)$row['has_imei'],
+                'imei'       => $row['imei'],
+                'status'     => $row['status'],
+                'sold_invoice' => $row['sold_invoice'] ?? '',
+                'sale_id'    => $saleId,
+                'party_id'   => $partyId,
+                'party_name' => $row['party_name'] ?? '',
+                'message'    => "Found: {$row['item_name']}" . ($row['sold_invoice'] ? " (from {$row['sold_invoice']})" : ''),
             ]);
-            return;
-        }
-
-        if ($row['status'] !== 'sold') {
-            echo json_encode(['found' => false, 'accepted' => false, 'message' => "IMEI is not currently sold and cannot be returned."]);
-            return;
-        }
-
-        // Return item data with historical price + link to originating sale/customer for correct ledger/ref_id
-        $saleId  = !empty($row['sale_id']) ? (int)$row['sale_id'] : null;
-        $partyId = !empty($row['sale_party_id']) ? (int)$row['sale_party_id'] : null;
-        $unitPrice = isset($row['historical_price']) ? $row['historical_price'] : $row['sale_price'];
-        echo json_encode([
-            'found'      => true,
-            'accepted'   => true,
-            'item_id'    => (int)$row['item_id'],
-            'item_name'  => $row['item_name'],
-            'sku'        => $row['sku'] ?? '',
-            'sale_price' => number_format((float)$unitPrice, 3, '.', ''),
-            'has_imei'   => (bool)$row['has_imei'],
-            'imei'       => $row['imei'],
-            'status'     => $row['status'],
-            'sold_invoice' => $row['sold_invoice'] ?? '',
-            'sale_id'    => $saleId,
-            'party_id'   => $partyId,
-            'party_name' => $row['party_name'] ?? '',
-            'message'    => "Found: {$row['item_name']}" . ($row['sold_invoice'] ? " (from {$row['sold_invoice']})" : ''),
-        ]);
+        }, $failJson);
     }
 
     public function print(): void {
-        Auth::authorize('returns', 'view');
-        $id     = $this->inputInt('id', 0, 'get');
-        $return = $this->returnModel->findFull($id);
-        if (!$return) die('Return not found.');
+        $this->runReturnsHtml(function (): void {
+            Auth::authorize('returns', 'view');
+            $id     = $this->inputInt('id', 0, 'get');
+            $return = $this->returnModel->findFull($id);
+            if (!$return) {
+                if (!headers_sent()) {
+                    http_response_code(404);
+                }
+                $returnsErrorTitle = 'Return not found';
+                $returnsErrorMsg   = 'This return does not exist or you do not have access.';
+                include __DIR__ . '/../views/returns/module_error.php';
+                return;
+            }
 
-        $db       = Database::getInstance();
-        $settings = self::getSettings();
+            $db       = Database::getInstance();
+            $settings = self::getSettings();
 
-        // Party balance for print
-        $partyBalance = $this->partyModel->findWithBalance($return['party_id']);
-        $currentBalance  = (float)($partyBalance['net_balance'] ?? 0);
-        $previousBalance = $currentBalance + (float)$return['grand_total']; // before this return
+            // Party balance for print
+            $partyBalance = $this->partyModel->findWithBalance($return['party_id']);
+            $currentBalance  = (float)($partyBalance['net_balance'] ?? 0);
+            $previousBalance = $currentBalance + (float)$return['grand_total']; // before this return
 
-        // A5 vs thermal: explicit query wins; otherwise use session default from layout "Default Print".
-        $tplParam = strtolower(trim((string)($_GET['template'] ?? '')));
-        if ($tplParam === 'a5') {
-            $returnPrintThermal = false;
-        } elseif (isset($_GET['thermal'])) {
-            $returnPrintThermal = true;
-        } else {
-            $returnPrintThermal = (($_SESSION['print_template'] ?? 'a5') === 'thermal');
-        }
+            // A5 vs thermal: explicit query wins; otherwise use session default from layout "Default Print".
+            $tplParam = strtolower(trim((string)($_GET['template'] ?? '')));
+            if ($tplParam === 'a5') {
+                $returnPrintThermal = false;
+            } elseif (isset($_GET['thermal'])) {
+                $returnPrintThermal = true;
+            } else {
+                $returnPrintThermal = (Auth::printTemplate() === 'thermal');
+            }
 
-        include __DIR__ . '/../views/returns/print.php';
+            include __DIR__ . '/../views/returns/print.php';
+        });
     }
 
     public function detail(): void {
-        Auth::authorize('returns', 'view');
-        $id     = $this->inputInt('id', 0, 'get');
-        $return = $this->returnModel->findFull($id);
-        if (!$return) { $this->flash('error', 'Return not found.'); $this->redirect('?page=returns'); }
+        $this->runReturnsHtml(function (): void {
+            Auth::authorize('returns', 'view');
+            $id     = $this->inputInt('id', 0, 'get');
+            $return = $this->returnModel->findFull($id);
+            if (!$return) { $this->flash('error', 'Return not found.'); $this->redirect('?page=returns'); }
 
-        $pageTitle = 'Return: ' . $return['return_no'];
-        $page      = 'returns';
+            $pageTitle = 'Return: ' . $return['return_no'];
+            $page      = 'returns';
 
-        ob_start();
-        include __DIR__ . '/../views/returns/view.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+            ob_start();
+            include __DIR__ . '/../views/returns/view.php';
+            $content = ob_get_clean();
+            include __DIR__ . '/../views/layout.php';
+        });
     }
 
     public function edit(): void {
-        if (!Auth::isAdmin()) { $this->flash('error', 'Admin only.'); $this->redirect('?page=returns'); return; }
+        $this->runReturnsHtml(function (): void {
+            if (!Auth::isAdmin()) { $this->flash('error', 'Admin only.'); $this->redirect('?page=returns'); return; }
 
-        $id = $this->inputInt('id', 0, 'get');
-        $editReturn = $this->returnModel->findFull($id);
-        if (!$editReturn) { $this->flash('error', 'Return not found.'); $this->redirect('?page=returns'); }
-        if (!isset($_SESSION['return_edit_nonce']) || !is_array($_SESSION['return_edit_nonce'])) {
-            $_SESSION['return_edit_nonce'] = [];
-        }
-        $_SESSION['return_edit_nonce'][$id] = bin2hex(random_bytes(16));
-        $returnEditNonce = $_SESSION['return_edit_nonce'][$id];
+            $id = $this->inputInt('id', 0, 'get');
+            $editReturn = $this->returnModel->findFull($id);
+            if (!$editReturn) { $this->flash('error', 'Return not found.'); $this->redirect('?page=returns'); }
+            if (!isset($_SESSION['return_edit_nonce']) || !is_array($_SESSION['return_edit_nonce'])) {
+                $_SESSION['return_edit_nonce'] = [];
+            }
+            $_SESSION['return_edit_nonce'][$id] = bin2hex(random_bytes(16));
+            $returnEditNonce = $_SESSION['return_edit_nonce'][$id];
 
-        $pageTitle = 'Edit Return: ' . $editReturn['return_no'];
-        $page      = 'returns';
+            $pageTitle = 'Edit Return: ' . $editReturn['return_no'];
+            $page      = 'returns';
 
-        ob_start();
-        include __DIR__ . '/../views/returns/edit.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+            ob_start();
+            include __DIR__ . '/../views/returns/edit.php';
+            $content = ob_get_clean();
+            include __DIR__ . '/../views/layout.php';
+        });
     }
 
     public function update(): void {
+        try {
         if (!Auth::isAdmin()) { $this->flash('error', 'Admin only.'); $this->redirect('?page=returns'); return; }
         if (!$this->isPost()) { $this->redirect('?page=returns'); return; }
 
@@ -689,5 +766,15 @@ class ReturnController extends BaseController {
         }
 
         $this->redirect("?page=returns&action=detail&id={$id}");
+        } catch (\Throwable $e) {
+            try {
+                Database::getInstance()->rollback();
+            } catch (\Throwable $ignored) {
+            }
+            error_log('[returns-update] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $this->flash('error', 'Could not update the return. Please try again.');
+            $fallbackId = $this->inputInt('id');
+            $this->redirect($fallbackId > 0 ? "?page=returns&action=detail&id={$fallbackId}" : '?page=returns');
+        }
     }
 }

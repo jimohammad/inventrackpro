@@ -63,7 +63,7 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
         <h1><?= htmlspecialchars($record['service_no']) ?></h1>
         <span class="sd-badge" style="background:<?= ServiceController::statusColor($record['status']) ?>;"><?= $record['status'] ?></span>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" target="_blank" rel="noopener" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
+            <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" target="_blank" rel="noopener noreferrer" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
                 <i class="bi bi-receipt-cutoff"></i> Thermal receipt
             </a>
             <span style="font-size:.8rem;color:var(--text-muted);"><?= date('d M Y', strtotime($record['received_date'] ?: $record['created_at'])) ?></span>
@@ -74,7 +74,7 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
     <div class="sd-track">
         <i class="bi bi-link-45deg" style="color:#16a34a;"></i>
         <span>Customer tracking:</span>
-        <a href="<?= htmlspecialchars($trackUrl) ?>" target="_blank" id="trackUrl"><?= htmlspecialchars($trackUrl) ?></a>
+        <a href="<?= htmlspecialchars($trackUrl) ?>" target="_blank" rel="noopener noreferrer" id="trackUrl"><?= htmlspecialchars($trackUrl) ?></a>
         <button type="button" class="sd-copy" id="svcTrackCopyBtn">Copy</button>
     </div>
 

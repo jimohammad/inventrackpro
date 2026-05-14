@@ -139,15 +139,15 @@
                         <td><small class="text-muted"><?= htmlspecialchars($p['created_by_name'] ?? '—') ?></small></td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autoprint=1" target="_blank"
+                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:var(--success);border:none;" title="Print">
                                     <i class="bi bi-printer"></i>
                                 </a>
-                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autoprint=1&thermal=1" target="_blank"
+                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autoprint=1&thermal=1" target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(5,150,105,0.16);color:#047857;border:none;" title="Thermal Print">
                                     <i class="bi bi-receipt"></i>
                                 </a>
-                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autopdf=1" target="_blank"
+                                <a href="?page=payments&action=print&id=<?= $p['id'] ?>&autopdf=1" target="_blank" rel="noopener noreferrer"
                                    class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:none;" title="Download PDF">
                                     <i class="bi bi-file-earmark-pdf"></i>
                                 </a>

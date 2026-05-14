@@ -1,0 +1,754 @@
+view_escaping_scan_report (heuristic; same-line only; UTF-8)
+
+CRITICAL = template/script injection sinks
+
+HIGH = likely user/DB string field echoed without htmlspecialchars on same line
+
+REVIEW = other unwrapped <?= (may be numeric, enums, or safe)
+
+
+=== CRITICAL (5) ===
+
+app/views/layout.php:367
+  <?= $content ?? '' ?>
+
+app/views/layout.php:385
+  <script><?= $extraJs ?></script>
+
+app/views/payments/create.php:322
+  label.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i> <?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>';
+
+app/views/payments/create.php:326
+  label.innerHTML = '<i class="bi bi-info-circle-fill me-1"></i> <?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>';
+
+app/views/public/field_statement.php:127
+  <a href="javascript:void(0)" onclick="showInvoice('<?= $t['ref_no'] ?>')" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
+
+
+=== HIGH (111) ===
+
+app/views/dashboard/index.php:227
+  <span style="font-size:0.72rem;font-weight:600;color:#6366f1;"><?= $s['invoice_no'] ?></span>
+
+app/views/expenses/edit.php:4
+  <h1 class="page-title mb-0">Edit: <?= $expense['expense_no'] ?></h1>
+
+app/views/expenses/index.php:277
+  <td><span class="exp-no"><?= $e['expense_no'] ?></span></td>
+
+app/views/imei/index.php:19
+  <option value="in_stock"    <?= $filters['status']==='in_stock'?'selected':'' ?>>In Stock</option>
+
+app/views/imei/index.php:20
+  <option value="sold"        <?= $filters['status']==='sold'?'selected':'' ?>>Sold</option>
+
+app/views/imei/index.php:21
+  <option value="returned"    <?= $filters['status']==='returned'?'selected':'' ?>>Returned</option>
+
+app/views/imei/index.php:22
+  <option value="transferred" <?= $filters['status']==='transferred'?'selected':'' ?>>Transferred</option>
+
+app/views/imei/index.php:23
+  <option value="defective"   <?= $filters['status']==='defective'?'selected':'' ?>>Defective</option>
+
+app/views/imei/index.php:83
+  <span style="font-family:monospace;font-weight:600;color:var(--primary);"><?= $im['imei'] ?></span>
+
+app/views/imei/index.php:85
+  <br><small class="text-muted" style="font-family:monospace;"><?= $im['imei2'] ?></small>
+
+app/views/imei/index.php:97
+  <?= ucfirst(str_replace('_', ' ', $im['status'])) ?>
+
+app/views/imei/index.php:104
+  <?= $im['purchase_invoice'] ?>
+
+app/views/imei/index.php:114
+  <?= $im['sale_invoice'] ?>
+
+app/views/imei/lifecycle.php:137
+  <i class="bi <?= $event['icon'] ?>"></i> <?= $event['title'] ?>
+
+app/views/imei/lifecycle.php:141
+  <div class="lc-event-desc"><?= $event['desc'] ?></div>
+
+app/views/imei/lifecycle.php:143
+  <a href="<?= $event['link'] ?>" class="lc-event-link"><i class="bi bi-box-arrow-up-right"></i> View</a>
+
+app/views/imei/scan_purchase.php:136
+  onclick="openScanMode(<?= $it['item_id'] ?>, <?= $nameJs ?>, <?= $qty ?>, <?= $scanned ?>)">
+
+app/views/imei/scan_purchase.php:140
+  onclick="openPasteMode(<?= $it['item_id'] ?>, <?= $nameJs ?>, <?= $qty ?>)">
+
+app/views/inventory/transfers.php:21
+  <td class="fw-semibold" style="color:var(--primary);"><?= $t['transfer_no'] ?></td>
+
+app/views/inventory/transfers.php:25
+  <td><span class="badge badge-<?= $t['status']==='completed'?'paid':'pending' ?>" style="border-radius:5px;"><?= ucfirst($t['status']) ?></span></td>
+
+app/views/parties/agent_statement.php:16
+  <button type="button" onclick="copyStatementLink('<?= $party['statement_token'] ?>', this)"
+
+app/views/parties/agent_statement.php:111
+  <?= $inv['invoice_no'] ?>
+
+app/views/parties/agent_statement.php:122
+  <span class="badge badge-<?= $inv['status'] ?>" style="border-radius:5px;font-size:0.72rem;">
+
+app/views/parties/agent_statement.php:123
+  <?= ucfirst($inv['status']) ?>
+
+app/views/parties/agent_statement.php:171
+  <td class="px-3 py-2" style="color:var(--primary);font-weight:600;"><?= $pay['payment_no'] ?></td>
+
+app/views/parties/form.php:84
+  <option value="<?= $area ?>" <?= ($party['city'] ?? '') === $area ? 'selected' : '' ?>><?= $area ?></option>
+
+app/views/parties/index.php:111
+  <button type="button" onclick="copyStatementLink('<?= $p['statement_token'] ?>', this)"
+
+app/views/parties/view.php:160
+  <td style="font-weight:600;color:var(--primary);"><?= $l['ref_no'] ?></td>
+
+app/views/parties/view.php:170
+  <td><span class="badge badge-<?= $l['status'] ?>" style="border-radius:5px;"><?= ucfirst($l['status']) ?></span></td>
+
+app/views/payments/edit.php:4
+  <h1 class="page-title mb-0">Edit Payment: <?= $editPayment['payment_no'] ?></h1>
+
+app/views/payments/edit.php:20
+  <span style="font-weight:700;color:var(--primary);"><?= $editPayment['payment_no'] ?></span>
+
+app/views/payments/index.php:111
+  <?= $p['payment_no'] ?>
+
+app/views/payments/print.php:5
+  <title>Receipt <?= $payment['payment_no'] ?></title>
+
+app/views/payments/print.php:180
+  filename: '<?= $payment['payment_no'] ?>.pdf',
+
+app/views/payments/view.php:5
+  <h1 class="page-title mb-0"><?= $payment['payment_no'] ?></h1>
+
+app/views/payments/view.php:57
+  <span style="font-weight:700;font-size:0.88rem;color:var(--primary);"><?= $payment['payment_no'] ?></span>
+
+app/views/public/field_statement.php:128
+  <?= $t['ref_no'] ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i>
+
+app/views/public/field_statement.php:131
+  <?= $t['ref_no'] ?>
+
+app/views/public/service_track.php:112
+  <div class="pt-status" style="background:<?= ServiceController::statusColor($record['status']) ?>15;color:<?= ServiceController::statusColor($record['status']) ?>;">
+
+app/views/public/service_track.php:114
+  Status: <strong><?= $record['status'] ?></strong>
+
+app/views/purchase_orders/edit.php:63
+  <i class="bi bi-pencil-square"></i> Edit Purchase Order: <?= $po['po_no'] ?>
+
+app/views/purchase_orders/edit.php:93
+  <input type="text" value="<?= $po['po_no'] ?>" readonly
+
+app/views/purchase_orders/edit.php:432
+  tr.querySelector('.item-search').value = '<?= addslashes($item['item_name']) ?>';
+
+app/views/purchase_orders/show.php:20
+  <h1 class="page-title" style="font-family:'JetBrains Mono',monospace;"><?= $po['po_no'] ?></h1>
+
+app/views/purchases/index.php:33
+  <option value="confirmed" <?= $filters['status']==='confirmed'?'selected':'' ?>>Confirmed</option>
+
+app/views/purchases/index.php:34
+  <option value="partial"   <?= $filters['status']==='partial'?'selected':'' ?>>Partial</option>
+
+app/views/purchases/index.php:35
+  <option value="paid"      <?= $filters['status']==='paid'?'selected':'' ?>>Paid</option>
+
+app/views/purchases/index.php:90
+  <td><a href="?page=purchases&action=detail&id=<?= $p['id'] ?>" style="color:var(--primary);font-weight:600;text-decoration:none;"><?= $p['invoice_no'] ?></a></td>
+
+app/views/purchases/index.php:97
+  <td><span class="badge badge-<?= $p['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($p['status']) ?></span></td>
+
+app/views/purchases/print.php:5
+  <title>Purchase <?= $purchase['invoice_no'] ?></title>
+
+app/views/purchases/print.php:90
+  <strong># <?= $purchase['invoice_no'] ?></strong><br>
+
+app/views/purchases/print.php:112
+  <span class="status-badge status-<?= $purchase['status'] ?>">
+
+app/views/purchases/print.php:113
+  <?= ucfirst($purchase['status']) ?>
+
+app/views/purchases/view.php:5
+  <span class="page-title"><?= $purchase['invoice_no'] ?></span>
+
+app/views/purchases/view.php:6
+  <span class="badge ms-2 badge-<?= $purchase['status'] ?> px-2" style="border-radius:6px;"><?= ucfirst($purchase['status']) ?></span>
+
+app/views/reports/daybook.php:131
+  <a href="<?= $url ?>" style="color:var(--primary);font-weight:600;text-decoration:none;">
+
+app/views/reports/daybook.php:132
+  <?= $t['ref_no'] ?>
+
+app/views/reports/index.php:200
+  <p class="rpt-tile-name"><?= $r['title'] ?></p>
+
+app/views/reports/index.php:201
+  <p class="rpt-tile-desc"><?= $r['desc'] ?></p>
+
+app/views/reports/item_sales.php:187
+  <?= $r['invoice_no'] ?>
+
+app/views/reports/party_statement.php:115
+  <a href="?page=sales&action=detail&id=<?= $t['id'] ?>" style="color:#6366f1;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
+
+app/views/reports/party_statement.php:117
+  <a href="?page=purchases&action=detail&id=<?= $t['id'] ?>" style="color:#f59e0b;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
+
+app/views/reports/party_statement.php:119
+  <span style="color:#dc2626;font-weight:600;"><?= $t['ref_no'] ?></span>
+
+app/views/reports/party_statement.php:121
+  <span style="color:#10b981;font-weight:600;"><?= $t['ref_no'] ?></span>
+
+app/views/reports/payments.php:51
+  <td class="fw-semibold"><?= $p['payment_no'] ?></td>
+
+app/views/reports/reconciliation.php:73
+  <tr style="<?= $r['status'] === 'mismatch' ? 'background:rgba(220,53,69,0.07);' : '' ?>">
+
+app/views/reports/reconciliation.php:89
+  <td class="px-3 py-2 text-end fw-600" style="color:<?= $r['status'] === 'mismatch' ? 'var(--danger)' : 'var(--success)' ?>;">
+
+app/views/reports/sales.php:50
+  <td><a href="?page=sales&action=detail&id=<?= $s['id'] ?>" style="color:var(--primary);text-decoration:none;font-weight:600;"><?= $s['invoice_no'] ?></a></td>
+
+app/views/reports/sales.php:56
+  <td><span class="badge badge-<?= $s['status'] ?>" style="border-radius:5px;"><?= ucfirst($s['status']) ?></span></td>
+
+app/views/reports/stock.php:54
+  <td><small class="text-muted"><?= $s['sku'] ?: '—' ?></small></td>
+
+app/views/returns/edit.php:24
+  <h1 class="page-title mb-0">Edit: <?= $editReturn['return_no'] ?></h1>
+
+app/views/returns/edit.php:25
+  <span class="badge ms-2 px-2 py-1" style="background:rgba(16,185,129,0.15);color:#059669;border-radius:6px;"><?= ucfirst($editReturn['status']) ?></span>
+
+app/views/returns/index.php:27
+  <option value="pending"  <?= $filters['status']==='pending'?'selected':'' ?>>Pending</option>
+
+app/views/returns/index.php:28
+  <option value="approved" <?= $filters['status']==='approved'?'selected':'' ?>>Approved</option>
+
+app/views/returns/index.php:29
+  <option value="rejected" <?= $filters['status']==='rejected'?'selected':'' ?>>Rejected</option>
+
+app/views/returns/index.php:86
+  <td><a href="?page=returns&action=detail&id=<?= $r['id'] ?>" style="color:var(--primary);font-weight:600;text-decoration:none;"><?= $r['return_no'] ?></a></td>
+
+app/views/returns/index.php:91
+  <span class="badge badge-<?= $r['status'] === 'approved' ? 'paid' : ($r['status']==='rejected'?'draft':'pending') ?> px-2 py-1" style="border-radius:6px;">
+
+app/views/returns/index.php:92
+  <?= ucfirst($r['status']) ?>
+
+app/views/returns/print.php:5
+  <title>Return <?= $return['return_no'] ?></title>
+
+app/views/returns/print.php:144
+  <strong># <?= $return['return_no'] ?></strong><br>
+
+app/views/returns/print.php:250
+  <div class="receipt-row"><span class="lbl">Return No</span><span class="val"><?= $return['return_no'] ?></span></div>
+
+app/views/returns/print.php:324
+  filename: '<?= $return['return_no'] ?>.pdf',
+
+app/views/returns/view.php:6
+  <h1 class="page-title mb-0"><?= $return['return_no'] ?></h1>
+
+app/views/returns/view.php:8
+  background:<?= $return['status'] === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)' ?>;
+
+app/views/returns/view.php:9
+  color:<?= $return['status'] === 'approved' ? '#059669' : '#d97706' ?>;">
+
+app/views/returns/view.php:10
+  <?= ucfirst($return['status']) ?>
+
+app/views/returns/view.php:43
+  <span style="font-weight:700;color:var(--primary);"><?= $return['return_no'] ?></span>
+
+app/views/returns/view.php:60
+  <span style="font-weight:600;color:var(--primary);"><?= $return['original_invoice'] ?></span>
+
+app/views/sales/edit.php:27
+  <h1 class="page-title mb-0">Edit: <?= $editSale['invoice_no'] ?></h1>
+
+app/views/sales/edit.php:28
+  <span class="badge ms-2 badge-<?= $editSale['status'] ?> px-2 py-1" style="border-radius:6px;"><?= ucfirst($editSale['status']) ?></span>
+
+app/views/sales/index.php:109
+  <tr class="<?= ($s['status'] ?? '') === 'cancelled' ? 'table-secondary' : '' ?>">
+
+app/views/sales/index.php:113
+  <?= $s['invoice_no'] ?>
+
+app/views/sales/index.php:120
+  <span class="badge <?= ($s['status'] ?? '') === 'paid' ? 'bg-success' : (($s['status'] ?? '') === 'partial' ? 'bg-warning text-dark' : 'bg-primary') ?>" style="font-size:0.72rem;"><?= ucfirst($s['status'] ?? '') ?></span>
+
+app/views/sales/view.php:11
+  <h1 class="page-title mb-0"><?= $sale['invoice_no'] ?></h1>
+
+app/views/sales/view.php:15
+  <?= ucfirst($sale['status']) ?>
+
+app/views/sales/view.php:111
+  <span style="font-weight:700;font-size:0.88rem;color:var(--primary);"><?= $sale['invoice_no'] ?></span>
+
+app/views/service/detail.php:64
+  <span class="sd-badge" style="background:<?= ServiceController::statusColor($record['status']) ?>;"><?= $record['status'] ?></span>
+
+app/views/service/index.php:108
+  <a href="?page=service" class="sv-stat" style="<?= (!$filters['status'] && $filters['stage']==='') ? 'border-color:#6366f1;box-shadow:0 4px 14px rgba(99,102,241,.18);' : '' ?>">
+
+app/views/service/index.php:112
+  <a href="?page=service&status=Pending" class="sv-stat" style="<?= $filters['status']==='Pending' ? 'border-color:#f59e0b;box-shadow:0 4px 14px rgba(245,158,11,.18);' : '' ?>">
+
+app/views/service/index.php:116
+  <a href="?page=service&status=In+Progress" class="sv-stat" style="<?= $filters['status']==='In Progress' ? 'border-color:#3b82f6;box-shadow:0 4px 14px rgba(59,130,246,.18);' : '' ?>">
+
+app/views/service/index.php:120
+  <a href="?page=service&status=Fixed" class="sv-stat" style="<?= $filters['status']==='Fixed' ? 'border-color:#22c55e;box-shadow:0 4px 14px rgba(34,197,94,.18);' : '' ?>">
+
+app/views/service/index.php:124
+  <a href="?page=service&status=Replaced" class="sv-stat" style="<?= $filters['status']==='Replaced' ? 'border-color:#8b5cf6;box-shadow:0 4px 14px rgba(139,92,246,.18);' : '' ?>">
+
+app/views/service/index.php:129
+  <a href="?page=service&status=No+Repair" class="sv-stat" style="<?= $filters['status']==='No Repair' ? 'border-color:#ef4444;box-shadow:0 4px 14px rgba(239,68,68,.18);' : '' ?>">
+
+app/views/service/index.php:216
+  <span class="sv-badge" style="background:<?= ServiceController::statusColor($r['status']) ?>15;color:<?= ServiceController::statusColor($r['status']) ?>;"><?= $r['status'] ?></span>
+
+app/views/settings/accounts.php:496
+  <td><span class="trf-no"><?= $t['transfer_no'] ?></span></td>
+
+app/views/settings/discount_edit.php:4
+  <h1 class="page-title">Edit Discount — <?= $discount['discount_no'] ?></h1>
+
+app/views/settings/discount_print.php:6
+  <title>Discount — <?= $discount['discount_no'] ?></title>
+
+app/views/settings/discount_print.php:236
+  filename:    '<?= $discount['discount_no'] ?>.pdf',
+
+app/views/settings/discounts.php:159
+  <td class="disc-no"><?= $d['discount_no'] ?></td>
+
+app/views/warranty/index.php:85
+  <br><small class="text-muted">Orig: <?= $r['sale_invoice_no'] ?></small>
+
+app/views/warranty/view.php:46
+  <?= $wr['sale_invoice_no'] ?>
+
+
+=== REVIEW (130) ===
+
+app/views/dashboard/index.php:159
+  <i class="bi <?= $icon ?>" style="color:<?= $color ?>;font-size:0.72rem;width:14px;text-align:center;"></i>
+
+app/views/imei/audit.php:79
+  <?= $delta > 0 ? '+' : '' ?><?= $delta ?>
+
+app/views/imei/index.php:96
+  <span class="badge px-2 py-1" style="background:<?= $statusBg ?>;color:<?= $statusColor ?>;border-radius:6px;">
+
+app/views/imei/scan_purchase.php:119
+  <div class="sp-item-row <?= $done ? 'done' : '' ?>" id="spItem_<?= $it['item_id'] ?>">
+
+app/views/imei/scan_purchase.php:127
+  <span id="spCount_<?= $it['item_id'] ?>" class="cnt <?= $done ? 'ok' : 'pend' ?>"><?= $scanned ?></span>
+
+app/views/imei/scan_purchase.php:128
+  <span style="color:var(--text-muted);font-weight:400;"> / <?= $qty ?></span>
+
+app/views/imei/scan_purchase.php:147
+  style="width:<?= $pct ?>%;<?= $done ? 'background:#22c55e;' : '' ?>"></div>
+
+app/views/inventory/categories.php:220
+  <span><strong><?= $totalItems ?></strong> total items</span>
+
+app/views/inventory/stock.php:68
+  <span class="fw-bold" style="font-size:1rem;color:<?= $isLow ? 'var(--danger)' : 'var(--success)' ?>;">
+
+app/views/opening_stock/index.php:116
+  <input type="hidden" name="warehouse_id" value="<?= $warehouseId ?>">
+
+app/views/opening_stock/index.php:140
+  <input type="hidden" name="warehouse_id" value="<?= $warehouseId ?>">
+
+app/views/parties/agent_statement.php:67
+  <strong style="color:<?= $barColor ?>;"><?= $usedPct ?>%</strong>
+
+app/views/parties/agent_statement.php:71
+  <div style="height:100%;width:<?= $usedPct ?>%;background:<?= $barColor ?>;border-radius:99px;transition:width 0.4s;"></div>
+
+app/views/parties/index.php:27
+  <a href="?page=parties&type=<?= $t ?>"
+
+app/views/parties/index.php:29
+  <?= $label ?>
+
+app/views/parties/view.php:162
+  <span class="badge" style="background:<?= $tColor ?>20;color:<?= $tColor ?>;border-radius:5px;">
+
+app/views/parties/view.php:163
+  <?= $tLabel ?>
+
+app/views/payments/create.php:149
+  <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:<?= $accentBg ?>;color:#fff;margin-right:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);">
+
+app/views/payments/create.php:150
+  <i class="bi <?= $modeIcon ?>"></i>
+
+app/views/payments/create.php:152
+  <?= $modeTitle ?>
+
+app/views/payments/create.php:155
+  <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:6px 14px;border-radius:20px;background:<?= $accentBg ?>;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.15);">
+
+app/views/payments/create.php:156
+  <?= $isReceive ? 'IN — Money Received' : 'OUT — Money Paid' ?>
+
+app/views/payments/create.php:167
+  <input type="hidden" name="payment_type"   value="<?= $mode ?>">
+
+app/views/payments/create.php:190
+  <div class="pf-sec"><span class="num">1</span> <?= $partyLbl ?></div>
+
+app/views/payments/create.php:198
+  <option value="<?= $p['id'] ?>" <?= $isSelected ? 'selected' : '' ?>>
+
+app/views/payments/create.php:227
+  value="<?= $refData ? $refData['balance'] : '' ?>" placeholder="0.000">
+
+app/views/payments/edit.php:25
+  background:<?= $isIn ? '#d1fae5' : '#fee2e2' ?>;
+
+app/views/payments/edit.php:26
+  color:<?= $isIn ? '#065f46' : '#991b1b' ?>;">
+
+app/views/payments/edit.php:27
+  <?= $isIn ? '↓ Payment In' : '↑ Payment Out' ?>
+
+app/views/payments/index.php:133
+  <span style="color:<?= $isOut ? '#dc2626' : '#059669' ?>;">
+
+app/views/payments/index.php:134
+  <i class="bi bi-arrow-<?= $isOut ? 'up' : 'down' ?>-circle-fill"
+
+app/views/payments/print.php:15
+  padding: <?= $thermal ? '8px 2px' : '20px 4px' ?>;
+
+app/views/payments/print.php:33
+  max-width: <?= $thermal ? '72mm' : '480px' ?>;
+
+app/views/payments/print.php:35
+  padding: <?= $thermal ? '8px 3px' : '16px 6px' ?>;
+
+app/views/payments/print.php:36
+  border: <?= $thermal ? 'none' : '1px solid #e5e7eb' ?>;
+
+app/views/payments/print.php:37
+  border-radius: <?= $thermal ? '0' : '10px' ?>;
+
+app/views/payments/print.php:41
+  .company-name { font-size: 18px; font-weight: 800; color: <?= $thermal ? '#000' : '#1e3a5f' ?>; }
+
+app/views/payments/print.php:42
+  .company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
+
+app/views/payments/print.php:46
+  font-size: <?= $thermal ? '12px' : '13px' ?>; font-weight: 800;
+
+app/views/payments/print.php:49
+  color: <?= $thermal ? '#000' : '#6366f1' ?>;
+
+app/views/payments/print.php:77
+  .amount-label { font-size: 10px; color: <?= $thermal ? '#000' : '#6366f1' ?>; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+
+app/views/payments/print.php:78
+  .amount-value { font-size: 26px; font-weight: 800; color: <?= $thermal ? '#000' : '#1e3a5f' ?>; margin-top: 4px; }
+
+app/views/payments/print.php:90
+  body { padding: 0; background: #fff; <?= $thermal ? '-webkit-print-color-adjust: economy; print-color-adjust: economy;' : '' ?> }
+
+app/views/payments/print.php:131
+  <div class="amount-label">Amount <?= $isIn ? 'Received' : 'Paid' ?></div>
+
+app/views/payments/print.php:155
+  <span class="lbl" style="<?= $thermal ? 'color:#000;' : ('color:' . ($isIn ? '#059669' : '#dc2626') . ';') ?>">Payment <?= $isIn ? 'Received' : 'Made' ?></span>
+
+app/views/payments/print.php:158
+  <div class="receipt-row" style="border-top:2px solid <?= $thermal ? '#000' : '#1e3a5f' ?>;padding-top:8px;margin-top:4px;border-bottom:none;">
+
+app/views/payments/print.php:159
+  <span class="lbl" style="font-weight:800;color:<?= $thermal ? '#000' : '#1e3a5f' ?>;font-size:12px;">Current Balance</span>
+
+app/views/payments/print.php:160
+  <span class="val" style="font-weight:800;color:<?= $thermal ? '#000' : ($currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669')) ?>;font-size:13px;">
+
+app/views/payments/print.php:183
+  jsPDF: { unit: 'mm', format: '<?= $thermal ? 'a7' : 'a4' ?>', orientation: 'portrait' }
+
+app/views/payments/view.php:7
+  background:<?= $isIn ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' ?>;
+
+app/views/payments/view.php:8
+  color:<?= $isIn ? '#059669' : '#dc2626' ?>;">
+
+app/views/payments/view.php:9
+  <?= $isIn ? 'Payment In' : 'Payment Out' ?>
+
+app/views/payments/view.php:40
+  <div class="card mb-3" style="border:none;background:linear-gradient(135deg,<?= $isIn ? '#ecfdf5,#d1fae5' : '#fef2f2,#fee2e2' ?>);overflow:hidden;">
+
+app/views/payments/view.php:42
+  <p style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:<?= $isIn ? '#059669' : '#dc2626' ?>;margin-bottom:8px;">
+
+app/views/payments/view.php:43
+  Amount <?= $isIn ? 'Received' : 'Paid' ?>
+
+app/views/payments/view.php:45
+  <p style="font-size:2rem;font-weight:800;color:<?= $isIn ? '#065f46' : '#991b1b' ?>;margin:0;">
+
+app/views/public/field_statement.php:124
+  <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
+
+app/views/public/service_track.php:105
+  <div class="pt-step <?= $class ?>" style="color:<?= $s['color'] ?>;">
+
+app/views/purchase_orders/create.php:101
+  <input type="text" value="<?= $nextPoNo ?>" readonly
+
+app/views/purchases/create.php:126
+  <input type="text" value="<?= $nextInv ?>" readonly
+
+app/views/purchases/imei_scan.php:107
+  <span class="tab-count <?= $isDone ? 'done' : 'warn' ?>">
+
+app/views/purchases/imei_scan.php:109
+  <?= $isDone ? '✓' : '' ?>
+
+app/views/purchases/imei_scan.php:128
+  id="stationBar" style="width:<?= $pct0 ?>%"></div>
+
+app/views/purchases/imei_scan.php:130
+  <div style="font-size:0.72rem;color:#94a3b8;text-align:right;margin-top:2px;" id="stationPct"><?= $pct0 ?>%</div>
+
+app/views/reports/customer_imei.php:103
+  <strong><?= $totalImei ?></strong> IMEI<?= $totalImei > 1 ? 's' : '' ?> /
+
+app/views/reports/customer_imei.php:104
+  <strong><?= $totalInvoices ?></strong> inv.
+
+app/views/reports/customer_imei.php:162
+  Total: <strong style="color:var(--primary);"><?= $totalImei ?></strong> IMEI<?= $totalImei > 1 ? 's' : '' ?>
+
+app/views/reports/customer_imei.php:163
+  across <strong style="color:var(--primary);"><?= $totalInvoices ?></strong> invoice<?= $totalInvoices > 1 ? 's' : '' ?>
+
+app/views/reports/index.php:185
+  <div class="rpt-section" style="--section-color: <?= $secColor ?>;">
+
+app/views/reports/index.php:188
+  <h6 class="rpt-section-title"><?= $catName ?></h6>
+
+app/views/reports/index.php:195
+  style="--tile-color:<?= $r['color'] ?>;--tile-bg:<?= $r['bg'] ?>;--tile-hover-bg:<?= $r['bg'] ?>;animation-delay:<?= $animDelay ?>ms;">
+
+app/views/reports/item_sales.php:11
+  <a href="?page=reports&action=itemSalesPrint&item_id=<?= $itemId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+
+app/views/reports/party_statement.php:11
+  <a href="?page=reports&action=partyPrint&party_id=<?= $partyId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+
+app/views/reports/party_statement.php:125
+  <span style="background:<?= $typeColor ?>1a;color:<?= $typeColor ?>;border-radius:5px;padding:2px 8px;font-size:0.72rem;font-weight:700;text-transform:uppercase;">
+
+app/views/reports/party_statement.php:126
+  <?= $typeLabel ?>
+
+app/views/reports/party_statement.php:135
+  <td style="padding:9px 14px;text-align:right;font-weight:700;color:<?= $balColor ?>;">
+
+app/views/reports/profit.php:37
+  <span style="color:var(--text-muted);"><?= $label ?></span>
+
+app/views/reports/stock.php:57
+  <td class="text-center fw-bold" style="color:<?= $isLow ? 'var(--danger)':'var(--success)' ?>;"><?= $s['stock'] ?></td>
+
+app/views/reports/supplier_statement.php:130
+  <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:600;color:<?= $isPur ? '#f59e0b' : '#cbd5e1' ?>;">
+
+app/views/returns/view.php:104
+  <span>Total (<?= $totalQty ?> pcs)</span>
+
+app/views/sales/create.php:440
+  <input type="text" value="<?= $nextInv ?>" readonly
+
+app/views/sales/edit.php:159
+  <i class="bi bi-exclamation-triangle-fill"></i> Scan IMEIs (<?= $imeiCount ?>/<?= $item['quantity'] ?>)
+
+app/views/sales/edit.php:163
+  <i class="bi bi-check-circle-fill"></i> <?= $imeiCount ?> IMEI<?= $imeiCount !== 1 ? 's' : '' ?>
+
+app/views/sales/print.php:72
+  padding: <?= $thermal ? '8px 2px' : '20px 4px' ?>;
+
+app/views/sales/print.php:90
+  max-width: <?= $thermal ? '72mm' : '480px' ?>;
+
+app/views/sales/print.php:92
+  padding: <?= $thermal ? '8px 3px' : '16px 6px' ?>;
+
+app/views/sales/print.php:93
+  border: <?= $thermal ? 'none' : '1px solid #e5e7eb' ?>;
+
+app/views/sales/print.php:94
+  border-radius: <?= $thermal ? '0' : '10px' ?>;
+
+app/views/sales/print.php:99
+  .company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
+
+app/views/sales/print.php:269
+  <td style="text-align:center;font-weight:800;"><?= $totalQty ?></td>
+
+app/views/sales/print.php:364
+  <?= $isReturn ? '↩ Sale Return' : '↗ Sale Invoice' ?>
+
+app/views/sales/print.php:483
+  var isThermal = <?= $thermal ? 'true' : 'false' ?>;
+
+app/views/sales/scan_imeis.php:76
+  <span><b>Qty:</b> <?= $qty ?></span>
+
+app/views/sales/scan_imeis.php:83
+  <span class="have"><?= $existing ?></span><span class="need"> / <?= $qty ?></span>
+
+app/views/sales/scan_imeis.php:86
+  <div class="si-progress-bar"><div class="si-progress-fill" id="siProgressFill" style="width:<?= $pct ?>%;"></div></div>
+
+app/views/sales/scan_imeis.php:88
+  <span class="left" id="siRemainNum"><?= $remaining ?></span>
+
+app/views/sales/scan_imeis.php:145
+  <div id="siSummary" class="si-warn">Need <?= $remaining ?> more IMEI(s).</div>
+
+app/views/sales/scan_imeis.php:159
+  var siRemaining = <?= $remaining ?>;
+
+app/views/sales/view.php:13
+  background:<?= $hasBalance ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)' ?>;
+
+app/views/sales/view.php:14
+  color:<?= $hasBalance ? '#d97706' : '#059669' ?>;">
+
+app/views/sales/view.php:209
+  <span>Grand Total (<?= $totalQty ?> pcs)</span>
+
+app/views/service/detail.php:93
+  <div class="sd-step <?= $class ?>" style="color:<?= $s['color'] ?>;">
+
+app/views/service/detail.php:117
+  <input type="hidden" name="stage" value="<?= $nextStage ?>">
+
+app/views/service/index.php:161
+  <option value="<?= $k ?>" <?= $filters['stage']!==''&&(int)$filters['stage']===$k?'selected':'' ?>><?= $v['label'] ?></option>
+
+app/views/settings/accounts.php:142
+  <a href="?page=accounts<?= $isActive ? '' : '&account_id=' . $acc['id'] ?>" style="text-decoration:none;color:inherit;">
+
+app/views/settings/accounts.php:143
+  <div class="acc-row <?= $isActive ? 'active' : '' ?>" style="--acc-color:<?= $color ?>;cursor:pointer;">
+
+app/views/settings/accounts.php:153
+  <div class="acc-row-icon" style="background:<?= $color ?>15;color:<?= $color ?>;">
+
+app/views/settings/accounts.php:154
+  <i class="bi <?= $icon ?>"></i>
+
+app/views/settings/accounts.php:166
+  <div class="acc-row-bal <?= $isPos ? 'pos' : 'neg' ?>">
+
+app/views/settings/discount_print.php:152
+  @page { size: <?= $a5 ? 'A5 portrait' : 'auto' ?>; margin:<?= $a5 ? '8mm 10mm' : '8mm 3mm' ?>; }
+
+app/views/settings/discount_print.php:156
+  <body class="<?= $a5 ? 'a5' : '' ?>">
+
+app/views/settings/discount_print.php:239
+  jsPDF:       { unit: 'mm', format: '<?= $a5 ? 'a5' : 'a4' ?>', orientation: 'portrait' }
+
+app/views/settings/discounts.php:72
+  <div class="disc-card" id="discountForm" style="display:<?= $openNewDiscount ? 'block' : 'none' ?>;">
+
+app/views/settings/user_form.php:135
+  <td><span class="module-label"><i class="bi <?= $icon ?> module-icon"></i><?= $label ?></span></td>
+
+app/views/settings/user_form.php:136
+  <td class="check-cell"><input type="checkbox" class="perm-check mod-<?= $mod ?>" name="perms[<?= $mod ?>][view]"   value="1" <?= $v?'checked':'' ?> onchange="syncRowAll('<?= $mod ?>')"></td>
+
+app/views/settings/user_form.php:137
+  <td class="check-cell"><input type="checkbox" class="perm-check mod-<?= $mod ?>" name="perms[<?= $mod ?>][add]"    value="1" <?= $a?'checked':'' ?> onchange="syncRowAll('<?= $mod ?>')"></td>
+
+app/views/settings/user_form.php:138
+  <td class="check-cell"><input type="checkbox" class="perm-check mod-<?= $mod ?>" name="perms[<?= $mod ?>][edit]"   value="1" <?= $e?'checked':'' ?> onchange="syncRowAll('<?= $mod ?>')"></td>
+
+app/views/settings/user_form.php:139
+  <td class="check-cell"><input type="checkbox" class="perm-check mod-<?= $mod ?>" name="perms[<?= $mod ?>][delete]" value="1" <?= $d?'checked':'' ?> onchange="syncRowAll('<?= $mod ?>')"></td>
+
+app/views/settings/user_form.php:140
+  <td class="check-cell"><input type="checkbox" class="perm-check row-all" id="all_<?= $mod ?>" onchange="toggleRow('<?= $mod ?>',this.checked)" <?= ($v&&$a&&$e&&$d)?'checked':'' ?>></td>
+
+app/views/settings/user_form.php:190
+  <td><span class="module-label"><i class="bi <?= $icon ?> module-icon" style="color:#0891b2;"></i><?= $label ?></span></td>
+
+app/views/settings/user_form.php:191
+  <td class="check-cell"><input type="checkbox" class="perm-check rpt-check" name="perms[<?= $mod ?>][view]" value="1" <?= $v?'checked':'' ?>></td>
+
+app/views/suppliers/contacts.php:96
+  <div class="sc-country-head" style="background:<?= $color ?>;">
+
+app/views/suppliers/contacts.php:105
+  <div class="sc-card-icon" style="background:<?= $color ?>15;color:<?= $color ?>;"><i class="bi bi-building"></i></div>
+
+app/views/suppliers/contacts.php:164
+  <div class="sc-f"><label>Country *</label><select name="country" id="addCountry"><?php foreach($countryOrder as $co): ?><option value="<?=$co?>"><?=$co?></option><?php endforeach; ?></select></div>
+
+app/views/suppliers/contacts.php:176
+  <div class="sc-f"><label>Mobile</label><div class="sc-phone"><select id="addP1Code"><?= $phoneOptions ?></select><input type="text" id="addP1Num" placeholder="50 xxx xxxx"></div><input type="hidden" name="mobile" id="addP1Full"></div>
+
+app/views/suppliers/contacts.php:185
+  <div class="sc-f"><label>Mobile</label><div class="sc-phone"><select id="addP2Code"><?= $phoneOptions ?></select><input type="text" id="addP2Num" placeholder="50 xxx xxxx"></div><input type="hidden" name="mobile_2" id="addP2Full"></div>
+
+app/views/suppliers/contacts.php:215
+  <div class="sc-f"><label>Country *</label><select name="country" id="editCountry"><?php foreach($countryOrder as $co): ?><option value="<?=$co?>"><?=$co?></option><?php endforeach; ?></select></div>
+
+app/views/suppliers/contacts.php:227
+  <div class="sc-f"><label>Mobile</label><div class="sc-phone"><select id="editP1Code"><?= $phoneOptions ?></select><input type="text" id="editP1Num"></div><input type="hidden" name="mobile" id="editP1Full"></div>
+
+app/views/suppliers/contacts.php:236
+  <div class="sc-f"><label>Mobile</label><div class="sc-phone"><select id="editP2Code"><?= $phoneOptions ?></select><input type="text" id="editP2Num"></div><input type="hidden" name="mobile_2" id="editP2Full"></div>
+
+app/views/warranty/create.php:64
+  <input type="text" value="<?= $nextNo ?>" readonly

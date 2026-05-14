@@ -808,6 +808,7 @@ class IMEIController extends BaseController {
     /**
      * Admin: Delete all in_stock + returned IMEI records for an item in current warehouse.
      * Use to wipe and re-scan from scratch. Sold/transferred/defective records are preserved (history).
+     * Join tables (return/sale/purchase/transfer IMEI links) are cleared first so FK constraints pass.
      */
     public function clearItemImeis(): void {
         if (!Auth::isAdmin()) {
@@ -837,16 +838,47 @@ class IMEIController extends BaseController {
         $count = (int)($row['c'] ?? 0);
         if ($count === 0) { echo json_encode(['ok' => true, 'deleted' => 0, 'msg' => 'Nothing to delete.']); return; }
 
+        $params = [$itemId, $whId];
+        $scope  = 'ir.item_id = ? AND ir.warehouse_id = ? AND ir.status IN (\'in_stock\',\'returned\')';
+
         try {
+            $db->beginTransaction();
+            // Child tables reference imei_records without ON DELETE CASCADE
+            $db->execute(
+                "DELETE rii FROM return_item_imei rii
+                 INNER JOIN imei_records ir ON ir.id = rii.imei_id
+                 WHERE {$scope}",
+                $params
+            );
+            $db->execute(
+                "DELETE sti FROM stock_transfer_imei sti
+                 INNER JOIN imei_records ir ON ir.id = sti.imei_id
+                 WHERE {$scope}",
+                $params
+            );
+            $db->execute(
+                "DELETE pii FROM purchase_item_imei pii
+                 INNER JOIN imei_records ir ON ir.id = pii.imei_id
+                 WHERE {$scope}",
+                $params
+            );
+            $db->execute(
+                "DELETE sii FROM sale_item_imei sii
+                 INNER JOIN imei_records ir ON ir.id = sii.imei_id
+                 WHERE {$scope}",
+                $params
+            );
             $db->execute(
                 "DELETE FROM imei_records
                  WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
-                [$itemId, $whId]
+                $params
             );
+            $db->commit();
             $this->logActivity('clear_imeis', 'imei_records', $itemId,
-                "Cleared {$count} in_stock/returned IMEIs for item #{$itemId} in warehouse #{$whId}");
+                "Cleared {$count} in_stock/returned IMEIs (and dependent join rows) for item #{$itemId} in warehouse #{$whId}");
             echo json_encode(['ok' => true, 'deleted' => $count, 'msg' => "Deleted {$count} IMEI(s)."]);
         } catch (Exception $e) {
+            $db->rollback();
             echo json_encode(['ok' => false, 'msg' => 'Failed: ' . $e->getMessage()]);
         }
     }

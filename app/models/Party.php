@@ -292,7 +292,7 @@ class Party extends BaseModel {
     }
 
     // Search parties (for autocomplete). Step 1: match 15 rows. Step 2: batch-compute
-    // balance only for matched IDs. Avoids scanning full sales/payments/returns tables.
+    // unified net balance for matched IDs (same rules as Party Master / findWithBalance).
     public function search(string $query, string $type = 'all'): array {
         $like = "%{$query}%";
         $params = [];
@@ -325,39 +325,105 @@ class Party extends BaseModel {
 
         if (empty($parties)) return [];
 
-        // Batch-compute sale-side balance for matched IDs only (same formula as party statement)
+        // Batch-compute unified net balance for matched IDs only (same components as getByType / findWithBalance).
+        // Previously this used sales-only math, so Party Master could show "Clear" while New Sale still showed
+        // "Due" for the same party after a credit purchase (purchase excluded from autocomplete balance).
         $ids = array_column($parties, 'id');
         $ph  = implode(',', array_fill(0, count($ids), '?'));
         $bals = $this->db->fetchAll(
             "SELECT party_id,
-                    SUM(sales_total)   as sales_total,
+                    SUM(sales_total) as sales_total,
                     SUM(sale_payments) as sale_payments,
-                    SUM(sale_returns)  as sale_returns
+                    SUM(sale_returns) as sale_returns,
+                    SUM(purchase_total) as purchase_total,
+                    SUM(purchase_payments) as purchase_payments,
+                    SUM(purchase_returns) as purchase_returns
              FROM (
-                SELECT party_id, grand_total as sales_total, 0 as sale_payments, 0 as sale_returns
+                SELECT party_id, grand_total as sales_total, 0 as sale_payments, 0 as sale_returns, 0 as purchase_total, 0 as purchase_payments, 0 as purchase_returns
                 FROM sales WHERE party_id IN ($ph) AND status != 'cancelled'
                 UNION ALL
-                SELECT party_id, 0, CASE WHEN payment_type='in' THEN amount ELSE -amount END, 0
+                SELECT party_id, 0, CASE WHEN payment_type='in' THEN amount ELSE -amount END, 0, 0, 0, 0
                 FROM payments WHERE party_id IN ($ph) AND ref_type IN ('sale','discount')
                 UNION ALL
-                SELECT party_id, 0, 0, grand_total
-                FROM `returns` WHERE party_id IN ($ph) AND type='sale_return' AND status='approved'
+                SELECT party_id, 0, 0, grand_total, 0, 0, 0
+                FROM `returns` WHERE party_id IN ($ph) AND type = 'sale_return' AND status = 'approved'
+                UNION ALL
+                SELECT party_id, 0, 0, 0, grand_total, 0, 0
+                FROM purchases WHERE party_id IN ($ph) AND status != 'cancelled'
+                UNION ALL
+                SELECT party_id, 0, 0, 0, 0, amount, 0
+                FROM payments WHERE party_id IN ($ph) AND ref_type IN ('purchase','purchase_order')
+                UNION ALL
+                SELECT party_id, 0, 0, 0, 0, 0, grand_total
+                FROM `returns` WHERE party_id IN ($ph) AND type = 'purchase_return' AND status = 'approved'
              ) t GROUP BY party_id",
-            array_merge($ids, $ids, $ids)
+            array_merge($ids, $ids, $ids, $ids, $ids, $ids)
         );
 
         $balMap = [];
-        foreach ($bals as $b) $balMap[$b['party_id']] = $b;
+        foreach ($bals as $b) {
+            $balMap[$b['party_id']] = $b;
+        }
 
         foreach ($parties as &$p) {
             $b = $balMap[$p['id']] ?? null;
-            $p['balance'] = (float)$p['opening_balance']
-                + (float)($b['sales_total']   ?? 0)
-                - (float)($b['sale_payments']  ?? 0)
-                - (float)($b['sale_returns']   ?? 0);
+            $p['balance'] = (float) $p['opening_balance']
+                + (float) ($b['sales_total'] ?? 0)
+                - (float) ($b['sale_payments'] ?? 0)
+                - (float) ($b['sale_returns'] ?? 0)
+                - (float) ($b['purchase_total'] ?? 0)
+                + (float) ($b['purchase_payments'] ?? 0)
+                + (float) ($b['purchase_returns'] ?? 0);
         }
         unset($p);
 
         return $parties;
+    }
+
+    /**
+     * Active customers/both parties visible in the current warehouse (dropdowns; no balance work).
+     *
+     * @return list<array{id:int,name:string,party_code:?string,phone:?string,phone2:?string}>
+     */
+    public function getCustomersForSelect(): array {
+        $wid = (int) Auth::warehouseId();
+        $where = "WHERE p.is_active = 1 AND (p.type = 'customer' OR p.type = 'both')";
+        $params = [];
+        if ($wid > 0) {
+            [$whSql, $whParams] = $this->warehouseVisibilitySqlAndParams($wid);
+            $where .= $whSql;
+            $params = $whParams;
+        }
+
+        return $this->db->fetchAll(
+            "SELECT p.id, p.name, p.party_code, p.phone, p.phone2 FROM parties p {$where} ORDER BY p.name ASC",
+            $params
+        );
+    }
+
+    /**
+     * Party row for mandoob save if it is a visible customer in this warehouse.
+     *
+     * @return array{id:int,name:string,phone:?string,phone2:?string}|null
+     */
+    public function getForMandoobSchedule(int $partyId): ?array {
+        if ($partyId <= 0) {
+            return null;
+        }
+        $wid = (int) Auth::warehouseId();
+        $where = "WHERE p.id = ? AND p.is_active = 1 AND (p.type = 'customer' OR p.type = 'both')";
+        $params = [$partyId];
+        if ($wid > 0) {
+            [$whSql, $whParams] = $this->warehouseVisibilitySqlAndParams($wid);
+            $where .= $whSql;
+            $params = array_merge($params, $whParams);
+        }
+
+        $row = $this->db->fetchOne(
+            "SELECT p.id, p.name, p.phone, p.phone2 FROM parties p {$where}",
+            $params
+        );
+
+        return $row ?: null;
     }
 }

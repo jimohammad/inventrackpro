@@ -94,10 +94,10 @@
                     </td>
                     <td>
                         <div class="d-flex gap-1">
-                        <a href="?page=returns&action=print&id=<?= $r['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#059669;border:none;" title="Print">
+                        <a href="?page=returns&action=print&id=<?= $r['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#059669;border:none;" title="Print">
                             <i class="bi bi-printer"></i>
                         </a>
-                        <a href="?page=returns&action=print&id=<?= $r['id'] ?>&autopdf=1" target="_blank" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:none;" title="Download PDF">
+                        <a href="?page=returns&action=print&id=<?= $r['id'] ?>&autopdf=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:none;" title="Download PDF">
                             <i class="bi bi-file-earmark-pdf"></i>
                         </a>
                         <a href="?page=returns&action=detail&id=<?= $r['id'] ?>" class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;" title="View">

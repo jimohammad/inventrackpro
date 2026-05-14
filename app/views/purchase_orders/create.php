@@ -3,8 +3,8 @@
 .sale-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);border-radius:12px 12px 0 0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
 .sale-topbar .sale-title{font-size:1.05rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;}
 .topbar-actions{display:flex;align-items:flex-end;gap:14px;}
-.btn-new-item-tab{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.16);color:#fff;text-decoration:none;font-size:0.78rem;font-weight:600;transition:all 0.15s;}
-.btn-new-item-tab:hover{background:rgba(255,255,255,0.24);border-color:rgba(255,255,255,0.55);color:#fff;transform:translateY(-1px);}
+.btn-new-item-link{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.16);color:#fff;text-decoration:none;font-size:0.78rem;font-weight:600;transition:all 0.15s;}
+.btn-new-item-link:hover{background:rgba(255,255,255,0.24);border-color:rgba(255,255,255,0.55);color:#fff;transform:translateY(-1px);}
 .branch-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:0.75rem;}
 .branch-wrap .branch-label{color:rgba(255,255,255,0.6);line-height:1;}
 .warehouse-select{padding:5px 12px;border-radius:8px;font-size:0.8rem;font-weight:600;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;cursor:pointer;outline:none;}
@@ -68,8 +68,8 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
         </div>
         <div class="topbar-actions">
             <?php if (Auth::can('inventory','add')): ?>
-            <a href="?page=items&action=create" target="_blank" rel="noopener noreferrer" class="btn-new-item-tab">
-                <i class="bi bi-box-arrow-up-right"></i> Create Item
+            <a href="?page=items&action=create" class="btn-new-item-link">
+                <i class="bi bi-plus-lg"></i> Create Item
             </a>
             <?php endif; ?>
             <div class="branch-wrap">

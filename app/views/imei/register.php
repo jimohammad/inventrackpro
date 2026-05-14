@@ -91,7 +91,10 @@
             <?php foreach ($items as $it):
                 $remaining = max(0, (int)$it['stock'] - (int)$it['imei_count']);
             ?>
-            <div class="ir-item" onclick="selectScanItem(<?= $it['id'] ?>, '<?= htmlspecialchars(addslashes($it['name'])) ?>', <?= (int)$it['stock'] ?>, <?= (int)$it['imei_count'] ?>)" id="irItem_<?= $it['id'] ?>">
+            <?php
+                $irItemNameJson = json_encode((string)($it['name'] ?? ''), JSON_HEX_APOS | JSON_HEX_TAG | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+            ?>
+            <div class="ir-item" onclick='selectScanItem(<?= (int)$it['id'] ?>, <?= $irItemNameJson ?>, <?= (int)$it['stock'] ?>, <?= (int)$it['imei_count'] ?>)' id="irItem_<?= (int)$it['id'] ?>">
                 <div>
                     <div class="ir-item-name"><?= htmlspecialchars($it['name']) ?></div>
                     <div class="ir-item-meta"><?= htmlspecialchars($it['sku'] ?? '') ?></div>
@@ -100,7 +103,7 @@
                     <span class="ir-stock-badge ir-stock-ok">Stock: <?= $it['stock'] ?></span>
                     <span class="ir-imei-badge" id="irBadge_<?= $it['id'] ?>"><?= $it['imei_count'] ?> IMEI</span>
                     <?php if (Auth::isAdmin() && (int)$it['imei_count'] > 0): ?>
-                    <button type="button" class="ir-clear-btn" onclick="event.stopPropagation();clearItemImeis(<?= $it['id'] ?>, '<?= htmlspecialchars(addslashes($it['name'])) ?>', <?= (int)$it['imei_count'] ?>)" title="Delete all in_stock/returned IMEIs for this item (admin)">
+                    <button type="button" class="ir-clear-btn" onclick='event.stopPropagation();clearItemImeis(<?= (int)$it['id'] ?>, <?= $irItemNameJson ?>, <?= (int)$it['imei_count'] ?>);' title="Delete all in_stock/returned IMEIs for this item (admin)">
                         <i class="bi bi-trash3"></i> Clear
                     </button>
                     <?php endif; ?>
@@ -288,9 +291,20 @@ function clearItemImeis(itemId, itemName, currentCount) {
         fd.append('csrf_token', '<?= Auth::csrfToken() ?>');
 
         fetch('?page=imei&action=clearItemImeis', { method: 'POST', body: fd })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                return r.text().then(function(text) {
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        var hint = (text && text.indexOf('Invalid request') !== -1)
+                            ? 'Refresh the page (session/CSRF) and try again.'
+                            : 'Server returned non-JSON (HTTP ' + r.status + ').';
+                        throw new Error(hint);
+                    }
+                });
+            })
             .then(function(d) {
-                if (!d.ok) { alert('Failed: ' + d.msg); return; }
+                if (!d.ok) { alert(d.msg || 'Request failed'); return; }
                 var badge = document.getElementById('irBadge_' + itemId);
                 if (badge) badge.textContent = '0 IMEI';
                 var card = document.getElementById('irItem_' + itemId);
@@ -312,7 +326,7 @@ function clearItemImeis(itemId, itemName, currentCount) {
                     alert(d.msg);
                 }
             })
-            .catch(function() { alert('Network error.'); });
+            .catch(function(err) { alert(err && err.message ? err.message : 'Network error.'); });
     });
 }
 </script>

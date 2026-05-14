@@ -259,7 +259,7 @@ body {
     <a href="?page=service&action=detail&id=<?= (int) $record['id'] ?>" class="btn-secondary">Back to service</a>
     <?php if ($trackUrl !== ''): ?>
     <div class="track-full-link">
-        <a href="<?= htmlspecialchars($trackUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Open tracking page</a>
+        <a href="<?= htmlspecialchars($trackUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Open tracking page</a>
         <span style="color:#64748b;font-size:11px;"> — for copy/share on this device only</span>
     </div>
     <?php endif; ?>

@@ -3,13 +3,20 @@
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Item.php';
 require_once __DIR__ . '/../models/Party.php';
+require_once __DIR__ . '/../models/Purchase.php';
 
 class PurchaseController extends BaseController {
+
+    private Purchase $purchaseModel;
+
+    public function __construct() {
+        parent::__construct();
+        $this->purchaseModel = new Purchase();
+    }
 
     public function index(): void {
         Auth::authorize('purchases', 'view');
 
-        $db = Database::getInstance();
         $filters = [
             'search'    => $this->input('search', '', 'get'),
             'status'    => $this->input('status', '', 'get'),
@@ -17,51 +24,8 @@ class PurchaseController extends BaseController {
             'to_date'   => $this->input('to_date', '', 'get'),
         ];
 
-        $where  = "WHERE p.status != 'cancelled'";
-        $params = [];
-
-        // Always scope to selected warehouse session
-        if (Auth::warehouseId()) {
-            $where .= " AND p.warehouse_id = ?";
-            $params[] = Auth::warehouseId();
-        }
-
-        if (!empty($filters['search'])) {
-            $like   = '%' . $filters['search'] . '%';
-            $where .= " AND (p.invoice_no LIKE ? OR par.name LIKE ?)";
-            $params = array_merge($params, [$like, $like]);
-        }
-        if (!empty($filters['status'])) {
-            $where .= " AND p.status = ?"; $params[] = $filters['status'];
-        }
-        if (!empty($filters['from_date'])) {
-            $where .= " AND p.date >= ?"; $params[] = $filters['from_date'];
-        }
-        if (!empty($filters['to_date'])) {
-            $where .= " AND p.date <= ?"; $params[] = $filters['to_date'];
-        }
-
-        $purchases = $db->fetchAll(
-            "SELECT p.*, par.name as party_name, w.name as warehouse_name
-             FROM purchases p
-             JOIN parties par ON par.id = p.party_id
-             LEFT JOIN warehouses w ON w.id = p.warehouse_id
-             {$where}
-             ORDER BY p.created_at DESC
-             LIMIT 500",
-            $params
-        );
-
-        $stats = $db->fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(grand_total),0) as total,
-                    COALESCE(SUM(paid_amount),0) as paid, COALESCE(SUM(balance),0) as balance
-             FROM purchases
-             WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-               AND date <= CURDATE()
-               AND status != 'cancelled'
-               AND (? = 0 OR warehouse_id = ?)",
-            [(int) (Auth::warehouseId() ?? 0), (int) (Auth::warehouseId() ?? 0)]
-        );
+        $purchases = $this->purchaseModel->getIndexList($filters, Auth::warehouseId());
+        $stats     = $this->purchaseModel->getMonthStats(Auth::warehouseId());
 
         $pageTitle = 'Purchases';
         $page      = 'purchases';
@@ -75,13 +39,12 @@ class PurchaseController extends BaseController {
     public function create(): void {
         Auth::authorize('purchases', 'add');
 
-        $db         = Database::getInstance();
         $itemModel  = new Item();
         $partyModel = new Party();
 
         $warehouses = self::getWarehouses();
         $accounts   = self::getAccounts();
-        $nextInv    = $this->nextInvoiceNo($db);
+        $nextInv    = $this->purchaseModel->nextInvoiceNo();
         $pageTitle  = 'New Purchase';
         $page       = 'purchases';
 
@@ -146,6 +109,13 @@ class PurchaseController extends BaseController {
             return;
         }
 
+        $partyId = $this->inputInt('party_id');
+        if ($partyId <= 0) {
+            $this->flash('error', 'Please select a supplier.');
+            $this->redirect('?page=purchases&action=create');
+            return;
+        }
+
         // Validate IMEI counts for IMEI-tracked items to avoid "ghost stock" without IMEIs.
         $itemIds = array_values(array_unique(array_map(static fn($i) => (int) $i['item_id'], $items)));
         if (!empty($itemIds)) {
@@ -181,7 +151,7 @@ class PurchaseController extends BaseController {
             }
         }
 
-        $invoiceNo = $this->nextInvoiceNo($db);
+        $invoiceNo = $this->purchaseModel->nextInvoiceNo();
         $subtotal  = array_sum(array_map(fn($i) => $i['unit_price'] * $i['quantity'], $items));
         // C3 fix: clamp negative discount — a negative value would inflate grand_total above subtotal.
         $discount  = max(0.0, $this->inputFloat('discount'));
@@ -209,18 +179,7 @@ class PurchaseController extends BaseController {
         // converted via "Convert to Purchase Invoice". Without this guard, BOTH the PO payment
         // ('purchase_order') and this Purchase payment ('purchase') get inserted and the bank
         // account is debited twice.
-        $partyIdGuard = $this->inputInt('party_id');
-        $openPo = $db->fetchOne(
-            "SELECT id, po_no, subtotal_kwd, paid_kwd, status
-             FROM purchase_orders
-             WHERE party_id = ?
-               AND warehouse_id = ?
-               AND status IN ('draft','paid')
-               AND ABS(subtotal_kwd - ?) < 0.001
-             ORDER BY id DESC
-             LIMIT 1",
-            [$partyIdGuard, $warehouseId, $grandTotal]
-        );
+        $openPo = $this->purchaseModel->findBlockingOpenPurchaseOrder($partyId, $warehouseId, $grandTotal);
         if ($openPo) {
             $this->flash('error',
                 'Blocked to prevent a duplicate payment: this supplier already has an open Purchase Order '
@@ -233,107 +192,35 @@ class PurchaseController extends BaseController {
             return;
         }
 
-        $db->beginTransaction();
         try {
-            $purchaseId = $db->insert(
-                "INSERT INTO purchases (invoice_no, supplier_invoice_no, party_id, warehouse_id, date, subtotal, discount, tax,
-                                        grand_total, paid_amount, balance, status, notes, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [
-                    $invoiceNo,
-                    $this->input('supplier_invoice_no') ?: null,
-                    $this->inputInt('party_id'),
-                    $warehouseId,
-                    $this->input('date') ?: date('Y-m-d'),
-                    $subtotal, $discount, $tax, $grandTotal, $paid,
-                    max(0, $balance), $status,
-                    $this->input('notes'),
-                    Auth::id(),
-                ]
+            $purchaseDate = $this->input('date') ?: date('Y-m-d');
+            $purchaseId   = $this->purchaseModel->createFullPurchase(
+                $invoiceNo,
+                $this->input('supplier_invoice_no') ?: null,
+                $partyId,
+                (int) $warehouseId,
+                $purchaseDate,
+                $subtotal,
+                $discount,
+                $tax,
+                $grandTotal,
+                $paid,
+                $balance,
+                $status,
+                $this->input('notes'),
+                Auth::id(),
+                $items,
+                $this->inputInt('account_id') ?: 1,
+                $this->input('payment_method') ?: 'cash'
             );
 
-            foreach ($items as $item) {
-                $lineTotal = $item['unit_price'] * $item['quantity'];
-                $purItemId = $db->insert(
-                    "INSERT INTO purchase_items (purchase_id, item_id, quantity, unit_price, total)
-                     VALUES (?,?,?,?,?)",
-                    [$purchaseId, $item['item_id'], $item['quantity'], $item['unit_price'], $lineTotal]
-                );
-
-                // Add stock
-                $stockRow = $db->fetchOne(
-                    "SELECT id, quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
-                    [$item['item_id'], $warehouseId]
-                );
-                if ($stockRow) {
-                    $db->execute(
-                        "UPDATE stock SET quantity = quantity + ? WHERE id = ?",
-                        [$item['quantity'], $stockRow['id']]
-                    );
-                } else {
-                    $db->insert(
-                        "INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?,?,?)",
-                        [$item['item_id'], $warehouseId, $item['quantity']]
-                    );
-                }
-
-                // Register IMEIs
-                foreach ($item['imeis'] as $imei) {
-                    if (!$imei) continue;
-                    $exists = $db->fetchOne("SELECT id FROM imei_records WHERE imei = ?", [$imei]);
-                    if (!$exists) {
-                        $db->insert(
-                            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status)
-                             VALUES (?,?,?,?,'in_stock')",
-                            [$imei, $item['item_id'], $warehouseId, $purchaseId]
-                        );
-                    }
-                }
-            }
-
-            // Record payment
-            if ($paid > 0) {
-                // C2 fix: shared MAX(numeric) generator + retry on duplicate-key collision.
-                require_once __DIR__ . '/../models/Payment.php';
-                $paymentModel = new Payment();
-                $payNo = $paymentModel->nextPaymentNo();
-                for ($attempt = 1; $attempt <= 3; $attempt++) {
-                    try {
-                        $db->insert(
-                            "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, warehouse_id, created_by)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                            [$payNo, 'purchase', $purchaseId, $this->inputInt('party_id'),
-                             'out',
-                             $this->inputInt('account_id') ?: 1,
-                             $paid, $this->input('payment_method') ?: 'cash',
-                             $this->input('date') ?: date('Y-m-d'), Auth::warehouseId(), Auth::id()]
-                        );
-                        break;
-                    } catch (Exception $e) {
-                        $isDuplicatePayNo = str_contains($e->getMessage(), 'Duplicate entry')
-                            && str_contains($e->getMessage(), 'payment_no');
-                        if (!$isDuplicatePayNo || $attempt === 3) {
-                            throw $e;
-                        }
-                        $payNo = $paymentModel->nextPaymentNo();
-                    }
-                }
-                $db->execute(
-                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
-                    [$paid, $this->inputInt('account_id') ?: 1]
-                );
-            }
-
-            $db->commit();
-            $this->logActivity('create_purchase', 'purchases', (int)$purchaseId, $invoiceNo);
+            $this->logActivity('create_purchase', 'purchases', $purchaseId, $invoiceNo);
             $this->flash('success', "Purchase {$invoiceNo} saved.");
             if ($this->input('print_mode') === '1') {
                 $this->redirect('?page=purchases&action=print&id=' . $purchaseId . '&autoprint=1');
             }
             $this->redirect('?page=purchases&action=detail&id=' . $purchaseId);
-
-        } catch (Exception $e) {
-            $db->rollback();
+        } catch (Throwable $e) {
             $this->flash('error', 'Failed: ' . $e->getMessage());
             $this->redirect('?page=purchases&action=create');
         }
@@ -343,59 +230,18 @@ class PurchaseController extends BaseController {
         Auth::authorize('purchases', 'view');
 
         $id = $this->inputInt('id', 0, 'get');
-        $db = Database::getInstance();
 
-        $purchase = $db->fetchOne(
-            "SELECT p.*, par.name as party_name, par.phone as party_phone,
-                    w.name as warehouse_name
-             FROM purchases p
-             JOIN parties par ON par.id = p.party_id
-             LEFT JOIN warehouses w ON w.id = p.warehouse_id
-             WHERE p.id = ?",
-            [$id]
-        );
+        $purchase = $this->purchaseModel->findHeaderForView($id);
 
         if (!$purchase) {
             $this->flash('error', 'Purchase not found.');
             $this->redirect('?page=purchases');
+            return;
         }
 
-        $purchase['items'] = $db->fetchAll(
-            "SELECT pi.*, i.name as item_name, i.sku,
-                    GROUP_CONCAT(ir.imei ORDER BY ir.imei SEPARATOR '||') as imei_list
-             FROM purchase_items pi
-             JOIN items i ON i.id = pi.item_id
-             LEFT JOIN imei_records ir ON ir.purchase_id = pi.purchase_id AND ir.item_id = pi.item_id
-             WHERE pi.purchase_id = ?
-             GROUP BY pi.id",
-            [$id]
-        );
-
-        $purchase['payments'] = $db->fetchAll(
-            "SELECT py.*, a.name as account_name FROM payments py
-             LEFT JOIN accounts a ON a.id = py.account_id
-             WHERE py.ref_type = 'purchase' AND py.ref_id = ?",
-            [$id]
-        );
-
-        // Self-heal: if payments exist but purchase header isn't updated (common when migrated from PO),
-        // sync paid_amount/balance/status so UI matches the ledger.
-        $paidSum = 0.0;
-        foreach ($purchase['payments'] as $py) $paidSum += (float)($py['amount'] ?? 0);
-        $paidSum = round($paidSum, 3);
-        $headerPaid = (float)($purchase['paid_amount'] ?? 0);
-        if (abs($paidSum - $headerPaid) > 0.001) {
-            $grand = (float)($purchase['grand_total'] ?? 0);
-            $newBalance = max(0, $grand - $paidSum);
-            $newStatus  = $newBalance < 0.001 ? 'paid' : ($paidSum > 0 ? 'partial' : 'confirmed');
-            $db->execute(
-                "UPDATE purchases SET paid_amount=?, balance=?, status=? WHERE id=?",
-                [$paidSum, round($newBalance, 3), $newStatus, $id]
-            );
-            $purchase['paid_amount'] = $paidSum;
-            $purchase['balance']     = round($newBalance, 3);
-            $purchase['status']      = $newStatus;
-        }
+        $purchase['items']    = $this->purchaseModel->getDetailLineItems($id);
+        $purchase['payments'] = $this->purchaseModel->getLinkedPayments($id);
+        $this->purchaseModel->syncHeaderWithPaymentSum($id, $purchase);
 
         $accounts  = self::getAccounts();
         $pageTitle = 'Purchase: ' . $purchase['invoice_no'];
@@ -416,98 +262,32 @@ class PurchaseController extends BaseController {
 
         if (!$this->isPost()) {
             $this->redirect('?page=purchases');
+            return;
         }
 
         $id = $this->inputInt('id');
         if ($id <= 0) {
             $this->flash('error', 'Invalid purchase.');
             $this->redirect('?page=purchases');
+            return;
         }
 
-        $db = Database::getInstance();
-
-        $purchase = $db->fetchOne(
-            "SELECT * FROM purchases WHERE id = ? AND warehouse_id = ?",
-            [$id, Auth::warehouseId()]
-        );
-        if (!$purchase) {
-            $this->flash('error', 'Purchase not found.');
-            $this->redirect('?page=purchases');
-        }
-        if (($purchase['status'] ?? '') === 'cancelled') {
-            $this->flash('warning', 'Purchase is already cancelled.');
-            $this->redirect('?page=purchases');
-        }
-
-        // Prevent cancelling if a purchase return was approved against this purchase
-        $existingReturns = $db->fetchOne(
-            "SELECT COUNT(*) as cnt FROM returns WHERE ref_id = ? AND type = 'purchase_return' AND status = 'approved'",
-            [$id]
-        );
-        if ($existingReturns && (int)($existingReturns['cnt'] ?? 0) > 0) {
-            $this->flash('error', 'Cannot cancel: approved purchase return exists for this purchase.');
-            $this->redirect('?page=purchases&action=detail&id=' . $id);
-        }
-
-        $items = $db->fetchAll(
-            "SELECT item_id, quantity FROM purchase_items WHERE purchase_id = ?",
-            [$id]
-        );
-
-        $db->beginTransaction();
         try {
-            // IMEI safety check (lock rows): cannot cancel if any IMEI from this purchase has moved out of stock
-            $badImei = $db->fetchOne(
-                "SELECT id, imei, status, sale_id FROM imei_records
-                 WHERE purchase_id = ? AND (status != 'in_stock' OR sale_id IS NOT NULL)
-                 LIMIT 1 FOR UPDATE",
-                [$id]
-            );
-            if ($badImei) {
-                throw new Exception('Cannot cancel: at least one IMEI from this purchase is already used/sold (IMEI: ' . ($badImei['imei'] ?? '') . ').');
-            }
-
-            // Reverse payments: add back to accounts, then delete payment records
-            $payments = $db->fetchAll(
-                "SELECT id, account_id, amount FROM payments WHERE ref_type = 'purchase' AND ref_id = ? FOR UPDATE",
-                [$id]
-            );
-            foreach ($payments as $py) {
-                $db->execute(
-                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
-                    [(float)$py['amount'], (int)$py['account_id']]
-                );
-            }
-            $db->execute("DELETE FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$id]);
-
-            // Reverse stock
-            foreach ($items as $it) {
-                $stockRow = $db->fetchOne(
-                    "SELECT id, quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
-                    [(int)$it['item_id'], (int)$purchase['warehouse_id']]
-                );
-                $currentQty = (int)($stockRow['quantity'] ?? 0);
-                if ($currentQty < (int)$it['quantity']) {
-                    throw new Exception('Cannot cancel: stock already used/sold for one or more items.');
-                }
-                $db->execute(
-                    "UPDATE stock SET quantity = quantity - ? WHERE id = ?",
-                    [(int)$it['quantity'], (int)$stockRow['id']]
-                );
-            }
-
-            // Remove IMEIs that were created by this purchase (they are still in_stock due to checks above)
-            $db->execute("DELETE FROM imei_records WHERE purchase_id = ?", [$id]);
-
-            // Mark purchase cancelled so it no longer affects balances/reports
-            $db->execute("UPDATE purchases SET status='cancelled' WHERE id = ?", [$id]);
-
-            $db->commit();
-            $this->logActivity('cancel_purchase', 'purchases', $id, 'Cancelled ' . ($purchase['invoice_no'] ?? ''));
-            $this->flash('success', 'Purchase ' . ($purchase['invoice_no'] ?? '') . ' cancelled successfully.');
+            $invoiceNo = $this->purchaseModel->cancelWithReversals($id, (int) Auth::warehouseId());
+            $this->logActivity('cancel_purchase', 'purchases', $id, 'Cancelled ' . $invoiceNo);
+            $this->flash('success', 'Purchase ' . $invoiceNo . ' cancelled successfully.');
         } catch (Exception $e) {
-            $db->rollback();
-            $this->flash('error', 'Failed to cancel purchase: ' . $e->getMessage());
+            if ($e->getMessage() === 'ALREADY_CANCELLED') {
+                $this->flash('warning', 'Purchase is already cancelled.');
+            } elseif ($e->getMessage() === 'Purchase not found.') {
+                $this->flash('error', 'Purchase not found.');
+            } elseif (str_starts_with($e->getMessage(), 'Cannot cancel: approved purchase return')) {
+                $this->flash('error', $e->getMessage());
+                $this->redirect('?page=purchases&action=detail&id=' . $id);
+                return;
+            } else {
+                $this->flash('error', 'Failed to cancel purchase: ' . $e->getMessage());
+            }
         }
 
         $this->redirect('?page=purchases');
@@ -517,32 +297,15 @@ class PurchaseController extends BaseController {
         Auth::authorize('purchases', 'view');
 
         $id = $this->inputInt('id', 0, 'get');
-        $db = Database::getInstance();
 
-        $purchase = $db->fetchOne(
-            "SELECT p.*, par.name as party_name, par.phone as party_phone,
-                    w.name as warehouse_name
-             FROM purchases p
-             JOIN parties par ON par.id = p.party_id
-             LEFT JOIN warehouses w ON w.id = p.warehouse_id
-             WHERE p.id = ?",
-            [$id]
-        );
+        $purchase = $this->purchaseModel->findHeaderForView($id);
 
-        if (!$purchase) die('Purchase not found.');
+        if (!$purchase) {
+            die('Purchase not found.');
+        }
 
-        $purchase['items'] = $db->fetchAll(
-            "SELECT pi.*, i.name as item_name, i.sku
-             FROM purchase_items pi
-             JOIN items i ON i.id = pi.item_id
-             WHERE pi.purchase_id = ?
-             ORDER BY pi.id ASC",
-            [$id]
-        );
-
-        $settings = [];
-        $rows     = $db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($rows as $r) $settings[$r['key_name']] = $r['value'];
+        $purchase['items'] = $this->purchaseModel->getPrintLineItems($id);
+        $settings          = self::getSettings();
 
         include __DIR__ . '/../views/purchases/print.php';
     }
@@ -551,28 +314,15 @@ class PurchaseController extends BaseController {
     public function imeiScan(): void {
         Auth::authorize('purchases', 'edit');
         $id = $this->inputInt('id', 0, 'get');
-        $db = Database::getInstance();
 
-        $purchase = $db->fetchOne(
-            "SELECT p.*, par.name as party_name, w.name as warehouse_name
-             FROM purchases p
-             JOIN parties par ON par.id = p.party_id
-             LEFT JOIN warehouses w ON w.id = p.warehouse_id
-             WHERE p.id = ?",
-            [$id]
-        );
-        if (!$purchase) { $this->flash('error', 'Purchase not found.'); $this->redirect('?page=purchases'); }
+        $purchase = $this->purchaseModel->findHeaderForView($id);
+        if (!$purchase) {
+            $this->flash('error', 'Purchase not found.');
+            $this->redirect('?page=purchases');
+            return;
+        }
 
-        // Only items with has_imei=1
-        $items = $db->fetchAll(
-            "SELECT pi.id as pi_id, pi.item_id, pi.quantity, i.name as item_name,
-                    (SELECT COUNT(*) FROM imei_records WHERE purchase_id = pi.purchase_id AND item_id = pi.item_id) as scanned
-             FROM purchase_items pi
-             JOIN items i ON i.id = pi.item_id
-             WHERE pi.purchase_id = ? AND i.has_imei = 1
-             ORDER BY pi.id ASC",
-            [$id]
-        );
+        $items = $this->purchaseModel->getImeiScanLines($id);
 
         $pageTitle = 'Scan IMEIs — ' . $purchase['invoice_no'];
         $page      = 'purchases';
@@ -807,12 +557,5 @@ class PurchaseController extends BaseController {
             [$purchaseId, $itemId]
         );
         echo json_encode($rows);
-    }
-
-    // AUDIT FIX F1: FOR UPDATE prevents duplicate purchase numbers
-    private function nextInvoiceNo(Database $db): string {
-        $last = $db->fetchOne("SELECT invoice_no FROM purchases ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $num  = $last ? (int) substr($last['invoice_no'], strlen(PURCHASE_PREFIX)) : 0;
-        return PURCHASE_PREFIX . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
     }
 }

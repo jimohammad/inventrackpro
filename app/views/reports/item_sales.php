@@ -8,7 +8,7 @@
     <div class="d-flex gap-2">
         <button onclick="exportReportCSV('itemSalesRptTable','Item_Sales_Report')" class="btn btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
         <button onclick="exportReportPDF()" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <a href="?page=reports&action=itemSalesPrint&item_id=<?= $itemId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+        <a href="?page=reports&action=itemSalesPrint&item_id=<?= $itemId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
     <?php endif; ?>
 </div>

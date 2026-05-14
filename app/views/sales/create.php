@@ -557,8 +557,9 @@ table.items-tbl tbody tr.scan-row-flash {
             onclick="document.getElementById('salePrintMode').value='1'">
             <i class="bi bi-printer"></i> Save &amp; Print A4
         </button>
-        <button type="submit" class="btn-print-sale"
+        <button type="submit" class="btn-print-sale" id="btnSaveThermal"
             style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 2px 8px rgba(124,58,237,.4);"
+            title="After scanning: Ctrl+S / Cmd+S or F12 — save and open thermal print"
             onclick="document.getElementById('salePrintMode').value='2'">
             <i class="bi bi-receipt"></i> Save &amp; Thermal
         </button>
@@ -1186,12 +1187,28 @@ function saveImeiModal() {
 // Barcode scanners send Enter after each scan; block it from all text inputs
 // except the IMEI scan bar (handled below → scanImeiToRow)
 document.getElementById('saleForm').addEventListener('keydown', function(e) {
+    // Ctrl+S / Cmd+S or F12: same as "Save & Thermal" (fast path after IMEI scanning)
+    var thermalKeys = ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) || e.key === 'F12';
+    if (thermalKeys) {
+        var modal = document.getElementById('imeiModal');
+        if (modal && modal.classList.contains('show')) return;
+        e.preventDefault();
+        var pm = document.getElementById('salePrintMode');
+        if (pm) pm.value = '2';
+        if (typeof this.requestSubmit === 'function') {
+            this.requestSubmit();
+        } else {
+            var tb = document.getElementById('btnSaveThermal');
+            if (tb) tb.click();
+        }
+        return;
+    }
     if (e.target && e.target.id === 'imeiScanBar') return;
     if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
         !['submit','hidden','button'].includes(e.target.type)) {
         e.preventDefault();
     }
-});
+}, true);
 
 // ═══ FORM VALIDATION ═══
 document.getElementById('saleForm').addEventListener('submit', function(e) {

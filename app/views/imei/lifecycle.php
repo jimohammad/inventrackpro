@@ -42,22 +42,75 @@
 .lc-status-transferred { background:rgba(59,130,246,.1);color:#3b82f6; }
 .lc-status-defective { background:rgba(127,29,29,.1);color:#7f1d1d; }
 
-/* Timeline */
-.lc-timeline { position:relative;padding-left:36px; }
+/* Timeline — layered rail + event-colored nodes */
+.lc-timeline {
+    position:relative;
+    padding-left:44px;
+    margin-top:4px;
+}
+/* Soft outer track */
 .lc-timeline::before {
-    content:'';position:absolute;left:15px;top:0;bottom:0;width:2px;
-    background:linear-gradient(180deg,var(--primary),var(--border-color));border-radius:2px;
+    content:'';
+    position:absolute;
+    left:11px;
+    top:2px;
+    bottom:2px;
+    width:12px;
+    border-radius:999px;
+    background:linear-gradient(
+        180deg,
+        rgba(37,99,235,.22) 0%,
+        rgba(99,102,241,.12) 42%,
+        rgba(148,163,184,.16) 100%
+    );
+    z-index:0;
+}
+/* Inner spine with depth */
+.lc-timeline::after {
+    content:'';
+    position:absolute;
+    left:15px;
+    top:6px;
+    bottom:6px;
+    width:4px;
+    border-radius:999px;
+    z-index:0;
+    background:linear-gradient(
+        180deg,
+        var(--primary) 0%,
+        #6366f1 32%,
+        #a5b4fc 58%,
+        #cbd5e1 82%,
+        rgba(203,213,225,.35) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.45),
+        inset 0 -1px 0 rgba(15,23,42,.07),
+        0 0 0 1px rgba(37,99,235,.2);
 }
 .lc-event {
-    position:relative;margin-bottom:16px;
+    position:relative;
+    z-index:1;
+    margin-bottom:18px;
     background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;
-    padding:14px 16px;transition:all .15s;
+    padding:14px 16px;transition:border-color .15s, box-shadow .15s, transform .15s;
 }
-.lc-event:hover { border-color:var(--primary);transform:translateX(3px);box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.lc-event:hover { border-color:var(--primary);transform:translateX(3px);box-shadow:0 4px 14px rgba(15,23,42,.07); }
 .lc-event:last-child { margin-bottom:0; }
 .lc-dot {
-    position:absolute;left:-29px;top:16px;width:12px;height:12px;border-radius:50%;
-    border:2.5px solid #fff;box-shadow:0 0 0 2px var(--border-color);
+    position:absolute;
+    left:-34px;
+    top:17px;
+    width:14px;
+    height:14px;
+    border-radius:50%;
+    z-index:2;
+    background:var(--lc-event-color, var(--primary));
+    border:3px solid var(--bg-card);
+    box-shadow:
+        0 0 0 3px var(--bg-card),
+        0 0 0 4px var(--border-color),
+        0 4px 14px rgba(15,23,42,.16);
 }
 .lc-event-head { display:flex;justify-content:space-between;align-items:center;margin-bottom:4px; }
 .lc-event-title { font-weight:700;font-size:.88rem;display:flex;align-items:center;gap:6px; }
@@ -130,8 +183,8 @@
     <?php if (!empty($timeline)): ?>
     <div class="lc-timeline">
         <?php foreach ($timeline as $event): ?>
-        <div class="lc-event">
-            <div class="lc-dot" style="background:<?= $event['color'] ?>;"></div>
+        <div class="lc-event" style="--lc-event-color: <?= htmlspecialchars((string)($event['color'] ?? '#6366f1'), ENT_QUOTES, 'UTF-8') ?>;">
+            <div class="lc-dot" aria-hidden="true"></div>
             <div class="lc-event-head">
                 <span class="lc-event-title" style="color:<?= $event['color'] ?>;">
                     <i class="bi <?= $event['icon'] ?>"></i> <?= $event['title'] ?>

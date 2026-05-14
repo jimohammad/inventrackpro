@@ -13,6 +13,20 @@ function money($val) {
     </div>
 </div>
 
+<?php if (!empty($mandoobInvDash) && (($mandoobInvDash['overdue'] ?? 0) > 0 || ($mandoobInvDash['due_soon'] ?? 0) > 0)): ?>
+<div class="alert alert-warning border-0 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4" role="status">
+    <div>
+        <i class="bi bi-truck-front me-2"></i>
+        <strong>Mandoob Inventory:</strong>
+        <?= (int) ($mandoobInvDash['overdue'] ?? 0) ?> overdue,
+        <?= (int) ($mandoobInvDash['due_soon'] ?? 0) ?> due within 7 days.
+    </div>
+    <?php if (Auth::can('mandoob_inventory', 'view')): ?>
+    <a class="btn btn-sm btn-dark" href="?page=mandoob_inventory">Open schedule</a>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <!-- Stat Cards - All 6 in one row -->
 <style>
 .dash-card {
@@ -70,9 +84,9 @@ function money($val) {
         </a>
     </div>
 
-    <!-- Receivables -->
+    <!-- Receivables (net they owe you — any party type) -->
     <div class="col-6 col-md-2">
-        <a href="?page=parties&type=customer" class="dash-link">
+        <a href="?page=parties&type=all" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#f59e0b;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -80,14 +94,14 @@ function money($val) {
                 <div class="dc-label">Receivables</div>
             </div>
             <div class="dc-value" style="padding-left:6px;color:#f59e0b;"><?= money($pendingReceivables['total']) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-people me-1"></i><?= $pendingReceivables['count'] ?> customers</div>
+            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-people me-1"></i><?= (int)$pendingReceivables['count'] ?> parties owing you</div>
         </div>
         </a>
     </div>
 
-    <!-- Payables -->
+    <!-- Payables (net you owe — any party type) -->
     <div class="col-6 col-md-2">
-        <a href="?page=parties&type=supplier" class="dash-link">
+        <a href="?page=parties&type=all" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#ef4444;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
@@ -95,7 +109,7 @@ function money($val) {
                 <div class="dc-label">Payables</div>
             </div>
             <div class="dc-value" style="padding-left:6px;color:#ef4444;"><?= money($pendingPayables['total']) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-truck me-1"></i><?= $pendingPayables['count'] ?> suppliers</div>
+            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-truck me-1"></i><?= (int)$pendingPayables['count'] ?> parties you owe</div>
         </div>
         </a>
     </div>

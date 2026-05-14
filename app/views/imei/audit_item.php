@@ -200,9 +200,15 @@ function aiUpdate() {
     var btn = document.getElementById('aiSubmit');
 
     if (aiScanned.length === 0) {
-        sum.className = 'ai-warn';
-        sum.textContent = 'No IMEIs scanned yet.';
-        btn.disabled = true;
+        if (aiInStock.length > 0) {
+            sum.className = 'ai-warn';
+            sum.textContent = 'None scanned — submit to mark all ' + aiInStock.length + ' IMEI(s) as transferred (e.g. zero on hand).';
+            btn.disabled = false;
+        } else {
+            sum.className = 'ai-warn';
+            sum.textContent = 'No IMEIs in this warehouse for this item.';
+            btn.disabled = true;
+        }
     } else if (unscanned === 0) {
         sum.className = 'ai-warn-ok';
         sum.textContent = '✓ All ' + aiInStock.length + ' IMEIs scanned. No changes needed.';
@@ -221,5 +227,6 @@ document.getElementById('aiForm').addEventListener('submit', function(e) {
     }
 });
 
+aiUpdate();
 setTimeout(function() { document.getElementById('aiInput').focus(); }, 200);
 </script>

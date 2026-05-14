@@ -9,10 +9,10 @@
         <?= $isIn ? 'Payment In' : 'Payment Out' ?>
     </span>
     <div class="ms-auto d-flex flex-wrap gap-2 justify-content-end align-items-center" style="row-gap:8px;">
-        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary">
+        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
-        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1&thermal=1" target="_blank" class="btn btn-sm btn-outline-success">
+        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1&thermal=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success">
             <i class="bi bi-receipt me-1"></i> Thermal
         </a>
         <?php if (Auth::can('payments','edit')): ?>

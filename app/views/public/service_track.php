@@ -7,7 +7,7 @@ $currentStage = $record ? (int)$record['device_stage'] : -1;
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Track Your Device — <?= defined('APP_TITLE') ? APP_TITLE : 'Iqbal Electronics' ?></title>
+<title>Track Your Device — <?= htmlspecialchars(PDF_COMPANY_NAME, ENT_QUOTES, 'UTF-8') ?></title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 <style>
 * { box-sizing:border-box;margin:0;padding:0; }
@@ -69,7 +69,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgr
 <body>
 <div class="pt-wrap">
     <div class="pt-logo">
-        <h1>📱 Iqbal Electronics</h1>
+        <h1>📱 <?= htmlspecialchars(PDF_COMPANY_NAME, ENT_QUOTES, 'UTF-8') ?></h1>
         <p>Service repair status — <strong><?= htmlspecialchars(app_service_track_short_label()) ?></strong></p>
     </div>
 

@@ -5,12 +5,14 @@ require_once __DIR__ . '/BaseModel.php';
 class Sale extends BaseModel {
     protected string $table = 'sales';
 
-    // Get all sales with party name
-    // BUG FIX: Changed JOIN to LEFT JOIN on parties. If a party is hard-deleted
-    // (BaseModel::delete exists), INNER JOIN silently drops all their sales from listings.
-    public function getAll(array $filters = []): array {
-        $voidedOnly      = !empty($filters['voided_only']);
-        $includeVoided   = !empty($filters['include_voided']);
+    /**
+     * Shared WHERE + params for sales list / bulk print (same rules as getAll).
+     *
+     * @return array{0:string,1:array<int,mixed>}
+     */
+    private function buildSalesListWhere(array $filters): array {
+        $voidedOnly    = !empty($filters['voided_only']);
+        $includeVoided = !empty($filters['include_voided']);
 
         if ($voidedOnly) {
             $where = "WHERE s.status = 'cancelled'";
@@ -21,9 +23,6 @@ class Sale extends BaseModel {
         }
         $params = [];
 
-        // Scope to session warehouse. Exception: admins listing voided (or mixing in voided)
-        // must see cancelled invoices from every warehouse — otherwise voided rows "disappear"
-        // after switching warehouse even though the UI is admin-only.
         $wid = Auth::warehouseId();
         if ($wid) {
             if ($voidedOnly && Auth::isAdmin()) {
@@ -56,18 +55,61 @@ class Sale extends BaseModel {
             $params = array_merge($params, [$like, $like, $like, $like, $like, $like, $like, $like, $like]);
         }
 
+        return [$where, $params];
+    }
+
+    private static function salesListFromJoins(): string {
+        return 'FROM sales s
+             LEFT JOIN parties p ON p.id = s.party_id
+             LEFT JOIN users u ON u.id = s.created_by
+             LEFT JOIN warehouses w ON w.id = s.warehouse_id';
+    }
+
+    // Get all sales with party name
+    // BUG FIX: Changed JOIN to LEFT JOIN on parties. If a party is hard-deleted
+    // (BaseModel::delete exists), INNER JOIN silently drops all their sales from listings.
+    public function getAll(array $filters = []): array {
+        [$where, $params] = $this->buildSalesListWhere($filters);
+
         return $this->db->fetchAll(
             "SELECT s.*, p.name as party_name, p.phone as party_phone,
                     u.name as created_by_name, w.name as warehouse_name
-             FROM sales s
-             LEFT JOIN parties p ON p.id = s.party_id
-             LEFT JOIN users u ON u.id = s.created_by
-             LEFT JOIN warehouses w ON w.id = s.warehouse_id
+             " . self::salesListFromJoins() . "
              {$where}
              ORDER BY s.created_at DESC
              LIMIT 500",
             $params
         );
+    }
+
+    /**
+     * Sale IDs for bulk A5/PDF print, chronological. Fetches at most maxInvoices + 1 to detect truncation.
+     *
+     * @return array{ids: array<int,int>, truncated: bool}
+     */
+    public function getIdsForBulkPrint(array $filters, int $maxInvoices = 200): array {
+        $maxInvoices = max(1, min(300, $maxInvoices));
+        $fetchCap    = $maxInvoices + 1;
+        [$where, $params] = $this->buildSalesListWhere($filters);
+
+        $rows = $this->db->fetchAll(
+            "SELECT s.id
+             " . self::salesListFromJoins() . "
+             {$where}
+             ORDER BY s.date ASC, s.id ASC
+             LIMIT " . (int) $fetchCap,
+            $params
+        );
+
+        $truncated = count($rows) > $maxInvoices;
+        if ($truncated) {
+            $rows = array_slice($rows, 0, $maxInvoices);
+        }
+
+        return [
+            'ids'        => array_map('intval', array_column($rows, 'id')),
+            'truncated'  => $truncated,
+        ];
     }
 
     // Get single sale with all details
@@ -649,7 +691,7 @@ class Sale extends BaseModel {
         }
     }
 
-    // Summary stats
+    // Summary stats (scoped to session warehouse when set — matches getAll)
     public function getStats(string $period = 'today'): array {
         $dateClause = match($period) {
             'today'   => "date = CURDATE()",
@@ -658,6 +700,14 @@ class Sale extends BaseModel {
             default   => "date = CURDATE()",
         };
 
+        $params    = [];
+        $whClause  = '';
+        $warehouse = Auth::warehouseId();
+        if ($warehouse) {
+            $whClause = ' AND warehouse_id = ?';
+            $params[] = $warehouse;
+        }
+
         return $this->db->fetchOne(
             "SELECT
                 COUNT(*) as total_invoices,
@@ -665,7 +715,8 @@ class Sale extends BaseModel {
                 COALESCE(SUM(paid_amount), 0) as total_paid,
                 COALESCE(SUM(balance), 0) as total_balance
              FROM sales
-             WHERE {$dateClause} AND status != 'cancelled'"
+             WHERE {$dateClause} AND status != 'cancelled'{$whClause}",
+            $params
         ) ?: [];
     }
 }

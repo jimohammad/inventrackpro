@@ -11,6 +11,52 @@ class ReportController extends BaseController {
         $this->db = Database::getInstance();
     }
 
+    /**
+     * @param list<array<string,mixed>> $transactions
+     * @return array{
+     *   reportError: string|null,
+     *   transactions: list<array<string,mixed>>,
+     *   transactionsAll: list<array<string,mixed>>,
+     *   listTruncated: bool,
+     *   listLimit: int,
+     *   ledgerTotalCount: int
+     * }
+     */
+    private function finalizeReportLedger(array $transactions, string $fromDate, string $toDate): array {
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            return [
+                'reportError'      => $reportError,
+                'transactions'     => [],
+                'transactionsAll'  => [],
+                'listTruncated'    => false,
+                'listLimit'        => ListPage::REPORT_LEDGER_MAX,
+                'ledgerTotalCount' => 0,
+            ];
+        }
+
+        $prep = ListPage::prepareLedgerDisplay($transactions);
+        if ($prep['error'] !== null) {
+            return [
+                'reportError'      => $prep['error'],
+                'transactions'     => [],
+                'transactionsAll'  => [],
+                'listTruncated'    => false,
+                'listLimit'        => $prep['limit'],
+                'ledgerTotalCount' => $prep['total_count'],
+            ];
+        }
+
+        return [
+            'reportError'      => null,
+            'transactions'     => $prep['display'],
+            'transactionsAll'  => $prep['all'],
+            'listTruncated'    => $prep['truncated'],
+            'listLimit'        => $prep['limit'],
+            'ledgerTotalCount' => $prep['total_count'],
+        ];
+    }
+
     // Check if user can access a specific report (master OR individual permission)
     private function authorizeReport(string $reportKey): void {
         if (!Auth::can('reports', 'view') && !Auth::can($reportKey, 'view')) {
@@ -24,7 +70,7 @@ class ReportController extends BaseController {
         // Allow access if user has master reports OR any individual report permission
         if (!Auth::can('reports', 'view')) {
             $hasAny = false;
-            foreach (['rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei'] as $rk) {
+            foreach (['rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_customer_purchases','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei'] as $rk) {
                 if (Auth::can($rk, 'view')) { $hasAny = true; break; }
             }
             if (!$hasAny) { Auth::authorize('reports', 'view'); }
@@ -305,18 +351,25 @@ class ReportController extends BaseController {
             "SELECT id, name, type, party_code FROM parties WHERE is_active = 1 ORDER BY name ASC"
         );
 
-        $party        = null;
-        $transactions = [];
-        $openingBal   = 0;
-        $summary      = ['total_invoiced' => 0, 'total_paid' => 0, 'total_returned' => 0,
-                          'total_purchases' => 0, 'total_paid_out' => 0, 'total_discounts' => 0, 'balance' => 0];
+        $party            = null;
+        $transactions     = [];
+        $transactionsAll  = [];
+        $openingBal       = 0;
+        $reportError      = null;
+        $listTruncated    = false;
+        $listLimit        = ListPage::REPORT_LEDGER_MAX;
+        $ledgerTotalCount = 0;
+        $summary          = ['total_invoiced' => 0, 'total_paid' => 0, 'total_returned' => 0,
+                              'total_purchases' => 0, 'total_paid_out' => 0, 'total_discounts' => 0, 'balance' => 0];
 
         if ($partyId) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+
             $party = $this->db->fetchOne(
                 "SELECT * FROM parties WHERE id = ?", [$partyId]
             );
 
-            if ($party) {
+            if ($party && $reportError === null) {
                 // ============================================================
                 // UNIFIED ACCOUNT: All transaction types in one timeline
                 // Debit = balance goes up (they owe us more / we owe them less)
@@ -458,6 +511,19 @@ class ReportController extends BaseController {
                                             + array_sum(array_column(array_values($retTxns), 'debit'));
                 $summary['total_discounts'] = array_sum(array_column(array_values($discTxns), 'credit'));
                 $summary['balance']         = $running;
+
+                $ledgerView = $this->finalizeReportLedger($transactions, $fromDate, $toDate);
+                if ($ledgerView['reportError'] !== null) {
+                    $reportError = $ledgerView['reportError'];
+                    $transactions = [];
+                    $transactionsAll = [];
+                } else {
+                    $transactions     = $ledgerView['transactions'];
+                    $transactionsAll  = $ledgerView['transactionsAll'];
+                    $listTruncated    = $ledgerView['listTruncated'];
+                    $listLimit        = $ledgerView['listLimit'];
+                    $ledgerTotalCount = $ledgerView['ledgerTotalCount'];
+                }
             }
         }
 
@@ -703,6 +769,176 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/reports/item_sales_print.php';
     }
 
+    public function customerPurchases(): void {
+        $this->authorizeReport('rpt_customer_purchases');
+
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+
+        $customers = $this->db->fetchAll(
+            "SELECT id, name, phone, party_code FROM parties
+             WHERE is_active = 1 AND type IN ('customer','both')
+             ORDER BY name ASC"
+        );
+
+        $party            = null;
+        $rows             = [];
+        $reportError      = null;
+        $listTruncated    = false;
+        $listLimit        = ListPage::REPORT_LEDGER_MAX;
+        $summary          = ['qty' => 0, 'revenue' => 0, 'avg_price' => 0, 'invoices' => 0, 'items' => 0];
+        $itemBreakdown    = [];
+        $monthlyBreakdown = [];
+
+        if ($partyId) {
+            $party = $this->db->fetchOne(
+                "SELECT id, name, phone, party_code, type FROM parties WHERE id = ? AND type IN ('customer','both')",
+                [$partyId]
+            );
+
+            if ($party) {
+                $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+
+                if ($reportError === null) {
+                    $allRows = $this->db->fetchAll(
+                        "SELECT s.id as sale_id, s.invoice_no, s.date,
+                                i.id as item_id, i.name as item_name, i.sku, i.brand,
+                                si.quantity, si.unit_price, si.discount, si.total,
+                                w.name as warehouse_name
+                         FROM sale_items si
+                         JOIN sales s ON s.id = si.sale_id
+                         JOIN items i ON i.id = si.item_id
+                         LEFT JOIN warehouses w ON w.id = s.warehouse_id
+                         WHERE s.party_id = ?
+                           AND s.date BETWEEN ? AND ?
+                           AND s.status != 'cancelled'
+                         ORDER BY s.date DESC, s.id DESC, i.name ASC",
+                        [$partyId, $fromDate, $toDate]
+                    );
+
+                    $capped = ListPage::capRows($allRows, ListPage::REPORT_LEDGER_MAX);
+                    $rows           = $capped['items'];
+                    $listTruncated  = $capped['truncated'];
+                    $listLimit      = $capped['limit'];
+
+                    $summary['qty']      = array_sum(array_column($rows, 'quantity'));
+                    $summary['revenue']  = array_sum(array_column($rows, 'total'));
+                    $summary['invoices'] = count(array_unique(array_column($rows, 'sale_id')));
+
+                    $itemMap = [];
+                    foreach ($rows as $r) {
+                        $iid = $r['item_id'];
+                        if (!isset($itemMap[$iid])) {
+                            $itemMap[$iid] = [
+                                'name'  => $r['item_name'],
+                                'sku'   => $r['sku'] ?? '',
+                                'brand' => $r['brand'] ?? '',
+                                'qty'   => 0,
+                                'total' => 0,
+                                'count' => 0,
+                            ];
+                        }
+                        $itemMap[$iid]['qty']   += $r['quantity'];
+                        $itemMap[$iid]['total'] += $r['total'];
+                        $itemMap[$iid]['count'] += 1;
+                    }
+                    $summary['items'] = count($itemMap);
+                    $summary['avg_price'] = $summary['qty'] > 0
+                        ? $summary['revenue'] / $summary['qty'] : 0;
+
+                    usort($itemMap, function ($a, $b) {
+                        if ($b['total'] == $a['total']) {
+                            return 0;
+                        }
+                        return ($b['total'] > $a['total']) ? 1 : -1;
+                    });
+                    $itemBreakdown = array_values($itemMap);
+
+                    $monthMap = [];
+                    foreach ($rows as $r) {
+                        $mon = date('Y-m', strtotime($r['date']));
+                        if (!isset($monthMap[$mon])) {
+                            $monthMap[$mon] = ['month' => $mon, 'qty' => 0, 'total' => 0];
+                        }
+                        $monthMap[$mon]['qty']   += $r['quantity'];
+                        $monthMap[$mon]['total'] += $r['total'];
+                    }
+                    ksort($monthMap);
+                    $monthlyBreakdown = array_values($monthMap);
+                }
+            }
+        }
+
+        $pageTitle = 'Customer Purchases Report';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/customer_purchases.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function customerPurchasesPrint(): void {
+        $this->authorizeReport('rpt_customer_purchases');
+
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+
+        $party = $this->db->fetchOne(
+            "SELECT id, name, phone, party_code FROM parties WHERE id = ? AND type IN ('customer','both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->redirect('?page=reports&action=customerPurchases');
+        }
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            $this->redirect('?page=reports&action=customerPurchases&party_id=' . $partyId);
+        }
+
+        $rows = $this->db->fetchAll(
+            "SELECT s.invoice_no, s.date, i.name as item_name, i.sku,
+                    si.quantity, si.unit_price, si.discount, si.total
+             FROM sale_items si
+             JOIN sales s ON s.id = si.sale_id
+             JOIN items i ON i.id = si.item_id
+             WHERE s.party_id = ? AND s.date BETWEEN ? AND ? AND s.status != 'cancelled'
+             ORDER BY s.date DESC, s.id DESC, i.name ASC",
+            [$partyId, $fromDate, $toDate]
+        );
+
+        $itemMap = [];
+        foreach ($rows as $r) {
+            $k = $r['item_name'];
+            if (!isset($itemMap[$k])) {
+                $itemMap[$k] = ['name' => $k, 'sku' => $r['sku'] ?? '', 'qty' => 0, 'total' => 0];
+            }
+            $itemMap[$k]['qty']   += $r['quantity'];
+            $itemMap[$k]['total'] += $r['total'];
+        }
+        usort($itemMap, function ($a, $b) {
+            if ($b['total'] == $a['total']) {
+                return 0;
+            }
+            return ($b['total'] > $a['total']) ? 1 : -1;
+        });
+        $itemBreakdown = array_values($itemMap);
+
+        $summary = [
+            'qty'      => array_sum(array_column($rows, 'quantity')),
+            'revenue'  => array_sum(array_column($rows, 'total')),
+            'invoices' => count(array_unique(array_column($rows, 'invoice_no'))),
+            'items'    => count($itemMap),
+        ];
+
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/customer_purchases_print.php';
+    }
+
     public function payments(): void {
         $this->authorizeReport('rpt_payments');
 
@@ -881,15 +1117,21 @@ class ReportController extends BaseController {
         $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate    = $this->input('to_date', date('Y-m-d'), 'get');
 
-        $account     = null;
-        $transactions = [];
-        $openingBalance = 0;
-        $closingBalance = 0;
+        $account          = null;
+        $transactions     = [];
+        $transactionsAll  = [];
+        $openingBalance   = 0;
+        $closingBalance   = 0;
+        $reportError      = null;
+        $listTruncated    = false;
+        $listLimit        = ListPage::REPORT_LEDGER_MAX;
+        $ledgerTotalCount = 0;
 
         if ($accountId) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
             $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$accountId]);
 
-            // Ledger rows for statement period (aligned with Accounts page + reconciliation)
+            if ($account && $reportError === null) {
 
             // Payments IN (money received into this account)
             $paymentsIn = $db->fetchAll(
@@ -1069,6 +1311,20 @@ class ReportController extends BaseController {
             unset($tx);
 
             $closingBalance = $running ?: $openingBalance;
+
+                $ledgerView = $this->finalizeReportLedger($transactions, $fromDate, $toDate);
+                if ($ledgerView['reportError'] !== null) {
+                    $reportError = $ledgerView['reportError'];
+                    $transactions = [];
+                    $transactionsAll = [];
+                } else {
+                    $transactions     = $ledgerView['transactions'];
+                    $transactionsAll  = $ledgerView['transactionsAll'];
+                    $listTruncated    = $ledgerView['listTruncated'];
+                    $listLimit        = $ledgerView['listLimit'];
+                    $ledgerTotalCount = $ledgerView['ledgerTotalCount'];
+                }
+            }
         }
 
         $pageTitle = 'Account Statement';
@@ -1236,15 +1492,21 @@ class ReportController extends BaseController {
         $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
 
-        $supplier     = null;
-        $transactions = [];
-        $openingBal   = 0;
-        $summary      = ['total_purchases' => 0, 'total_paid' => 0, 'balance' => 0];
+        $supplier         = null;
+        $transactions     = [];
+        $transactionsAll  = [];
+        $openingBal       = 0;
+        $reportError      = null;
+        $listTruncated    = false;
+        $listLimit        = ListPage::REPORT_LEDGER_MAX;
+        $ledgerTotalCount = 0;
+        $summary          = ['total_purchases' => 0, 'total_paid' => 0, 'balance' => 0];
 
         if ($supplierId) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
             $supplier = $this->db->fetchOne("SELECT * FROM parties WHERE id = ?", [$supplierId]);
 
-            if ($supplier) {
+            if ($supplier && $reportError === null) {
 
                 // Purchase invoices in period
                 $purchases = $this->db->fetchAll(
@@ -1318,6 +1580,19 @@ class ReportController extends BaseController {
                 $summary['total_purchases'] = array_sum(array_column(array_values($purTxns), 'amount'));
                 $summary['total_paid']      = array_sum(array_column(array_values($payTxns), 'amount'));
                 $summary['balance']         = $running;
+
+                $ledgerView = $this->finalizeReportLedger($transactions, $fromDate, $toDate);
+                if ($ledgerView['reportError'] !== null) {
+                    $reportError = $ledgerView['reportError'];
+                    $transactions = [];
+                    $transactionsAll = [];
+                } else {
+                    $transactions     = $ledgerView['transactions'];
+                    $transactionsAll  = $ledgerView['transactionsAll'];
+                    $listTruncated    = $ledgerView['listTruncated'];
+                    $listLimit        = $ledgerView['listLimit'];
+                    $ledgerTotalCount = $ledgerView['ledgerTotalCount'];
+                }
             }
         }
 

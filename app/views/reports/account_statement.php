@@ -32,11 +32,11 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">From Date</label>
-                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>">
+                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>" required>
             </div>
             <div class="col-md-3">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">To Date</label>
-                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>">
+                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>" required>
             </div>
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
@@ -46,6 +46,8 @@
         </form>
     </div>
 </div>
+
+<?php include __DIR__ . '/../partials/report_ledger_alerts.php'; ?>
 
 <?php if ($account): ?>
 
@@ -149,10 +151,11 @@
                         <span style="color:#94a3b8;font-weight:400;font-size:0.78rem;margin-left:8px;"><?= date('d M Y', strtotime($toDate)) ?></span>
                     </td>
                     <td style="padding:11px 14px;text-align:right;font-weight:700;color:#10b981;">
-                        <?= number_format(array_sum(array_column($transactions, 'credit')), DECIMAL_PLACES) ?>
+                        <?php $footerRows = !empty($transactionsAll) ? $transactionsAll : $transactions; ?>
+                        <?= number_format(array_sum(array_column($footerRows, 'credit')), DECIMAL_PLACES) ?>
                     </td>
                     <td style="padding:11px 14px;text-align:right;font-weight:700;color:#dc2626;">
-                        <?= number_format(array_sum(array_column($transactions, 'debit')), DECIMAL_PLACES) ?>
+                        <?= number_format(array_sum(array_column($footerRows, 'debit')), DECIMAL_PLACES) ?>
                     </td>
                     <td style="padding:11px 14px;text-align:right;font-size:1rem;font-weight:800;color:<?= $closingBalance >= 0 ? '#6366f1' : '#dc2626' ?>;">
                         <?= number_format($closingBalance, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?>
@@ -181,11 +184,7 @@
 </div>
 <?php endif; ?>
 
-<script>$(document).ready(function(){
-    if($('#accountStmtTable tbody tr').length){
-        $('#accountStmtTable').DataTable({ pageLength:100, paging:false, order:[], language:{search:'',searchPlaceholder:'Search...'}, pageLength:100, paging:false, order:[] });
-    }
-});</script>
+<script>$(document).ready(function(){ initReportLedgerDataTable('accountStmtTable'); });</script>
 <style>
 @media print {
     .no-print, .sidebar, nav, .topbar { display:none !important; }

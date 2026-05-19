@@ -33,17 +33,24 @@ class SalesController extends BaseController {
         $viewVoided      = Auth::isAdmin() && ($this->input('view', '', 'get') === 'voided');
         $includeVoided   = Auth::isAdmin() && ($this->input('include_voided', '', 'get') === '1');
 
+        $dateRange = ListPage::resolveDateFiltersFromGet();
+
         $filters = [
             'search'         => $this->inputSearch('search', '', 'get'),
             'status'         => $this->input('status', '', 'get'),
             'party_id'       => $this->inputInt('party_id', 0, 'get'),
-            'from_date'      => $this->input('from_date', '', 'get'),
-            'to_date'        => $this->input('to_date', '', 'get'),
+            'from_date'      => $dateRange['from_date'],
+            'to_date'        => $dateRange['to_date'],
+            'all_dates'      => $dateRange['all_dates'],
             'voided_only'    => $viewVoided,
             'include_voided' => $includeVoided && !$viewVoided,
         ];
 
-        $sales     = $this->saleModel->getAll($filters);
+        $listPage      = $this->saleModel->getIndexPage($filters);
+        $sales         = $listPage['items'];
+        $listTruncated = $listPage['truncated'];
+        $listLimit     = $listPage['limit'];
+        $datesDefaulted = $dateRange['dates_defaulted'];
         $stats     = $this->saleModel->getStats('month');
         $pageTitle = $viewVoided ? 'Sales — voided invoices' : 'Sales';
         $page      = 'sales';

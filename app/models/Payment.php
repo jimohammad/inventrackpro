@@ -11,40 +11,53 @@ class Payment extends BaseModel {
     }
 
     public function getAll(array $filters = []): array {
+        return $this->getIndexPage($filters)['items'];
+    }
+
+    /**
+     * @return array{items:list<array<string,mixed>>,truncated:bool,limit:int}
+     */
+    public function getIndexPage(array $filters = [], int $limit = ListPage::MAX_ROWS): array {
         $where  = "WHERE 1=1";
         $params = [];
 
-        // Scope to payment's warehouse (not party's) — a party can have payments in multiple warehouses
         if (Auth::warehouseId()) {
             $where .= " AND py.warehouse_id = ?";
             $params[] = Auth::warehouseId();
         }
 
         if (!empty($filters['ref_type'])) {
-            $where .= " AND py.ref_type = ?"; $params[] = $filters['ref_type'];
+            $where .= " AND py.ref_type = ?";
+            $params[] = $filters['ref_type'];
         } else {
-            // Hide discounts from payments list — they belong on the Discounts page
             $where .= " AND py.ref_type != 'discount'";
         }
         if (!empty($filters['party_id'])) {
-            $where .= " AND py.party_id = ?"; $params[] = $filters['party_id'];
+            $where .= " AND py.party_id = ?";
+            $params[] = $filters['party_id'];
         }
         if (!empty($filters['account_id'])) {
-            $where .= " AND py.account_id = ?"; $params[] = $filters['account_id'];
+            $where .= " AND py.account_id = ?";
+            $params[] = $filters['account_id'];
         }
         if (!empty($filters['from_date'])) {
-            $where .= " AND py.date >= ?"; $params[] = $filters['from_date'];
+            $where .= " AND py.date >= ?";
+            $params[] = $filters['from_date'];
         }
         if (!empty($filters['to_date'])) {
-            $where .= " AND py.date <= ?"; $params[] = $filters['to_date'];
+            $where .= " AND py.date <= ?";
+            $params[] = $filters['to_date'];
         }
         if (!empty($filters['search'])) {
-            $like    = '%' . $filters['search'] . '%';
-            $where  .= " AND (py.payment_no LIKE ? OR pa.name LIKE ?)";
-            $params  = array_merge($params, [$like, $like]);
+            $like   = '%' . $filters['search'] . '%';
+            $where .= " AND (py.payment_no LIKE ? OR pa.name LIKE ?)";
+            $params = array_merge($params, [$like, $like]);
         }
 
-        return $this->db->fetchAll(
+        $limit    = max(1, min(ListPage::MAX_ROWS, $limit));
+        $fetchCap = $limit + 1;
+
+        $rows = $this->db->fetchAll(
             "SELECT py.*, pa.name as party_name, a.name as account_name, u.name as created_by_name
              FROM payments py
              LEFT JOIN parties pa ON pa.id = py.party_id
@@ -52,9 +65,11 @@ class Payment extends BaseModel {
              LEFT JOIN users u ON u.id = py.created_by
              {$where}
              ORDER BY py.created_at DESC
-             LIMIT 500",
+             LIMIT {$fetchCap}",
             $params
         );
+
+        return ListPage::capRows($rows, $limit);
     }
 
     public function findFull(int $id): array|false {

@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../helpers/Auth.php';
+require_once __DIR__ . '/../helpers/ListPage.php';
 require_once __DIR__ . '/../../config/app.php';
 
 /**

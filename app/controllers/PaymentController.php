@@ -41,15 +41,24 @@ class PaymentController extends BaseController {
     public function index(): void {
         Auth::authorize('payments', 'view');
 
+        $dateRange = ListPage::resolveDateFiltersFromGet();
+
         $filters = [
-            'search'    => $this->input('search', '', 'get'),
+            'search'    => $this->inputSearch('search', '', 'get'),
             'ref_type'  => $this->input('ref_type', '', 'get'),
-            'from_date' => $this->input('from_date', date('Y-m-01'), 'get'),
-            'to_date'   => $this->input('to_date', date('Y-m-d'), 'get'),
+            'from_date' => $dateRange['from_date'],
+            'to_date'   => $dateRange['to_date'],
+            'all_dates' => $dateRange['all_dates'],
         ];
 
-        $payments  = $this->paymentModel->getAll($filters);
-        $summary   = $this->paymentModel->getSummary($filters['from_date'], $filters['to_date']);
+        $listPage       = $this->paymentModel->getIndexPage($filters);
+        $payments       = $listPage['items'];
+        $listTruncated  = $listPage['truncated'];
+        $listLimit      = $listPage['limit'];
+        $datesDefaulted = $dateRange['dates_defaulted'];
+
+        [$summaryFrom, $summaryTo] = ListPage::summaryDateRange($filters);
+        $summary   = $this->paymentModel->getSummary($summaryFrom, $summaryTo);
         $pageTitle = 'Payments';
         $page      = 'payments';
 

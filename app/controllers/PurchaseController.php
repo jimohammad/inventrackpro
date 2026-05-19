@@ -17,14 +17,21 @@ class PurchaseController extends BaseController {
     public function index(): void {
         Auth::authorize('purchases', 'view');
 
+        $dateRange = ListPage::resolveDateFiltersFromGet();
+
         $filters = [
-            'search'    => $this->input('search', '', 'get'),
+            'search'    => $this->inputSearch('search', '', 'get'),
             'status'    => $this->input('status', '', 'get'),
-            'from_date' => $this->input('from_date', '', 'get'),
-            'to_date'   => $this->input('to_date', '', 'get'),
+            'from_date' => $dateRange['from_date'],
+            'to_date'   => $dateRange['to_date'],
+            'all_dates' => $dateRange['all_dates'],
         ];
 
-        $purchases = $this->purchaseModel->getIndexList($filters, Auth::warehouseId());
+        $listPage       = $this->purchaseModel->getIndexList($filters, Auth::warehouseId());
+        $purchases      = $listPage['items'];
+        $listTruncated  = $listPage['truncated'];
+        $listLimit      = $listPage['limit'];
+        $datesDefaulted = $dateRange['dates_defaulted'];
         $stats     = $this->purchaseModel->getMonthStats(Auth::warehouseId());
 
         $pageTitle = 'Purchases';

@@ -55,6 +55,20 @@ tbody tr:nth-child(even) { background:#f8f9ff; }
 .notes-box strong { display:block; color:#888; font-size:7.5px; text-transform:uppercase; margin-bottom:2px; }
 .inv-footer { border-top:1px solid #e5e7eb; padding-top:6px; text-align:center; color:#888; font-size:8px; }
 
+.no-print {
+    display:flex; flex-wrap:nowrap; justify-content:center; align-items:center;
+    gap:6px; margin:0 auto 16px; padding:10px 12px;
+    background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px;
+    width:max-content; max-width:100%; overflow-x:auto;
+}
+.no-print button {
+    flex:0 0 auto; white-space:nowrap;
+    background:#6366f1; color:#fff; border:none;
+    padding:6px 12px; border-radius:5px; font-size:12px; cursor:pointer;
+    font-family:system-ui,sans-serif;
+}
+.no-print .close-btn { background:#e5e7eb; color:#444; }
+
 @media screen { body { background:#e5e7eb; padding:20px; } .invoice-wrap { box-shadow:0 2px 16px rgba(0,0,0,0.15); background:#fff; } }
 @media print {
     body { background:#fff; padding:0; }
@@ -69,19 +83,31 @@ body {
     font-size: 12px;
     color: #000;
     background: #fff;
-    padding: <?= $thermal ? '8px 2px' : '20px 4px' ?>;
+    padding: <?= $thermal ? '12px' : '20px' ?>;
 }
 
 .no-print {
-    padding: 8px 12px;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
     background: #f8fafc;
-    border-bottom: 1px solid #e5e7eb;
-    margin: -20px -20px 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin: 0 auto 16px;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
 }
 .no-print button {
+    flex: 0 0 auto;
+    white-space: nowrap;
     background: #6366f1; color: #fff; border: none;
-    padding: 6px 16px; border-radius: 5px; font-size: 13px;
-    cursor: pointer; margin-right: 6px;
+    padding: 6px 12px; border-radius: 5px; font-size: 12px;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
 }
 .no-print button.close-btn { background: #e5e7eb; color: #444; }
 .no-print button.edit-btn  { background: #f59e0b; }
@@ -200,7 +226,7 @@ body {
 <body>
 
 <?php if (!$thermal): ?>
-<div class="no-print" style="text-align:center;padding:12px 0 0;margin-bottom:10px;">
+<div class="no-print">
     <button onclick="window.print()"><i>⎙</i> Print</button>
     <button onclick="window.location='?page=sales&action=thermalPrint&id=<?= (int) $sale['id'] ?>&thermal=1&autoprint=1'" style="background:#059669;color:#fff;"><b>🖨 Thermal</b></button>
     <button type="button" id="btnExportPdf" onclick="exportPDF()" style="background:#dc2626;color:#fff;"><b>⤓ PDF</b></button>

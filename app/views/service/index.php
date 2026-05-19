@@ -94,6 +94,27 @@ $stages = ServiceController::stages();
   0% { background: rgba(16,185,129,.12); }
   100% { background: transparent; }
 }
+
+.sv-delivered-date { font-size:.78rem;color:#10b981;font-weight:600;white-space:nowrap; }
+.sv-received-sub { font-size:.7rem;color:var(--text-muted); }
+
+.sv-delivery-modal {
+    position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+    background:rgba(15,23,42,.45);padding:16px;
+}
+.sv-delivery-modal.is-open { display:flex; }
+.sv-delivery-dialog {
+    width:100%;max-width:380px;background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);overflow:hidden;
+}
+.sv-delivery-head { padding:16px 18px 8px;font-weight:700;font-size:.95rem; }
+.sv-delivery-body { padding:0 18px 16px; }
+.sv-delivery-body label { display:block;font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px; }
+.sv-delivery-body input[type=date] {
+    width:100%;padding:10px 12px;border:1.5px solid var(--border-color);border-radius:10px;
+    font-size:.9rem;background:var(--bg-main);color:var(--text-main);
+}
+.sv-delivery-foot { display:flex;gap:8px;justify-content:flex-end;padding:12px 18px 16px;border-top:1px solid var(--border-color); }
 </style>
 
 <div class="sv-head">
@@ -178,7 +199,8 @@ $stages = ServiceController::stages();
             <thead>
                 <tr>
                     <th>Service #</th>
-                    <th>Date</th>
+                    <th>Received</th>
+                    <th>Delivered</th>
                     <th>Customer</th>
                     <th>Device</th>
                     <th>IMEI</th>
@@ -196,14 +218,23 @@ $stages = ServiceController::stages();
                 ?>
                 <tr>
                     <td><a href="?page=service&action=detail&id=<?= $r['id'] ?>"><?= htmlspecialchars($r['service_no']) ?></a></td>
-                    <td style="color:var(--text-muted);font-size:.8rem;"><?= date('d M Y', strtotime($r['received_date'] ?: $r['created_at'])) ?></td>
+                    <td style="color:var(--text-muted);font-size:.8rem;">
+                        <?= date('d M Y', strtotime($r['received_date'] ?: $r['created_at'])) ?>
+                    </td>
+                    <td>
+                        <?php if (!empty($r['delivered_date'])): ?>
+                        <span class="sv-delivered-date" data-delivered-cell="<?= (int)$r['id'] ?>"><?= date('d M Y', strtotime($r['delivered_date'])) ?></span>
+                        <?php else: ?>
+                        <span class="sv-received-sub" data-delivered-cell="<?= (int)$r['id'] ?>">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($customer ?: '—') ?><?php if ($r['customer_phone']): ?><br><small style="color:var(--text-muted);"><?= htmlspecialchars($r['customer_phone']) ?></small><?php endif; ?></td>
                     <td><?= htmlspecialchars(trim($r['device_brand'] . ' ' . $r['device_model']) ?: '—') ?></td>
                     <td class="sv-imei"><?= htmlspecialchars($r['imei']) ?></td>
                     <td><span class="sv-badge" style="background:<?= $st['color'] ?>15;color:<?= $st['color'] ?>;"><i class="bi <?= $st['icon'] ?>"></i> <?= $st['label'] ?></span></td>
                     <td>
                         <?php if (Auth::can('service', 'edit')): ?>
-                        <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>">
+                        <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>" data-delivered-date="<?= htmlspecialchars($r['delivered_date'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <span class="sv-status-dot" aria-hidden="true"></span>
                             <select class="sv-status-select" aria-label="Change status">
                                 <?php foreach (ServiceController::allowedStatuses() as $s): ?>
@@ -246,9 +277,24 @@ $stages = ServiceController::stages();
     </div>
 </div>
 
+<div id="svDeliveryModal" class="sv-delivery-modal" role="dialog" aria-modal="true" aria-labelledby="svDeliveryModalTitle">
+    <div class="sv-delivery-dialog">
+        <div class="sv-delivery-head" id="svDeliveryModalTitle">Delivery date</div>
+        <div class="sv-delivery-body">
+            <label for="svDeliveryDateInput">When was the device delivered to the customer?</label>
+            <input type="date" id="svDeliveryDateInput" max="<?= date('Y-m-d') ?>">
+        </div>
+        <div class="sv-delivery-foot">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="svDeliveryCancel">Cancel</button>
+            <button type="button" class="btn btn-sm btn-primary" id="svDeliveryConfirm">Save status</button>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var csrf = '<?= Auth::csrfToken() ?>';
+    var DELIVERED_STATUSES = ['Fixed & Delivered', 'Replaced & Delivered', 'No Repair & Delivered'];
 
     function copyTextToClipboard(text) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -312,53 +358,156 @@ document.addEventListener('DOMContentLoaded', function() {
         wrap.setAttribute('data-status', status);
     }
 
+    function isDeliveredStatus(status) {
+        return DELIVERED_STATUSES.indexOf(status) !== -1;
+    }
+
+    function formatDeliveredLabel(ymd) {
+        if (!ymd) return '—';
+        var parts = ymd.split('-');
+        if (parts.length !== 3) return ymd;
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var m = parseInt(parts[1], 10) - 1;
+        return parts[2] + ' ' + (months[m] || parts[1]) + ' ' + parts[0];
+    }
+
+    function updateDeliveredCell(serviceId, ymd) {
+        var cell = document.querySelector('[data-delivered-cell="' + serviceId + '"]');
+        if (!cell) return;
+        if (ymd) {
+            cell.textContent = formatDeliveredLabel(ymd);
+            cell.className = 'sv-delivered-date';
+        } else {
+            cell.textContent = '—';
+            cell.className = 'sv-received-sub';
+        }
+    }
+
+    var deliveryModal = document.getElementById('svDeliveryModal');
+    var deliveryDateInput = document.getElementById('svDeliveryDateInput');
+    var deliveryCancelBtn = document.getElementById('svDeliveryCancel');
+    var deliveryConfirmBtn = document.getElementById('svDeliveryConfirm');
+    var pendingDelivery = null;
+
+    function closeDeliveryModal() {
+        if (deliveryModal) deliveryModal.classList.remove('is-open');
+        pendingDelivery = null;
+    }
+
+    function openDeliveryModal(wrap, select, status) {
+        if (!deliveryModal || !deliveryDateInput) {
+            submitStatusUpdate(wrap, select, status, '');
+            return;
+        }
+        pendingDelivery = { wrap: wrap, select: select, status: status, prev: wrap.getAttribute('data-status') };
+        var existing = wrap.getAttribute('data-delivered-date') || '';
+        deliveryDateInput.value = existing || new Date().toISOString().slice(0, 10);
+        deliveryModal.classList.add('is-open');
+        deliveryDateInput.focus();
+    }
+
+    if (deliveryCancelBtn) {
+        deliveryCancelBtn.addEventListener('click', function() {
+            if (pendingDelivery) {
+                pendingDelivery.select.value = pendingDelivery.prev;
+                applyStatusTheme(pendingDelivery.wrap, pendingDelivery.prev);
+            }
+            closeDeliveryModal();
+        });
+    }
+
+    if (deliveryConfirmBtn) {
+        deliveryConfirmBtn.addEventListener('click', function() {
+            if (!pendingDelivery) return;
+            var dateVal = deliveryDateInput ? deliveryDateInput.value : '';
+            if (!dateVal) {
+                alert('Please choose a delivery date.');
+                return;
+            }
+            var ctx = pendingDelivery;
+            closeDeliveryModal();
+            submitStatusUpdate(ctx.wrap, ctx.select, ctx.status, dateVal);
+        });
+    }
+
+    if (deliveryModal) {
+        deliveryModal.addEventListener('click', function(e) {
+            if (e.target === deliveryModal) {
+                if (pendingDelivery) {
+                    pendingDelivery.select.value = pendingDelivery.prev;
+                    applyStatusTheme(pendingDelivery.wrap, pendingDelivery.prev);
+                }
+                closeDeliveryModal();
+            }
+        });
+    }
+
+    function submitStatusUpdate(wrap, select, status, deliveredDate) {
+        var id = wrap.getAttribute('data-service-id');
+        var saving = wrap.querySelector('.sv-status-saving');
+        if (!id) return;
+
+        if (saving) saving.style.display = 'inline';
+        select.disabled = true;
+        wrap.classList.add('is-saving');
+        applyStatusTheme(wrap, status);
+
+        var body = new URLSearchParams();
+        body.set('csrf_token', csrf);
+        body.set('id', id);
+        body.set('status', status);
+        if (deliveredDate) body.set('delivered_date', deliveredDate);
+
+        fetch('?page=service&action=updateStatus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (!res || !res.success) {
+                throw new Error((res && res.message) ? res.message : 'Failed');
+            }
+            wrap.setAttribute('data-status', status);
+            if (res.delivered_date) {
+                wrap.setAttribute('data-delivered-date', res.delivered_date);
+            } else {
+                wrap.removeAttribute('data-delivered-date');
+            }
+            updateDeliveredCell(id, res.delivered_date || '');
+            var tr = wrap.closest('tr');
+            if (tr) {
+                tr.classList.remove('sv-row-updated');
+                void tr.offsetWidth;
+                tr.classList.add('sv-row-updated');
+            }
+        })
+        .catch(function(err) {
+            select.value = wrap.getAttribute('data-status') || select.value;
+            applyStatusTheme(wrap, select.value);
+            alert('Status update failed: ' + (err && err.message ? err.message : 'Unknown error'));
+        })
+        .finally(function() {
+            if (saving) saving.style.display = 'none';
+            select.disabled = false;
+            wrap.classList.remove('is-saving');
+        });
+    }
+
     document.querySelectorAll('.sv-status-edit').forEach(function(wrap) {
         var select = wrap.querySelector('.sv-status-select');
-        var saving = wrap.querySelector('.sv-status-saving');
         if (!select) return;
 
         applyStatusTheme(wrap, select.value);
 
         select.addEventListener('change', function() {
-            var id = wrap.getAttribute('data-service-id');
             var status = select.value;
-            if (!id) return;
-
-            saving.style.display = 'inline';
-            select.disabled = true;
-            wrap.classList.add('is-saving');
-            applyStatusTheme(wrap, status);
-
-            var body = new URLSearchParams();
-            body.set('csrf_token', csrf);
-            body.set('id', id);
-            body.set('status', status);
-
-            fetch('?page=service&action=updateStatus', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString()
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-                if (!res || !res.success) {
-                    throw new Error((res && res.message) ? res.message : 'Failed');
-                }
-                var tr = wrap.closest('tr');
-                if (tr) {
-                    tr.classList.remove('sv-row-updated');
-                    void tr.offsetWidth;
-                    tr.classList.add('sv-row-updated');
-                }
-            })
-            .catch(function(err) {
-                alert('Status update failed: ' + (err && err.message ? err.message : 'Unknown error'));
-            })
-            .finally(function() {
-                saving.style.display = 'none';
-                select.disabled = false;
-                wrap.classList.remove('is-saving');
-            });
+            var prev = wrap.getAttribute('data-status') || select.value;
+            if (isDeliveredStatus(status)) {
+                openDeliveryModal(wrap, select, status);
+                return;
+            }
+            submitStatusUpdate(wrap, select, status, '');
         });
     });
 });

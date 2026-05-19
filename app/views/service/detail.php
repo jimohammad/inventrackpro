@@ -66,7 +66,12 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
             <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" target="_blank" rel="noopener noreferrer" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
                 <i class="bi bi-receipt-cutoff"></i> Thermal receipt
             </a>
-            <span style="font-size:.8rem;color:var(--text-muted);"><?= date('d M Y', strtotime($record['received_date'] ?: $record['created_at'])) ?></span>
+            <span style="font-size:.8rem;color:var(--text-muted);">
+                Received <?= date('d M Y', strtotime($record['received_date'] ?: $record['created_at'])) ?>
+                <?php if (!empty($record['delivered_date'])): ?>
+                · Delivered <?= date('d M Y', strtotime($record['delivered_date'])) ?>
+                <?php endif; ?>
+            </span>
         </div>
     </div>
 
@@ -111,10 +116,16 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
                 if (isset($stages[$nextStage])):
                     $ns = $stages[$nextStage];
             ?>
-            <form method="POST" action="?page=service&action=updateStage" style="display:inline;" onsubmit="return confirm('Move to <?= $ns['label'] ?>?');">
+            <form method="POST" action="?page=service&action=updateStage" class="sd-stage-form" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;" data-requires-delivery="<?= $nextStage >= 4 ? '1' : '0' ?>" onsubmit="return confirm('Move to <?= $ns['label'] ?>?');">
                 <?= Auth::csrfField() ?>
                 <input type="hidden" name="id" value="<?= $record['id'] ?>">
                 <input type="hidden" name="stage" value="<?= $nextStage ?>">
+                <?php if ($nextStage >= 4): ?>
+                <label style="font-size:.78rem;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;">
+                    Delivery date
+                    <input type="date" name="delivered_date" class="sd-delivered-date-input" value="<?= htmlspecialchars($record['delivered_date'] ?: date('Y-m-d')) ?>" max="<?= date('Y-m-d') ?>" required style="padding:6px 10px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.82rem;">
+                </label>
+                <?php endif; ?>
                 <button type="submit" class="sd-btn sd-btn-next"><i class="bi <?= $ns['icon'] ?>"></i> Move to <?= $ns['label'] ?></button>
             </form>
             <?php endif; ?>
@@ -131,10 +142,14 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
 
             <!-- Warranty void / customer damage: return without fixing -->
             <?php if ($currentStage < 4): ?>
-            <form method="POST" action="?page=service&action=returnNoRepair" style="display:inline;" onsubmit="return confirm('Return this device without fixing (warranty void)?');">
+            <form method="POST" action="?page=service&action=returnNoRepair" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;" onsubmit="return confirm('Return this device without fixing (warranty void)?');">
                 <?= Auth::csrfField() ?>
                 <input type="hidden" name="id" value="<?= $record['id'] ?>">
                 <input type="hidden" name="note" value="No repair & delivered (warranty void / customer damage).">
+                <label style="font-size:.78rem;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;">
+                    Delivery date
+                    <input type="date" name="delivered_date" value="<?= htmlspecialchars($record['delivered_date'] ?: date('Y-m-d')) ?>" max="<?= date('Y-m-d') ?>" required style="padding:6px 10px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.82rem;">
+                </label>
                 <button type="submit" class="sd-btn" style="background:rgba(239,68,68,.1);color:#dc2626;border:1px solid rgba(239,68,68,.18);">
                     <i class="bi bi-arrow-return-left"></i> Return Without Fixing
                 </button>

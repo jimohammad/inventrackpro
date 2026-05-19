@@ -75,7 +75,7 @@ $bulkPrintHref = '?' . http_build_query($bulkPrintQ);
             <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-calendar3 me-1"></i>To
             </label>
-            <input type="date" name="to_date" value="<?= htmlspecialchars((string) ($filters['to_date'] ?: date('Y-m-d'))) ?>"
+            <input type="date" name="to_date" value="<?= htmlspecialchars((string) ($filters['to_date'] ?? '')) ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
         </div>
@@ -110,6 +110,27 @@ $bulkPrintHref = '?' . http_build_query($bulkPrintQ);
 
     </div>
 </form>
+
+<?php
+$listPageName = 'sales';
+$listPageExtra = [];
+if (!empty($filters['voided_only'])) {
+    $listPageExtra['view'] = 'voided';
+}
+if (!empty($filters['include_voided'])) {
+    $listPageExtra['include_voided'] = '1';
+}
+if (!empty($filters['party_id'])) {
+    $listPageExtra['party_id'] = (int) $filters['party_id'];
+}
+if (($filters['search'] ?? '') !== '') {
+    $listPageExtra['search'] = (string) $filters['search'];
+}
+if (($filters['status'] ?? '') !== '') {
+    $listPageExtra['status'] = (string) $filters['status'];
+}
+include __DIR__ . '/../partials/list_page_alerts.php';
+?>
 
 <!-- Table -->
 <div class="card">

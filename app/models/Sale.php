@@ -69,17 +69,30 @@ class Sale extends BaseModel {
     // BUG FIX: Changed JOIN to LEFT JOIN on parties. If a party is hard-deleted
     // (BaseModel::delete exists), INNER JOIN silently drops all their sales from listings.
     public function getAll(array $filters = []): array {
-        [$where, $params] = $this->buildSalesListWhere($filters);
+        return $this->getIndexPage($filters)['items'];
+    }
 
-        return $this->db->fetchAll(
+    /**
+     * Sales list for index — fetches limit+1 rows to detect truncation.
+     *
+     * @return array{items:list<array<string,mixed>>,truncated:bool,limit:int}
+     */
+    public function getIndexPage(array $filters = [], int $limit = ListPage::MAX_ROWS): array {
+        [$where, $params] = $this->buildSalesListWhere($filters);
+        $limit    = max(1, min(ListPage::MAX_ROWS, $limit));
+        $fetchCap = $limit + 1;
+
+        $rows = $this->db->fetchAll(
             "SELECT s.*, p.name as party_name, p.phone as party_phone,
                     u.name as created_by_name, w.name as warehouse_name
              " . self::salesListFromJoins() . "
              {$where}
              ORDER BY s.created_at DESC
-             LIMIT 500",
+             LIMIT {$fetchCap}",
             $params
         );
+
+        return ListPage::capRows($rows, $limit);
     }
 
     /**

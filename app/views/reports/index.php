@@ -145,7 +145,8 @@ $categories = [
     'Sales & Customers' => [
         ['page' => 'reports', 'action' => 'sales',         'perm' => 'rpt_sales',         'icon' => 'bi-bag-check',         'color' => '#6366f1', 'bg' => 'rgba(99,102,241,0.1)',  'title' => 'Sales Report',          'desc' => 'Sales by date, party, or item'],
         ['page' => 'reports', 'action' => 'party',         'perm' => 'rpt_party',         'icon' => 'bi-person-lines-fill', 'color' => '#8b5cf6', 'bg' => 'rgba(139,92,246,0.1)',  'title' => 'Customer Statement',    'desc' => 'Transaction history per customer'],
-        ['page' => 'reports', 'action' => 'itemSales',     'perm' => 'rpt_item_sales',    'icon' => 'bi-box-seam',          'color' => '#f43f5e', 'bg' => 'rgba(244,63,94,0.1)',   'title' => 'Item Sales',            'desc' => 'Who bought what, when'],
+        ['page' => 'reports', 'action' => 'itemSales',         'perm' => 'rpt_item_sales',         'icon' => 'bi-box-seam',           'color' => '#f43f5e', 'bg' => 'rgba(244,63,94,0.1)',   'title' => 'Item Sales',            'desc' => 'Who bought what, when'],
+        ['page' => 'reports', 'action' => 'customerPurchases', 'perm' => 'rpt_customer_purchases', 'icon' => 'bi-bag-check-fill',     'color' => '#a855f7', 'bg' => 'rgba(168,85,247,0.1)',  'title' => 'Customer Purchases',    'desc' => 'What a customer bought, by date'],
         ['page' => 'reports', 'action' => 'salesReturns',  'perm' => 'rpt_sales_returns', 'icon' => 'bi-arrow-return-left', 'color' => '#ef4444', 'bg' => 'rgba(239,68,68,0.1)',   'title' => 'Sales Returns',         'desc' => 'Returned sales & item details'],
         ['page' => 'reports', 'action' => 'customerImei',  'perm' => 'rpt_customer_imei', 'icon' => 'bi-phone',             'color' => '#0891b2', 'bg' => 'rgba(8,145,178,0.1)',   'title' => 'Customer IMEI',         'desc' => 'IMEIs sold with invoice & date'],
     ],

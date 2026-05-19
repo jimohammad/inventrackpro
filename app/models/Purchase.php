@@ -9,7 +9,10 @@ class Purchase extends BaseModel {
     /**
      * @param array{search?:string,status?:string,from_date?:string,to_date?:string} $filters
      */
-    public function getIndexList(array $filters, ?int $warehouseId): array {
+    /**
+     * @return array{items:list<array<string,mixed>>,truncated:bool,limit:int}
+     */
+    public function getIndexList(array $filters, ?int $warehouseId, int $limit = ListPage::MAX_ROWS): array {
         $where  = "WHERE p.status != 'cancelled'";
         $params = [];
 
@@ -36,16 +39,21 @@ class Purchase extends BaseModel {
             $params[] = $filters['to_date'];
         }
 
-        return $this->db->fetchAll(
+        $limit    = max(1, min(ListPage::MAX_ROWS, $limit));
+        $fetchCap = $limit + 1;
+
+        $rows = $this->db->fetchAll(
             "SELECT p.*, par.name as party_name, w.name as warehouse_name
              FROM purchases p
              JOIN parties par ON par.id = p.party_id
              LEFT JOIN warehouses w ON w.id = p.warehouse_id
              {$where}
              ORDER BY p.created_at DESC
-             LIMIT 500",
+             LIMIT {$fetchCap}",
             $params
         );
+
+        return ListPage::capRows($rows, $limit);
     }
 
     public function getMonthStats(?int $warehouseId): array|false {

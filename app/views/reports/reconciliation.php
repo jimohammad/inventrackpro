@@ -105,7 +105,12 @@ if (!empty($mismatches)):
 </div>
 
 <script>$(document).ready(function(){
-    $('#reconciliationTable').DataTable({ pageLength:50, paging:false, order:[], language:{search:'',searchPlaceholder:'Search...'}, pageLength:50, paging:false, order:[] });
+    initDataTable('#reconciliationTable', {
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'All']],
+        order: [],
+        language: { search: '', searchPlaceholder: 'Search accounts...' }
+    });
 });</script>
 <p class="text-muted mt-3" style="font-size:0.78rem;">
     <i class="bi bi-info-circle me-1"></i>

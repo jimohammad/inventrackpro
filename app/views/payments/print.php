@@ -12,19 +12,31 @@ body {
     font-size: 12px;
     color: #000;
     background: #fff;
-    padding: <?= $thermal ? '8px 2px' : '20px 4px' ?>;
+    padding: <?= $thermal ? '12px' : '20px' ?>;
 }
 
 .no-print {
-    padding: 8px 12px;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
     background: #f8fafc;
-    border-bottom: 1px solid #e5e7eb;
-    margin: -20px -20px 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin: 0 auto 16px;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
 }
 .no-print button {
+    flex: 0 0 auto;
+    white-space: nowrap;
     background: #6366f1; color: #fff; border: none;
-    padding: 6px 16px; border-radius: 5px; font-size: 13px;
-    cursor: pointer; margin-right: 6px;
+    padding: 6px 12px; border-radius: 5px; font-size: 12px;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
 }
 .no-print button.close-btn { background: #e5e7eb; color: #444; }
 .no-print button.edit-btn  { background: #f59e0b; }

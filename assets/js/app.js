@@ -115,3 +115,30 @@ function initDataTable(selector, options = {}) {
         ...options
     });
 }
+
+/** Statement / ledger reports: paginated table (never paging:false on large ledgers). */
+function initReportLedgerDataTable(tableId) {
+    if (typeof $ === 'undefined' || !$.fn.DataTable) return;
+    const selector = '#' + tableId;
+    const $t = $(selector);
+    if (!$t.length || $t.find('tbody tr').length === 0) return;
+    if ($.fn.DataTable.isDataTable($t)) return;
+    initDataTable(selector, {
+        pageLength: 50,
+        lengthMenu: [[25, 50, 100, 250], [25, 50, 100, 250]],
+        paging: true,
+        order: [],
+        language: { search: '', searchPlaceholder: 'Search in statement...' }
+    });
+}
+
+document.addEventListener('click', function (e) {
+    const csvBtn = e.target.closest('.js-export-report-csv');
+    if (csvBtn) {
+        exportReportCSV(csvBtn.dataset.tableId || '', csvBtn.dataset.title || 'Report');
+        return;
+    }
+    if (e.target.closest('.js-export-report-pdf')) {
+        exportReportPDF();
+    }
+});

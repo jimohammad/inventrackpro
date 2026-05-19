@@ -49,6 +49,26 @@ class ServiceController extends BaseController {
         };
     }
 
+    public static function isDeliveredStatus(string $status): bool {
+        return in_array($status, ['Fixed & Delivered', 'Replaced & Delivered', 'No Repair & Delivered'], true);
+    }
+
+    /** Validate Y-m-d; rejects invalid or future dates. */
+    public static function parseDeliveredDate(string $raw): ?string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        $dt = DateTime::createFromFormat('Y-m-d', $raw);
+        if (!$dt || $dt->format('Y-m-d') !== $raw) {
+            return null;
+        }
+        if ($dt > new DateTime('today')) {
+            return null;
+        }
+        return $raw;
+    }
+
     /** Preset values = item categories in use (service intake create/edit). */
     public static function deviceBrandOptions(): array {
         return [
@@ -295,7 +315,11 @@ class ServiceController extends BaseController {
         elseif ($stage === 2) $newStatus = ($old['status'] === 'Replaced') ? 'Replaced' : 'Fixed';
         elseif ($stage >= 1) $newStatus = 'In Progress';
 
-        $delivered = $stage >= 4 ? date('Y-m-d') : null;
+        $delivered = null;
+        if ($stage >= 4) {
+            $parsed = self::parseDeliveredDate(trim($this->input('delivered_date')));
+            $delivered = $parsed ?? date('Y-m-d');
+        }
 
         $this->db->execute(
             "UPDATE service_records SET device_stage = ?, status = ?, delivered_date = ? WHERE id = ? AND warehouse_id = ?",
@@ -361,9 +385,25 @@ class ServiceController extends BaseController {
             $newStage = max(1, $newStage);
             if ($newStage >= 4) $newStage = 1;
             $delivered = null;
-        } elseif ($status === 'Fixed & Delivered' || $status === 'Replaced & Delivered' || $status === 'No Repair & Delivered') {
+        } elseif (self::isDeliveredStatus($status)) {
             $newStage = 4;
-            $delivered = date('Y-m-d');
+            $parsed = self::parseDeliveredDate(trim($this->input('delivered_date', '')));
+            if ($parsed !== null) {
+                $delivered = $parsed;
+            } elseif (!empty($old['delivered_date'])) {
+                $delivered = $old['delivered_date'];
+            } else {
+                $delivered = date('Y-m-d');
+            }
+        }
+
+        if (self::isDeliveredStatus($status)) {
+            $parsedCheck = self::parseDeliveredDate(trim($this->input('delivered_date', '')));
+            $sentDate = trim($this->input('delivered_date', ''));
+            if ($sentDate !== '' && $parsedCheck === null) {
+                $this->json(['success' => false, 'message' => 'Invalid delivery date.'], 400);
+                return;
+            }
         }
 
         $this->db->beginTransaction();
@@ -393,6 +433,7 @@ class ServiceController extends BaseController {
             'id' => $id,
             'status' => $status,
             'stage' => $newStage,
+            'delivered_date' => $delivered,
             'message' => "{$old['service_no']} updated.",
         ]);
     }
@@ -418,11 +459,13 @@ class ServiceController extends BaseController {
 
         $this->db->beginTransaction();
         try {
+            $deliveredDate = self::parseDeliveredDate(trim($this->input('delivered_date'))) ?? date('Y-m-d');
+
             $this->db->execute(
                 "UPDATE service_records
                  SET status = ?, device_stage = 4, delivered_date = ?
                  WHERE id = ? AND warehouse_id = ?",
-                ['No Repair & Delivered', date('Y-m-d'), $id, Auth::warehouseId()]
+                ['No Repair & Delivered', $deliveredDate, $id, Auth::warehouseId()]
             );
 
             // Keep public tracking history consistent (it shows stage_change events)
@@ -488,13 +531,27 @@ class ServiceController extends BaseController {
         $record = $this->db->fetchOne("SELECT * FROM service_records WHERE id = ? AND warehouse_id = ?", [$id, Auth::warehouseId()]);
         if (!$record) { $this->flash('error', 'Service record not found'); $this->redirect('?page=service'); return; }
 
+        $deliveredDate = $record['delivered_date'] ?? null;
+        if (self::isDeliveredStatus((string)$record['status']) || (int)($record['device_stage'] ?? 0) >= 4) {
+            $rawDelivered = trim($this->input('delivered_date'));
+            if ($rawDelivered !== '') {
+                $parsed = self::parseDeliveredDate($rawDelivered);
+                if ($parsed === null) {
+                    $this->flash('error', 'Invalid delivery date.');
+                    $this->redirect('?page=service&action=edit&id=' . $id);
+                    return;
+                }
+                $deliveredDate = $parsed;
+            }
+        }
+
         $this->db->execute(
             "UPDATE service_records SET
                 imei = ?, device_brand = ?, device_model = ?,
                 party_id = ?, customer_name = ?, customer_phone = ?,
                 fault_category = ?, fault_description = ?,
                 technician_name = ?, repair_cost = ?,
-                received_date = ?, notes = ?
+                received_date = ?, delivered_date = ?, notes = ?
              WHERE id = ? AND warehouse_id = ?",
             [
                 trim($this->input('imei')),
@@ -508,6 +565,7 @@ class ServiceController extends BaseController {
                 $this->input('technician_name'),
                 $this->inputFloat('repair_cost'),
                 $this->input('received_date') ?: date('Y-m-d'),
+                $deliveredDate,
                 $this->input('notes'),
                 $id,
                 Auth::warehouseId(),

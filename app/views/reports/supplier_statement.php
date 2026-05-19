@@ -32,11 +32,11 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">From Date</label>
-                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>">
+                <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars((string) $fromDate) ?>" required>
             </div>
             <div class="col-md-3">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">To Date</label>
-                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>">
+                <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars((string) $toDate) ?>" required>
             </div>
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
@@ -46,6 +46,8 @@
         </form>
     </div>
 </div>
+
+<?php include __DIR__ . '/../partials/report_ledger_alerts.php'; ?>
 
 <?php if ($supplier): ?>
 
@@ -185,11 +187,7 @@
 </div>
 <?php endif; ?>
 
-<script>$(document).ready(function(){
-    if($('#supplierStmtTable tbody tr').length){
-        $('#supplierStmtTable').DataTable({ pageLength:100, paging:false, order:[], language:{search:'',searchPlaceholder:'Search...'}, pageLength:100, paging:false, order:[] });
-    }
-});</script>
+<script>$(document).ready(function(){ initReportLedgerDataTable('supplierStmtTable'); });</script>
 <style>
 @media print {
     .no-print, .sidebar, nav, .topbar { display:none !important; }

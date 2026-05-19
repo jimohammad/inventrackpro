@@ -148,6 +148,13 @@
                     </div>
                 </div>
 
+                <?php if (ServiceController::isDeliveredStatus((string)$record['status']) || (int)($record['device_stage'] ?? 0) >= 4): ?>
+                <div class="svc-f">
+                    <label>Delivery date</label>
+                    <input type="date" name="delivered_date" value="<?= htmlspecialchars($record['delivered_date'] ?: date('Y-m-d')) ?>" max="<?= date('Y-m-d') ?>">
+                </div>
+                <?php endif; ?>
+
                 <div class="svc-f">
                     <label>Notes</label>
                     <textarea name="notes" rows="2"><?= htmlspecialchars($record['notes'] ?? '') ?></textarea>

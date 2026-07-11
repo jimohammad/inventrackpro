@@ -1,9 +1,17 @@
 <!-- Items List -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div><h1 class="page-title">Items</h1><p class="page-subtitle">Product and inventory catalog</p></div>
-    <?php if (Auth::can('inventory','add')): ?>
-    <a href="?page=items&action=create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> New Item</a>
-    <?php endif; ?>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div><h1 class="page-title">Items</h1></div>
+    <div class="d-flex align-items-center gap-2">
+        <?php if (Auth::isAdmin()): ?>
+        <form method="POST" action="?page=items&action=syncCosts" class="d-inline" id="syncCostsForm">
+            <?= Auth::csrfField() ?>
+            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i> Sync Real Costs</button>
+        </form>
+        <?php endif; ?>
+        <?php if (Auth::can('inventory','add')): ?>
+        <a href="?page=items&action=create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> New Item</a>
+        <?php endif; ?>
+    </div>
 </div>
 
 <div class="card">
@@ -27,7 +35,7 @@
                     <th style="width:40px;">#</th>
                     <th>Name</th>
                     <th>Category</th>
-                    <th class="text-end">Purchase Price</th>
+                    <th class="text-end">Real Cost</th>
                     <th class="text-end">Sale Price</th>
                     <th class="text-center">Stock</th>
                     <th>Status</th>
@@ -85,5 +93,10 @@ function applyItemsFilter() {
 
 document.getElementById('itemSearchBox')?.addEventListener('input', applyItemsFilter);
 document.getElementById('inStockOnly')?.addEventListener('change', applyItemsFilter);
+document.getElementById('syncCostsForm')?.addEventListener('submit', function(e) {
+    if (!confirm('Rebuild all item real costs from latest purchase lines?')) {
+        e.preventDefault();
+    }
+});
 applyItemsFilter();
 </script>

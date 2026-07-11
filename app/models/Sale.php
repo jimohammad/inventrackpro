@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/BaseModel.php';
+require_once __DIR__ . '/Payment.php';
 
 class Sale extends BaseModel {
     protected string $table = 'sales';
@@ -234,11 +235,70 @@ class Sale extends BaseModel {
     }
 
     // Get next invoice number — MUST be called inside a transaction
-    // AUDIT FIX F1: FOR UPDATE locks the row to prevent duplicate numbers
+    // AUDIT FIX F1: MAX + FOR UPDATE prevents duplicate numbers under concurrency
     public function nextInvoiceNo(): string {
-        $last = $this->db->fetchOne("SELECT invoice_no FROM sales ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $lastNum = $last ? (int) substr($last['invoice_no'], strlen(SALE_PREFIX)) : 0;
-        return SALE_PREFIX . str_pad($lastNum + 1, 6, '0', STR_PAD_LEFT);
+        return $this->formatInvoiceNo($this->lockedMaxInvoiceNum());
+    }
+
+    /** UI preview only — no lock; assigned number may differ if another sale saves first. */
+    public function previewNextInvoiceNo(): string {
+        $start = strlen(SALE_PREFIX) + 1;
+        $row   = $this->db->fetchOne(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_no, ?) AS UNSIGNED)), 0) AS max_no
+             FROM sales
+             WHERE invoice_no LIKE ?",
+            [$start, SALE_PREFIX . '%']
+        );
+        return $this->formatInvoiceNo((int) ($row['max_no'] ?? 0));
+    }
+
+    private function lockedMaxInvoiceNum(): int {
+        $start = strlen(SALE_PREFIX) + 1;
+        $row   = $this->db->fetchOne(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_no, ?) AS UNSIGNED)), 0) AS max_no
+             FROM sales
+             WHERE invoice_no LIKE ?
+             FOR UPDATE",
+            [$start, SALE_PREFIX . '%']
+        );
+        return (int) ($row['max_no'] ?? 0);
+    }
+
+    private function formatInvoiceNo(int $lastNum): string {
+        return SALE_PREFIX . str_pad((string) ($lastNum + 1), 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * AUDIT FIX F2: row lock + atomic deduct (quantity >= qty) — single shared path for all sale stock-out.
+     *
+     * @throws Exception when stock row missing or quantity insufficient
+     */
+    public function deductStockAtomic(int $itemId, int $warehouseId, int $qty): void {
+        if ($qty <= 0) {
+            throw new Exception('Stock deduct quantity must be greater than zero.');
+        }
+
+        $this->db->fetchOne(
+            'SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE',
+            [$itemId, $warehouseId]
+        );
+
+        $affected = $this->db->execute(
+            'UPDATE stock SET quantity = quantity - ? WHERE item_id = ? AND warehouse_id = ? AND quantity >= ?',
+            [$qty, $itemId, $warehouseId, $qty]
+        );
+
+        if ($affected === 0) {
+            $stock    = $this->db->fetchOne(
+                'SELECT quantity FROM stock WHERE item_id = ? AND warehouse_id = ?',
+                [$itemId, $warehouseId]
+            );
+            $itemName = $this->db->fetchOne('SELECT name FROM items WHERE id = ?', [$itemId]);
+            $label    = $itemName['name'] ?? ('item #' . $itemId);
+            throw new Exception(
+                "Insufficient stock for {$label}. Available: " . (int) ($stock['quantity'] ?? 0) . ", Requested: {$qty}."
+            );
+        }
     }
 
     // Create sale with items, IMEI, and optional payment
@@ -328,20 +388,8 @@ class Sale extends BaseModel {
                     ]
                 );
 
-                // AUDIT FIX F2: Atomic stock check + deduct in one query
-                // Prevents two users from both passing stock check simultaneously
-                $affected = $this->db->execute(
-                    "UPDATE stock SET quantity = quantity - ?
-                     WHERE item_id = ? AND warehouse_id = ? AND quantity >= ?",
-                    [(int)$item['quantity'], $item['item_id'], $data['warehouse_id'], (int)$item['quantity']]
-                );
-                if ($affected === 0) {
-                    $stock = $this->db->fetchOne(
-                        "SELECT quantity FROM stock WHERE item_id = ? AND warehouse_id = ?",
-                        [$item['item_id'], $data['warehouse_id']]
-                    );
-                    throw new Exception("Insufficient stock for item ID {$item['item_id']}. Available: " . ($stock['quantity'] ?? 0) . ", Requested: {$item['quantity']}.");
-                }
+                // AUDIT FIX F2: shared atomic stock deduct
+                $this->deductStockAtomic((int) $item['item_id'], (int) $data['warehouse_id'], (int) $item['quantity']);
 
                 // Link IMEIs
                 if (!empty($item['imeis'])) {
@@ -429,8 +477,8 @@ class Sale extends BaseModel {
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             try {
                 $this->db->insert(
-                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, warehouse_id, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount, payment_method, date, notes, warehouse_id, status, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         $payNo, 'sale', $saleId,
                         $data['party_id'],
@@ -441,7 +489,8 @@ class Sale extends BaseModel {
                         $data['date'] ?? date('Y-m-d'),
                         $data['payment_notes'] ?? null,
                         $data['warehouse_id'] ?? Auth::warehouseId(),
-                        Auth::id(),
+                        Payment::STATUS_ACTIVE,
+                        $data['created_by'] ?? Auth::id(),
                     ]
                 );
                 break;
@@ -509,6 +558,7 @@ class Sale extends BaseModel {
                 'payment_method' => $method,
                 'date'           => $date,
                 'payment_notes'  => $notes,
+                'warehouse_id'   => (int) ($sale['warehouse_id'] ?? Auth::warehouseId()),
             ]);
 
             $this->db->commit();
@@ -549,17 +599,19 @@ class Sale extends BaseModel {
                 [$id]
             );
 
-            // Reverse payments from accounts and delete payment records
+            // Reverse payments from accounts and soft-void payment records (H2: retain audit trail)
             foreach ($sale['payments'] as $pay) {
+                if (($pay['status'] ?? Payment::STATUS_ACTIVE) === Payment::STATUS_CANCELLED) {
+                    continue;
+                }
                 $this->db->execute(
                     "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
                     [$pay['amount'], $pay['account_id']]
                 );
             }
-            // Delete the payment records so they don't affect party balance
             $this->db->execute(
-                "DELETE FROM payments WHERE ref_type = 'sale' AND ref_id = ?",
-                [$id]
+                "UPDATE payments SET status = ? WHERE ref_type = 'sale' AND ref_id = ? AND status = ?",
+                [Payment::STATUS_CANCELLED, $id, Payment::STATUS_ACTIVE]
             );
 
             $this->db->execute("UPDATE sales SET status='cancelled' WHERE id=?", [$id]);
@@ -573,8 +625,7 @@ class Sale extends BaseModel {
 
     /**
      * Reverse Sale::cancel() for voided invoices: deduct stock again, mark IMEIs sold, restore active status.
-     * Safe only when inventory still matches what cancel restored. Payment rows were removed on void — this always
-     * sets paid_amount = 0 and balance = grand_total (full amount due). Re-record receipts in Payments if needed.
+     * Re-activates payment rows that were soft-voided with the invoice and recalculates paid/balance.
      *
      * @return array{success:bool, error?:string}
      */
@@ -604,16 +655,7 @@ class Sale extends BaseModel {
                 if ($qty <= 0) {
                     continue;
                 }
-                $affected = $this->db->execute(
-                    'UPDATE stock SET quantity = quantity - ? WHERE item_id = ? AND warehouse_id = ? AND quantity >= ?',
-                    [$qty, $item['item_id'], $sale['warehouse_id'], $qty]
-                );
-                if ($affected === 0) {
-                    $name = $item['item_name'] ?? ('#' . $item['item_id']);
-                    throw new Exception(
-                        "Insufficient stock to reinstate line: {$name}. Available qty is below what this invoice needs."
-                    );
-                }
+                $this->deductStockAtomic((int) $item['item_id'], (int) $sale['warehouse_id'], $qty);
             }
 
             $imeiLinks = $this->db->fetchAll(
@@ -685,11 +727,36 @@ class Sale extends BaseModel {
                 }
             }
 
-            // Void removed payment rows; row paid_amount may be stale — always reinstate as fully outstanding.
-            $grand     = (float) $sale['grand_total'];
-            $newPaid   = 0.0;
-            $newBal    = $grand;
-            $newStatus = $newBal < 0.001 ? 'paid' : 'confirmed';
+            // Re-activate payments voided with this invoice and restore account balances.
+            $cancelledPays = $this->db->fetchAll(
+                "SELECT id, account_id, amount FROM payments
+                 WHERE ref_type = 'sale' AND ref_id = ? AND status = ?
+                 FOR UPDATE",
+                [$id, Payment::STATUS_CANCELLED]
+            );
+            $newPaid = 0.0;
+            foreach ($cancelledPays as $pay) {
+                $amt = (float) $pay['amount'];
+                $this->db->execute(
+                    'UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?',
+                    [$amt, (int) $pay['account_id']]
+                );
+                $newPaid += $amt;
+            }
+            if ($cancelledPays !== []) {
+                $this->db->execute(
+                    "UPDATE payments SET status = ? WHERE ref_type = 'sale' AND ref_id = ? AND status = ?",
+                    [Payment::STATUS_ACTIVE, $id, Payment::STATUS_CANCELLED]
+                );
+            }
+
+            $grand      = (float) $sale['grand_total'];
+            $returnsTot = (float) ($this->db->fetchOne(
+                "SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'",
+                [$id]
+            )['tot'] ?? 0);
+            $newBal     = max(0.0, $grand - $newPaid - $returnsTot);
+            $newStatus  = $newBal < 0.001 ? 'paid' : ($newPaid > 0.001 ? 'partial' : 'confirmed');
 
             $this->db->execute(
                 "UPDATE sales SET paid_amount = ?, balance = ?, status = ? WHERE id = ? AND status = 'cancelled'",

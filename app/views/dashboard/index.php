@@ -145,7 +145,7 @@ function money($val) {
     </div>
 </div>
 
-<!-- All 4 Cards in One Row -->
+<!-- Bottom Cards Row -->
 <div class="row g-2">
     <!-- Account Balances -->
     <div class="col-md-3">
@@ -171,7 +171,7 @@ function money($val) {
                      onmouseover="this.style.background='rgba(99,102,241,0.04)'" onmouseout="this.style.background=''">
                     <div style="display:flex;align-items:center;gap:6px;min-width:0;">
                         <i class="bi <?= $icon ?>" style="color:<?= $color ?>;font-size:0.72rem;width:14px;text-align:center;"></i>
-                        <span style="font-size:0.72rem;font-weight:500;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= htmlspecialchars($acc['name']) ?></span>
+                        <span style="font-size:0.72rem;font-weight:500;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-family:monospace;color:#6366f1;font-weight:700;">#<?= (int)$acc['id'] ?></span> <?= htmlspecialchars($acc['name']) ?></span>
                     </div>
                     <span style="font-size:0.72rem;font-weight:700;color:<?= $bal >= 0 ? $color : '#ef4444' ?>;font-family:monospace;flex-shrink:0;">
                         <?= number_format($bal, DECIMAL_PLACES) ?>
@@ -251,32 +251,145 @@ function money($val) {
         </div>
     </div>
 
-    <!-- Low Stock Alerts -->
+    <!-- Monthly Comparison (horizontal bars) -->
+    <?php
+    $mc = $monthCompare ?? [
+        'this_label' => date('M Y'),
+        'last_label' => date('M Y', strtotime('first day of last month')),
+        'sales' => ['this_month' => 0, 'last_month' => 0],
+        'purchases' => ['this_month' => 0, 'last_month' => 0],
+        'expenses' => ['this_month' => 0, 'last_month' => 0],
+        'receipts' => ['this_month' => 0, 'last_month' => 0],
+    ];
+    $mc['receipts'] = $mc['receipts'] ?? ['this_month' => 0, 'last_month' => 0];
+    ?>
     <div class="col-md-3">
         <div class="card h-100" style="border-radius:10px;">
             <div class="card-header d-flex justify-content-between align-items-center" style="padding:8px 12px;">
-                <span style="font-size:0.8rem;font-weight:700;"><i class="bi bi-exclamation-triangle me-1" style="color:#f59e0b;"></i>Low Stock</span>
-                <span style="background:rgba(239,68,68,0.12);color:#ef4444;font-size:0.68rem;font-weight:700;padding:1px 8px;border-radius:10px;"><?= count($lowStockItems) ?></span>
+                <span style="font-size:0.8rem;font-weight:700;"><i class="bi bi-bar-chart me-1" style="color:#6366f1;"></i>Monthly Compare</span>
+                <span style="font-size:0.64rem;color:var(--text-muted);">vs last month</span>
             </div>
-            <div class="card-body" style="padding:4px 6px;">
-                <?php if (empty($lowStockItems)): ?>
-                <p class="text-muted text-center py-2 mb-0" style="font-size:0.75rem;"><i class="bi bi-check-circle text-success me-1"></i>All OK</p>
-                <?php else: ?>
-                <?php foreach ($lowStockItems as $item): ?>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px;border-radius:4px;"
-                     onmouseover="this.style.background='rgba(239,68,68,0.04)'" onmouseout="this.style.background=''">
-                    <span style="font-size:0.72rem;font-weight:500;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">
-                        <?= htmlspecialchars($item['name']) ?>
-                    </span>
-                    <span style="font-size:0.68rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);padding:1px 6px;border-radius:6px;flex-shrink:0;">
-                        <?= $item['qty'] ?>/<?= $item['min_stock'] ?>
-                    </span>
+            <div class="card-body" style="padding:6px 10px 10px;">
+                <div style="height:220px;">
+                    <canvas id="monthCompareChart"></canvas>
                 </div>
-                <?php endforeach; ?>
-                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
 
+<script>
+(function () {
+    const monthCompare = <?= json_encode($mc) ?>;
 
+    function initCompareChart() {
+        if (typeof Chart === 'undefined' || window._dashCompareChartsInit) {
+            return;
+        }
+        window._dashCompareChartsInit = true;
+
+        const el = document.getElementById('monthCompareChart');
+        if (!el) {
+            return;
+        }
+
+        const fmt = function (val) {
+            return '<?= APP_CURRENCY ?> ' + Number(val).toLocaleString(undefined, {
+                minimumFractionDigits: <?= DECIMAL_PLACES ?>,
+                maximumFractionDigits: <?= DECIMAL_PLACES ?>
+            });
+        };
+
+        const chartFont = {
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            size: 11,
+            weight: '500',
+            lineHeight: 1.2
+        };
+
+        new Chart(el.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: ['Sales', 'Purchases', 'Received', 'Expenses'],
+                datasets: [
+                    {
+                        label: monthCompare.last_label,
+                        data: [
+                            monthCompare.sales.last_month,
+                            monthCompare.purchases.last_month,
+                            monthCompare.receipts.last_month,
+                            monthCompare.expenses.last_month
+                        ],
+                        backgroundColor: 'rgba(148,163,184,0.5)',
+                        borderRadius: 4,
+                        borderSkipped: false,
+                        barThickness: 10
+                    },
+                    {
+                        label: monthCompare.this_label,
+                        data: [
+                            monthCompare.sales.this_month,
+                            monthCompare.purchases.this_month,
+                            monthCompare.receipts.this_month,
+                            monthCompare.expenses.this_month
+                        ],
+                        backgroundColor: ['#6366f1', '#3b82f6', '#22c55e', '#ef4444'],
+                        borderRadius: 4,
+                        borderSkipped: false,
+                        barThickness: 10
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#94a3b8',
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            font: chartFont,
+                            padding: 8
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ctx.dataset.label + ': ' + fmt(ctx.raw);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#94a3b8',
+                            font: { ...chartFont, size: 9, weight: '400' },
+                            maxTicksLimit: 5,
+                            callback: function (val) {
+                                return Number(val).toLocaleString();
+                            }
+                        },
+                        grid: { color: 'rgba(148,163,184,0.12)' }
+                    },
+                    y: {
+                        ticks: {
+                            color: '#334155',
+                            font: chartFont,
+                            padding: 6
+                        },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    window.addEventListener('load', initCompareChart);
+})();
+</script>

@@ -214,6 +214,28 @@ table.items-tbl tbody tr.scan-row-flash {
 .scan-bar-count {
     font-size:0.75rem; color:#6366f1; font-weight:700; white-space:nowrap;
 }
+.scan-btn-paste {
+    padding:10px 16px; border-radius:10px; border:1.5px solid #0ea5e9;
+    background:#fff; color:#0ea5e9; font-size:0.82rem; font-weight:600;
+    cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+    flex-shrink:0; transition:all .15s;
+}
+.scan-btn-paste:hover { background:#0ea5e9; color:#fff; }
+.create-paste-textarea {
+    width:100%; padding:12px; border:1.5px solid #c7d2fe; border-radius:8px;
+    font-family:ui-monospace, monospace; font-size:0.85rem; resize:vertical;
+    background:#fafbff; color:#1e293b; outline:none; min-height:200px; letter-spacing:0.5px;
+}
+.create-paste-textarea:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
+.create-paste-summary { display:flex; gap:14px; margin-bottom:10px; font-size:0.85rem; font-weight:700; flex-wrap:wrap; }
+.create-paste-summary span { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:8px; }
+.create-paste-ok { color:#16a34a; background:#f0fdf4; border:1px solid #bbf7d0; }
+.create-paste-err { color:#dc2626; background:#fef2f2; border:1px solid #fecaca; }
+.create-paste-err-list { background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px 12px; max-height:160px; overflow-y:auto; }
+.create-paste-err-row { display:flex; gap:12px; font-size:0.78rem; padding:3px 0; border-bottom:1px solid #fecaca; }
+.create-paste-err-row:last-child { border-bottom:none; }
+.create-paste-err-imei { font-family:ui-monospace, monospace; font-weight:600; color:#7f1d1d; width:160px; flex-shrink:0; }
+.create-paste-err-reason { color:#991b1b; }
 @media (max-width: 640px) {
     .scan-bar-wrap { min-width:0; max-width:100%; flex:1 1 100%; }
 }
@@ -253,7 +275,7 @@ table.items-tbl tbody tr.scan-row-flash {
 /* TOTALS */
 .sale-totals {
     min-width:300px; padding:16px 20px;
-    background:linear-gradient(135deg,#f8faff,#f5f7ff);
+    background:#1e3a5f;
 }
 .totals-row {
     display:flex; justify-content:space-between; align-items:center;
@@ -262,11 +284,11 @@ table.items-tbl tbody tr.scan-row-flash {
 }
 .totals-row:last-child { border-bottom:none; }
 .totals-row.grand {
-    font-size:1.05rem; font-weight:800; color:#1e293b;
-    border-top:2px solid #c7d2fe; padding-top:10px; margin-top:4px;
+    font-size:1.05rem; font-weight:800; color:#fff;
+    border-top:none; padding-top:0; margin-top:0;
     border-bottom:none;
 }
-.totals-row.grand span:last-child { color:#6366f1; }
+.totals-row.grand span:last-child { color:#fff; }
 .totals-row input {
     width:130px; text-align:right;
     border:1.5px solid #e2e8f0; border-radius:7px;
@@ -336,7 +358,8 @@ table.items-tbl tbody tr.scan-row-flash {
     transition:background 0.1s;
 }
 .autocomplete-item:last-child { border-bottom:none; }
-.autocomplete-item:hover { background:#f0f4ff; }
+.autocomplete-item:hover,
+.autocomplete-item.active { background:#f0f4ff; }
 
 /* IMEI MODAL */
 .imei-modal-overlay {
@@ -444,11 +467,6 @@ table.items-tbl tbody tr.scan-row-flash {
             <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
             <input type="date" name="date" value="<?= date('Y-m-d') ?>" style="padding-left:36px;">
         </div>
-        <div class="customer-search-wrap inv-field inv-field-time">
-            <i class="bi bi-clock search-icon" style="color:#10b981;"></i>
-            <input type="text" id="liveClock" value="<?= date('h:i A') ?>" readonly
-                style="padding-left:36px;background:#f8fafc;color:#1e293b;font-weight:700;cursor:default;">
-        </div>
     </div>
 
     <!-- Customer balance strip -->
@@ -471,6 +489,9 @@ table.items-tbl tbody tr.scan-row-flash {
             <input type="text" class="scan-bar-input" id="imeiScanBar" placeholder="Scan IMEI barcode — auto-adds item with price" autocomplete="off"
                    aria-describedby="scanBarMsg">
         </div>
+        <button type="button" class="scan-btn-paste" id="btnCreateScanPaste">
+            <i class="bi bi-clipboard-plus"></i> Paste IMEIs
+        </button>
         <div class="scan-bar-meta">
             <span class="scan-bar-msg" id="scanBarMsg" role="status" aria-live="polite"></span>
             <span class="scan-bar-count" id="scanBarCount">0 scanned</span>
@@ -523,21 +544,11 @@ table.items-tbl tbody tr.scan-row-flash {
         <!-- LEFT -->
         <div class="sale-bottom-left">
 
-            <!-- Payment box (cash mode) -->
-            <!-- No payment at sale — collect via Payments page -->
-            <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;">
-                <i class="bi bi-info-circle" style="color:#6366f1;"></i>
-                <span style="font-size:0.82rem;color:#64748b;">Payment will be collected separately via <strong>Payments</strong> page after saving this invoice.</span>
-            </div>
             <input type="hidden" name="paid_amount" value="0">
         </div>
 
         <!-- RIGHT: TOTALS -->
         <div class="sale-totals">
-            <div class="totals-row">
-                <span>Subtotal</span>
-                <span id="subtotalDisplay" style="font-weight:600;color:#1e293b;">0.000</span>
-            </div>
             <input type="hidden" name="discount" id="discountInput" value="0">
             <div class="totals-row grand">
                 <span>Grand Total</span>
@@ -567,6 +578,46 @@ table.items-tbl tbody tr.scan-row-flash {
 
 </div><!-- end sale-wrap -->
 </form>
+
+<!-- Bulk paste IMEIs modal (scan-bar → auto-add line items) -->
+<div class="modal fade" id="createSalePasteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-bottom:1px solid #bae6fd;">
+                <h5 class="modal-title" style="font-size:0.95rem;font-weight:700;display:flex;align-items:center;gap:8px;color:#0c4a6e;">
+                    <i class="bi bi-clipboard-plus" style="color:#0ea5e9;"></i>
+                    Paste IMEIs — Bulk Add to Invoice
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.82rem;color:#64748b;margin-bottom:10px;">
+                    <i class="bi bi-info-circle me-1" style="color:#0ea5e9;"></i>
+                    Paste IMEIs below — one per line, or separated by commas/semicolons. Each IMEI is looked up and added as a new line item.
+                </p>
+                <div style="font-size:0.78rem;color:#475569;margin-bottom:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                    <span><i class="bi bi-stickies me-1"></i> Lines pasted: <strong id="createSpLineCount">0</strong></span>
+                    <span><i class="bi bi-upc-scan me-1"></i> Already on invoice: <strong id="createSpOnInvoiceCount">0</strong></span>
+                </div>
+                <textarea id="createSpTextarea" class="create-paste-textarea"
+                          placeholder="Paste IMEIs here (one per line)...&#10;&#10;354720736995668&#10;354720736995675"></textarea>
+                <div id="createSpPreview" style="margin-top:12px;display:none;"></div>
+                <div id="createSpProgress" style="margin-top:10px;display:none;font-size:0.82rem;font-weight:600;color:#6366f1;"></div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #e5e7eb;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm" id="createSpValidateBtn"
+                        style="background:#0ea5e9;color:#fff;border:none;font-weight:600;">
+                    <i class="bi bi-check2-all me-1"></i> Validate
+                </button>
+                <button type="button" class="btn btn-sm" id="createSpConfirmBtn" disabled
+                        style="background:#6366f1;color:#fff;border:none;font-weight:600;">
+                    <i class="bi bi-cloud-upload me-1"></i> Confirm Import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- ═══ IMEI MODAL ═══ -->
 <div class="imei-modal-overlay" id="imeiModal">
@@ -637,7 +688,6 @@ document.addEventListener('DOMContentLoaded', () => {
     addRow(true); addRow(true);
     restoreSaleDraft();
     document.getElementById('partySearch').focus();
-    setInterval(updateClock, 1000);
 });
 
 function restoreSaleDraft() {
@@ -696,12 +746,6 @@ function restoreSaleDraft() {
     calcTotals();
 }
 
-function updateClock() {
-    const now = new Date();
-    let h = now.getHours(); const m = String(now.getMinutes()).padStart(2,'0');
-    const ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
-    document.getElementById('liveClock').value = `${String(h).padStart(2,'0')}:${m} ${ampm}`;
-}
 function updateWarehouse(val) { warehouseId = val; }
 
 // ═══ PAY MODE — removed, all sales are credit ═══
@@ -828,7 +872,10 @@ function selectItem(rid, item) {
 
 document.addEventListener('click', e => {
     if (!e.target.closest('.col-item')) document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
-    if (!e.target.closest('.customer-search-wrap')) document.getElementById('partyDropdown').style.display = 'none';
+    if (!e.target.closest('.customer-search-wrap')) {
+        document.getElementById('partyDropdown').style.display = 'none';
+        partyHighlightIdx = -1;
+    }
 });
 window.addEventListener('scroll', () => {
     document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
@@ -837,6 +884,33 @@ window.addEventListener('scroll', () => {
 // ═══ PARTY SEARCH ═══
 const partyStore = {};
 let partyTimer;
+let partyHighlightIdx = -1;
+
+function updatePartyHighlight(scrollActive) {
+    const drop = document.getElementById('partyDropdown');
+    if (!drop) return;
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === partyHighlightIdx);
+    });
+    if (!scrollActive) return;
+    const active = drop.querySelector('.autocomplete-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function bindPartyDropdown(drop) {
+    partyHighlightIdx = -1;
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectParty(partyStore['results'][parseInt(this.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            partyHighlightIdx = parseInt(this.dataset.idx, 10);
+            updatePartyHighlight(false);
+        });
+    });
+}
+
 document.getElementById('partySearch').addEventListener('input', function() {
     this.classList.remove('selected');
     document.getElementById('partyIdInput').value = '';
@@ -844,12 +918,13 @@ document.getElementById('partySearch').addEventListener('input', function() {
     clearTimeout(partyTimer);
     const q = this.value.trim();
     const drop = document.getElementById('partyDropdown');
+    partyHighlightIdx = -1;
     if (q.length < 1) { drop.style.display = 'none'; return; }
     partyTimer = setTimeout(() => {
         fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}`)
             .then(r => r.json())
             .then(parties => {
-                if (!parties.length) { drop.style.display = 'none'; return; }
+                if (!parties.length) { drop.style.display = 'none'; partyHighlightIdx = -1; return; }
                 partyStore['results'] = parties;
                 const curr = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
                 drop.innerHTML = parties.map((p, idx) => {
@@ -869,15 +944,39 @@ document.getElementById('partySearch').addEventListener('input', function() {
                         ${balHtml}
                     </div>`;
                 }).join('');
-                drop.querySelectorAll('.autocomplete-item').forEach(el => {
-                    el.addEventListener('mousedown', function(e) {
-                        e.preventDefault();
-                        selectParty(partyStore['results'][parseInt(this.dataset.idx)]);
-                    });
-                });
+                bindPartyDropdown(drop);
                 drop.style.display = 'block';
             });
     }, 250);
+});
+
+document.getElementById('partySearch').addEventListener('keydown', function(e) {
+    const drop = document.getElementById('partyDropdown');
+    const visible = drop && drop.style.display !== 'none';
+    const parties = partyStore['results'] || [];
+
+    if (e.key === 'ArrowDown') {
+        if (!visible || !parties.length) return;
+        e.preventDefault();
+        partyHighlightIdx = partyHighlightIdx < parties.length - 1 ? partyHighlightIdx + 1 : 0;
+        updatePartyHighlight(true);
+    } else if (e.key === 'ArrowUp') {
+        if (!visible || !parties.length) return;
+        e.preventDefault();
+        partyHighlightIdx = partyHighlightIdx > 0 ? partyHighlightIdx - 1 : parties.length - 1;
+        updatePartyHighlight(true);
+    } else if (e.key === 'Enter') {
+        if (!visible || !parties.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = partyHighlightIdx >= 0 ? partyHighlightIdx : 0;
+        selectParty(parties[idx]);
+    } else if (e.key === 'Escape') {
+        if (!visible) return;
+        e.preventDefault();
+        drop.style.display = 'none';
+        partyHighlightIdx = -1;
+    }
 });
 
 function updateAfterSaleBalance(currentBal) {
@@ -897,6 +996,7 @@ function selectParty(party) {
     el.value = party.name; el.classList.add('selected');
     document.getElementById('partyIdInput').value = party.id;
     document.getElementById('partyDropdown').style.display = 'none';
+    partyHighlightIdx = -1;
 
     // Always show balance box when party is selected
     const bal   = parseFloat(party.balance) || 0;
@@ -969,6 +1069,9 @@ function selectParty(party) {
         }
         box.appendChild(limitInfo);
     }
+
+    const scanBar = document.getElementById('imeiScanBar');
+    if (scanBar) setTimeout(function() { scanBar.focus(); }, 0);
 }
 
 // ═══ CALCULATIONS ═══
@@ -1016,9 +1119,9 @@ function calcTotals() {
     const discount   = parseFloat(document.getElementById('discountInput').value) || 0;
     const grandTotal = subtotal - discount;
 
-    document.getElementById('subtotalDisplay').textContent   = subtotal.toFixed(3);
-    document.getElementById('subtotalFoot').textContent      = subtotal.toFixed(3);
     document.getElementById('grandTotalDisplay').textContent = grandTotal.toFixed(3);
+    const subtotalFoot = document.getElementById('subtotalFoot');
+    if (subtotalFoot) subtotalFoot.textContent = subtotal.toFixed(3);
     document.getElementById('totalQtyFoot').textContent      = totalQty;
     document.getElementById('totalQtyBadge').textContent     = totalQty + ' item' + (totalQty !== 1 ? 's' : '');
 }
@@ -1252,12 +1355,34 @@ document.getElementById('saleForm').addEventListener('submit', function(e) {
 // ═══ SCAN-FIRST IMEI ═══
 let scanCount = 0;
 let _scanBarMsgTimer = null;
+let createSpValidList = [];
+let createBulkScanQueue = [];
+let createBulkScanRunning = false;
+let createBulkScanStats = { saved: 0, skipped: [] };
 
 document.getElementById('imeiScanBar').addEventListener('keydown', function(e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     scanImeiToRow();
 });
+
+document.getElementById('btnCreateScanPaste').addEventListener('click', openCreateSalePasteModal);
+document.getElementById('createSpTextarea').addEventListener('input', updateCreateSalePasteLineCount);
+document.getElementById('createSpValidateBtn').addEventListener('click', validateCreateSalePaste);
+document.getElementById('createSpConfirmBtn').addEventListener('click', confirmCreateSalePaste);
+
+function normalizeScanImei(raw) {
+    if (!raw) return '';
+    return String(raw).replace(/[\r\n\t]/g, '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function getAllInvoiceImeisForScan() {
+    const all = [];
+    Object.keys(imeiData).forEach(function(rid) {
+        (imeiData[rid] || []).forEach(function(im) { all.push(im); });
+    });
+    return all;
+}
 
 function shakeScanBar() {
     const wrap = document.querySelector('.scan-bar-wrap');
@@ -1314,10 +1439,98 @@ function setScanBarOkShort() {
     }, 1600);
 }
 
+function setScanBarMsg(text, type) {
+    const msg = document.getElementById('scanBarMsg');
+    if (!msg) return;
+    if (_scanBarMsgTimer) { clearTimeout(_scanBarMsgTimer); _scanBarMsgTimer = null; }
+    msg.className = 'scan-bar-msg ' + (type || '');
+    msg.textContent = text || '';
+    if (text) {
+        _scanBarMsgTimer = setTimeout(function() {
+            msg.textContent = '';
+            msg.className = 'scan-bar-msg';
+            _scanBarMsgTimer = null;
+        }, type === 'err' ? 4000 : 3500);
+    }
+}
+
+function applyCreateScannedImei(data, imei) {
+    if (!data.found) {
+        if (data.accepted) return { ok: false, msg: 'Not registered in system' };
+        return { ok: false, msg: data.message || 'IMEI not found' };
+    }
+
+    if (getAllInvoiceImeisForScan().includes(imei)) {
+        return { ok: false, msg: 'Already on this invoice' };
+    }
+
+    let targetRid = null;
+    const rows = document.querySelectorAll('#itemsBody tr');
+
+    for (const tr of rows) {
+        const rid = tr.dataset.rowId;
+        const itemIdEl = document.getElementById('itemId_' + rid);
+        if (itemIdEl && parseInt(itemIdEl.value, 10) === data.item_id) {
+            targetRid = rid;
+            break;
+        }
+    }
+
+    let affectedRid = null;
+
+    if (targetRid) {
+        if (!imeiData[targetRid]) imeiData[targetRid] = [];
+        imeiData[targetRid].push(imei);
+        document.getElementById('qty_' + targetRid).value = imeiData[targetRid].length;
+        document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
+        updateImeiBtn(targetRid);
+        calcRow(targetRid);
+        affectedRid = targetRid;
+    } else {
+        let emptyRid = null;
+        for (const tr of rows) {
+            const rid = tr.dataset.rowId;
+            const itemIdEl = document.getElementById('itemId_' + rid);
+            if (itemIdEl && !itemIdEl.value) {
+                emptyRid = rid;
+                break;
+            }
+        }
+        if (!emptyRid) {
+            addRow();
+            const allRows = document.querySelectorAll('#itemsBody tr');
+            emptyRid = allRows[allRows.length - 1].dataset.rowId;
+        }
+
+        document.querySelector('#' + emptyRid + ' .item-search').value = data.item_name;
+        document.getElementById('itemId_'   + emptyRid).value = data.item_id;
+        document.getElementById('hasImei_'  + emptyRid).value = data.has_imei;
+        document.getElementById('price_'    + emptyRid).value = parseFloat(data.sale_price).toFixed(3);
+        document.getElementById('minPrice_' + emptyRid).value = parseFloat(data.sale_price).toFixed(3);
+        document.getElementById('qty_'      + emptyRid).value = 1;
+
+        imeiData[emptyRid] = [imei];
+        document.getElementById('imeiInput_' + emptyRid).value = imei;
+        updateImeiBtn(emptyRid);
+        calcRow(emptyRid);
+
+        addRow();
+        affectedRid = emptyRid;
+    }
+
+    return { ok: true, rid: affectedRid };
+}
+
+function lookupAndApplyCreateImei(imei) {
+    return fetch('?page=imei&action=lookupImei&imei=' + encodeURIComponent(imei))
+        .then(function(r) { return r.json(); })
+        .then(function(data) { return applyCreateScannedImei(data, imei); });
+}
+
 function scanImeiToRow() {
     const input = document.getElementById('imeiScanBar');
     const msg   = document.getElementById('scanBarMsg');
-    const imei  = input.value.trim().toUpperCase();
+    const imei  = normalizeScanImei(input.value);
     if (!imei) return;
 
     input.value = '';
@@ -1326,95 +1539,182 @@ function scanImeiToRow() {
     msg.className = 'scan-bar-msg';
     msg.innerHTML = '<i class="bi bi-hourglass-split" aria-hidden="true"></i> <span>Looking up…</span>';
 
-    fetch('?page=imei&action=lookupImei&imei=' + encodeURIComponent(imei))
-        .then(r => r.json())
-        .then(data => {
-
-            if (!data.found) {
-                if (data.accepted) {
-                    setScanBarErr('Not registered in system');
-                } else {
-                    setScanBarErr(data.message || 'IMEI not found');
-                }
+    lookupAndApplyCreateImei(imei)
+        .then(function(result) {
+            if (!result.ok) {
+                setScanBarErr(result.msg);
                 return;
             }
-
-            // Check if this IMEI is already added in any row
-            for (const rid in imeiData) {
-                if (imeiData[rid] && imeiData[rid].includes(imei)) {
-                    setScanBarErr('Already on this invoice');
-                    return;
-                }
-            }
-
-            // Find an existing row for the same item, or use the last empty row, or add a new one
-            let targetRid = null;
-            const rows = document.querySelectorAll('#itemsBody tr');
-
-            // Find existing row with same item — always group same item together
-            for (const tr of rows) {
-                const rid = tr.dataset.rowId;
-                const itemIdEl = document.getElementById('itemId_' + rid);
-                if (itemIdEl && parseInt(itemIdEl.value) === data.item_id) {
-                    targetRid = rid;
-                    break;
-                }
-            }
-
-            let affectedRid = null;
-
-            if (targetRid) {
-                // Add IMEI to existing row and set qty = total IMEIs for this item
-                if (!imeiData[targetRid]) imeiData[targetRid] = [];
-                imeiData[targetRid].push(imei);
-                document.getElementById('qty_' + targetRid).value = imeiData[targetRid].length;
-                document.getElementById('imeiInput_' + targetRid).value = imeiData[targetRid].join('\n');
-                updateImeiBtn(targetRid);
-                calcRow(targetRid);
-                affectedRid = targetRid;
-            } else {
-                // Find last empty row or create a new one
-                let emptyRid = null;
-                for (const tr of rows) {
-                    const rid = tr.dataset.rowId;
-                    const itemIdEl = document.getElementById('itemId_' + rid);
-                    if (itemIdEl && !itemIdEl.value) {
-                        emptyRid = rid;
-                        break;
-                    }
-                }
-                if (!emptyRid) {
-                    addRow();
-                    const allRows = document.querySelectorAll('#itemsBody tr');
-                    emptyRid = allRows[allRows.length - 1].dataset.rowId;
-                }
-
-                // Fill the row
-                document.querySelector('#' + emptyRid + ' .item-search').value = data.item_name;
-                document.getElementById('itemId_'   + emptyRid).value = data.item_id;
-                document.getElementById('hasImei_'  + emptyRid).value = data.has_imei;
-                document.getElementById('price_'    + emptyRid).value = parseFloat(data.sale_price).toFixed(3);
-                document.getElementById('minPrice_' + emptyRid).value = parseFloat(data.sale_price).toFixed(3);
-                document.getElementById('qty_'      + emptyRid).value = 1;
-
-                imeiData[emptyRid] = [imei];
-                document.getElementById('imeiInput_' + emptyRid).value = imei;
-                updateImeiBtn(emptyRid);
-                calcRow(emptyRid);
-
-                // Add an empty row for next manual entry
-                addRow();
-                affectedRid = emptyRid;
-            }
-
             scanCount++;
             document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
             setScanBarOkShort();
             calcTotals();
+            if (result.rid) flashScanRow(result.rid);
         })
-        .catch(() => {
+        .catch(function() {
             setScanBarErr('Network error');
         });
+}
+
+function openCreateSalePasteModal() {
+    document.getElementById('createSpTextarea').value = '';
+    document.getElementById('createSpLineCount').textContent = '0';
+    document.getElementById('createSpOnInvoiceCount').textContent = String(getAllInvoiceImeisForScan().length);
+    document.getElementById('createSpPreview').style.display = 'none';
+    document.getElementById('createSpPreview').innerHTML = '';
+    document.getElementById('createSpProgress').style.display = 'none';
+    document.getElementById('createSpProgress').textContent = '';
+    document.getElementById('createSpConfirmBtn').disabled = true;
+    document.getElementById('createSpConfirmBtn').innerHTML = '<i class="bi bi-cloud-upload me-1"></i> Confirm Import';
+    document.getElementById('createSpValidateBtn').disabled = false;
+    createSpValidList = [];
+    createBulkScanQueue = [];
+    createBulkScanRunning = false;
+    createBulkScanStats = { saved: 0, skipped: [] };
+
+    var modal = new bootstrap.Modal(document.getElementById('createSalePasteModal'));
+    modal.show();
+    setTimeout(function() { document.getElementById('createSpTextarea').focus(); }, 350);
+}
+
+function updateCreateSalePasteLineCount() {
+    var raw = document.getElementById('createSpTextarea').value;
+    var lines = raw.split(/[\r\n,;]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+    document.getElementById('createSpLineCount').textContent = lines.length;
+}
+
+function validateCreateSalePaste() {
+    var raw = document.getElementById('createSpTextarea').value;
+    var lines = raw.split(/[\r\n,;]+/);
+    var valid = [];
+    var errors = [];
+    var seen = {};
+    var onInvoice = getAllInvoiceImeisForScan();
+
+    lines.forEach(function(line) {
+        var imei = normalizeScanImei(line);
+        if (!imei) return;
+
+        if (!/^\d{15,18}$/.test(imei)) {
+            errors.push({ imei: imei, reason: 'Must be 15–18 digits (got ' + imei.length + ')' });
+            return;
+        }
+        if (seen[imei]) {
+            errors.push({ imei: imei, reason: 'Duplicate in list' });
+            return;
+        }
+        if (onInvoice.includes(imei)) {
+            errors.push({ imei: imei, reason: 'Already on this invoice' });
+            return;
+        }
+        seen[imei] = true;
+        valid.push(imei);
+    });
+
+    createSpValidList = valid;
+
+    var html = '<div class="create-paste-summary">';
+    html += '<span class="create-paste-ok"><i class="bi bi-check-circle-fill"></i> ' + valid.length + ' valid</span>';
+    if (errors.length > 0) {
+        html += '<span class="create-paste-err"><i class="bi bi-x-circle-fill"></i> ' + errors.length + ' invalid (will be skipped)</span>';
+    }
+    html += '</div>';
+
+    if (errors.length > 0) {
+        html += '<div class="create-paste-err-list">';
+        errors.forEach(function(e) {
+            html += '<div class="create-paste-err-row"><span class="create-paste-err-imei">' + e.imei + '</span><span class="create-paste-err-reason">' + e.reason + '</span></div>';
+        });
+        html += '</div>';
+    }
+
+    var preview = document.getElementById('createSpPreview');
+    preview.innerHTML = html;
+    preview.style.display = 'block';
+    document.getElementById('createSpConfirmBtn').disabled = (valid.length === 0);
+}
+
+function confirmCreateSalePaste() {
+    if (createSpValidList.length === 0) return;
+
+    var btn = document.getElementById('createSpConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Importing...';
+    document.getElementById('createSpValidateBtn').disabled = true;
+
+    createBulkScanQueue = createSpValidList.slice();
+    createBulkScanStats = { saved: 0, skipped: [] };
+    document.getElementById('createSpProgress').style.display = 'block';
+    updateCreateBulkPasteProgress();
+    processCreateBulkScanQueue();
+}
+
+function updateCreateBulkPasteProgress() {
+    var total = createSpValidList.length;
+    var done = createBulkScanStats.saved + createBulkScanStats.skipped.length;
+    var pending = createBulkScanQueue.length + (createBulkScanRunning ? 1 : 0);
+    document.getElementById('createSpProgress').textContent =
+        'Processing ' + done + ' / ' + total + ' · ' + pending + ' remaining · ' + createBulkScanStats.saved + ' added';
+}
+
+function processCreateBulkScanQueue() {
+    if (createBulkScanRunning) return;
+
+    if (createBulkScanQueue.length === 0) {
+        var btn = document.getElementById('createSpConfirmBtn');
+        if (btn.disabled && createSpValidList.length > 0) {
+            finishCreateBulkPaste();
+        }
+        return;
+    }
+
+    createBulkScanRunning = true;
+    var imei = createBulkScanQueue.shift();
+    updateCreateBulkPasteProgress();
+
+    lookupAndApplyCreateImei(imei)
+        .then(function(result) {
+            if (result.ok) {
+                createBulkScanStats.saved++;
+                scanCount++;
+                document.getElementById('scanBarCount').textContent = scanCount + ' scanned';
+            } else {
+                createBulkScanStats.skipped.push({ imei: imei, reason: result.msg });
+            }
+        })
+        .catch(function() {
+            createBulkScanStats.skipped.push({ imei: imei, reason: 'Network error' });
+        })
+        .finally(function() {
+            createBulkScanRunning = false;
+            updateCreateBulkPasteProgress();
+            processCreateBulkScanQueue();
+        });
+}
+
+function finishCreateBulkPaste() {
+    calcTotals();
+
+    createSpValidList = [];
+    createBulkScanQueue = [];
+
+    var btn = document.getElementById('createSpConfirmBtn');
+    var validateBtn = document.getElementById('createSpValidateBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-upload me-1"></i> Confirm Import';
+    validateBtn.disabled = false;
+
+    var modalEl = document.getElementById('createSalePasteModal');
+    var modalInst = bootstrap.Modal.getInstance(modalEl);
+    if (modalInst) modalInst.hide();
+
+    var msg = createBulkScanStats.saved + ' IMEI(s) added';
+    if (createBulkScanStats.skipped.length > 0) {
+        msg += ' · ' + createBulkScanStats.skipped.length + ' skipped';
+    }
+    setScanBarMsg(msg, createBulkScanStats.saved > 0 ? 'ok' : 'err');
+
+    createBulkScanStats = { saved: 0, skipped: [] };
 }
 
 function updateImeiBtn(rid) {

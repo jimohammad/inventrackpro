@@ -49,13 +49,11 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .add-row-strip{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;cursor:pointer;border-top:2px dashed #c7d2fe;color:#94a3b8;font-size:0.82rem;font-weight:600;transition:all 0.15s;background:#fff;}
 .add-row-strip:hover{background:#f5f7ff;color:#6366f1;border-top-color:#6366f1;}
 .add-row-strip .plus-c{width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.12);display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;color:#6366f1;flex-shrink:0;}
-.sale-bottom{display:flex;gap:0;border:1px solid #e5e7eb;border-top:none;background:#fff;border-radius:0 0 12px 12px;overflow:hidden;flex-wrap:wrap;}
-.sale-bottom-left{flex:1;min-width:260px;padding:16px 20px;border-right:1px solid #f1f5f9;}
-.sale-totals{min-width:300px;padding:16px 20px;background:linear-gradient(135deg,#f8faff,#f5f7ff);}
-.totals-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e8edf5;font-size:0.85rem;color:#64748b;}
-.totals-row:last-child{border-bottom:none;}
-.totals-row.grand{font-size:1.05rem;font-weight:800;color:#1e293b;border-top:2px solid #c7d2fe;padding-top:10px;margin-top:4px;border-bottom:none;}
-.totals-row.grand span:last-child{color:#6366f1;}
+.sale-bottom{display:flex;justify-content:flex-end;border:1px solid #e5e7eb;border-top:none;background:linear-gradient(135deg,#f8faff,#f5f7ff);border-radius:0 0 12px 12px;overflow:hidden;}
+.refund-box{display:flex;align-items:center;justify-content:space-between;gap:40px;min-width:360px;height:88px;padding:0 36px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);color:#fff;}
+.refund-box .refund-label{font-size:0.82rem;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:rgba(255,255,255,0.7);}
+.refund-box .refund-amt{font-size:2rem;font-weight:800;line-height:1;letter-spacing:0.5px;}
+@media(max-width:760px){.sale-bottom{justify-content:stretch;}.refund-box{flex:1;}}
 .save-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:2px solid #e0e7ff;border-radius:0 0 12px 12px;position:sticky;bottom:0;z-index:90;box-shadow:0 -4px 12px rgba(0,0,0,0.06);margin-top:-1px;}
 .btn-cancel-sale{padding:8px 20px;border-radius:8px;font-size:0.88rem;border:1.5px solid #e5e7eb;color:#64748b;background:#fff;cursor:pointer;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;}
 .btn-save-sale{padding:8px 28px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
@@ -67,6 +65,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .autocomplete-item{padding:9px 14px;cursor:pointer;font-size:0.83rem;border-bottom:1px solid #f8fafc;color:#1e293b;transition:background 0.1s;}
 .autocomplete-item:last-child{border-bottom:none;}
 .autocomplete-item:hover{background:#f8faff;}
+.autocomplete-item.active,.autocomplete-item.active:hover{background:#eff6ff;box-shadow:inset 3px 0 0 #6366f1;outline:none;}
 /* IMEI Modal */
 .imei-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
 .imei-modal-overlay.show{display:flex;}
@@ -105,7 +104,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
         <select name="warehouse_id" class="warehouse-select" id="retWhSelect" required>
             <option value="">Select Branch</option>
             <?php foreach ($warehouses as $w): ?>
-            <option value="<?= $w['id'] ?>" <?= ($w['is_default'] ?? false) ? 'selected' : '' ?>>
+            <option value="<?= $w['id'] ?>" <?= $w['id'] == Auth::warehouseId() ? 'selected' : '' ?>>
                 <?= htmlspecialchars($w['name']) ?>
             </option>
             <?php endforeach; ?>
@@ -179,16 +178,9 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 
     <!-- ④ BOTTOM -->
     <div class="sale-bottom">
-        <div class="sale-bottom-left" style="display:flex;align-items:center;">
-            <p class="mb-0" style="color:#94a3b8;font-size:0.82rem;font-style:italic;">
-                <i class="bi bi-info-circle me-1"></i> Returned stock will be added back to the selected branch.
-            </p>
-        </div>
-        <div class="sale-totals">
-            <div class="totals-row grand">
-                <span>Total Refund</span>
-                <span id="returnTotal">0.000</span>
-            </div>
+        <div class="refund-box">
+            <span class="refund-label">Total Refund</span>
+            <span class="refund-amt" id="returnTotal">0.000</span>
         </div>
     </div>
 
@@ -244,11 +236,95 @@ let retImeiData     = {};
 let retCurrentRow   = null;
 let retActiveImeis  = [];
 let retCurrentItemName = '';
+let quickScanBusy = false;
+let retAllowFormSubmit = false;
+let retSubmitValidated = false;
+const returnDraft = <?= json_encode($returnDraft ?? null, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
+function focusReturnQuickScan() {
+    setTimeout(() => document.getElementById('quickScanInput')?.focus(), 50);
+}
+
+function clearReturnInvoiceRef() {
+    const ref = document.getElementById('refIdInput');
+    if (ref) ref.value = '';
+    const inv = document.getElementById('invoiceSearch');
+    if (inv) {
+        inv.value = '';
+        inv.style.borderColor = '';
+        inv.style.background = '';
+    }
+    const drop = document.getElementById('invoiceDrop');
+    if (drop) drop.style.display = 'none';
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     addReturnRow(); addReturnRow();
-    document.getElementById('retPartySearch').focus();
+    restoreReturnDraft();
+    if (document.getElementById('retPartyId').value) {
+        focusReturnQuickScan();
+    } else {
+        document.getElementById('retPartySearch').focus();
+    }
+    const whSel = document.getElementById('retWhSelect');
+    if (whSel) whSel.addEventListener('change', clearReturnInvoiceRef);
 });
+
+function restoreReturnDraft() {
+    if (!returnDraft || !Array.isArray(returnDraft.items) || !returnDraft.items.length) return;
+
+    document.getElementById('returnItemsBody').innerHTML = '';
+    retImeiData = {};
+    returnRowCount = 0;
+
+    if (returnDraft.warehouse_id) {
+        document.getElementById('retWhSelect').value = String(returnDraft.warehouse_id);
+    }
+    const dateEl = document.querySelector('input[name="date"]');
+    if (dateEl && returnDraft.date) dateEl.value = returnDraft.date;
+
+    if (returnDraft.ref_id) {
+        document.getElementById('refIdInput').value = String(returnDraft.ref_id);
+    }
+
+    if (returnDraft.party && returnDraft.party.id) {
+        document.getElementById('retPartyId').value = String(returnDraft.party.id);
+        const ps = document.getElementById('retPartySearch');
+        if (ps) {
+            ps.value = returnDraft.party.name || '';
+            ps.classList.add('selected');
+        }
+    } else if (returnDraft.party_id) {
+        document.getElementById('retPartyId').value = String(returnDraft.party_id);
+    }
+
+    returnDraft.items.forEach(item => {
+        addReturnRow({
+            item_id: item.item_id,
+            item_name: item.item_name || ('Item #' + item.item_id),
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+        });
+        const rid = 'rrow_' + returnRowCount;
+        const imeiList = String(item.imeis || '').split(/\r?\n|,/).map(v => v.trim()).filter(Boolean);
+        if (imeiList.length) {
+            retImeiData[rid] = imeiList;
+            const imeiEl = document.getElementById('rImei_' + rid);
+            const qtyEl  = document.getElementById('rQty_' + rid);
+            if (imeiEl) imeiEl.value = imeiList.join('\n');
+            if (qtyEl) qtyEl.value = imeiList.length;
+            const btn = document.getElementById('retImeiBtn_' + rid);
+            if (btn) {
+                btn.classList.add('has-imei');
+                btn.innerHTML = `<i class="bi bi-upc-scan"></i> ${imeiList.length}`;
+            }
+        }
+        calcReturnRow(rid);
+    });
+
+    addReturnRow();
+    calcReturnTotal();
+}
 
 // ── ADD ROW ──
 function addReturnRow(item = null) {
@@ -336,7 +412,8 @@ function searchReturnItem(input, rid) {
     const drop = document.getElementById('rDrop_' + rid);
     if (q.length < 1) { drop.style.display = 'none'; return; }
     retSearchTimers[rid] = setTimeout(() => {
-        fetch(`?page=sales&action=searchItems&q=${encodeURIComponent(q)}`)
+        const whId = document.getElementById('retWhSelect')?.value || '';
+        fetch(`?page=sales&action=searchItems&q=${encodeURIComponent(q)}&warehouse_id=${encodeURIComponent(whId)}`)
             .then(r => r.json())
             .then(items => {
                 if (!items.length) { drop.style.display = 'none'; return; }
@@ -391,7 +468,10 @@ function selectReturnItem(rid, item) {
 
 document.addEventListener('click', e => {
     if (!e.target.closest('.col-item')) document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
-    if (!e.target.closest('.customer-search-wrap')) document.getElementById('retPartyDrop').style.display = 'none';
+    if (!e.target.closest('.customer-search-wrap')) {
+        document.getElementById('retPartyDrop').style.display = 'none';
+        retPartyHighlightIdx = -1;
+    }
 });
 window.addEventListener('scroll', () => {
     document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
@@ -400,6 +480,80 @@ window.addEventListener('scroll', () => {
 // ── CUSTOMER SEARCH ──
 const retPartyStore = {};
 let retPartyTimer;
+let retPartyHighlightIdx = -1;
+
+function updateRetPartyHighlight() {
+    const drop = document.getElementById('retPartyDrop');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === retPartyHighlightIdx);
+    });
+    const active = drop.querySelector('.autocomplete-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function selectReturnParty(p) {
+    const drop = document.getElementById('retPartyDrop');
+    document.getElementById('retPartySearch').value = p.name;
+    document.getElementById('retPartySearch').classList.add('selected');
+    document.getElementById('retPartyId').value = p.id;
+    drop.style.display = 'none';
+    retPartyHighlightIdx = -1;
+
+    const badge = document.getElementById('retPartyBalBadge');
+    const bal = parseFloat(p.balance || 0);
+    if (bal > 0.001) {
+        badge.textContent = 'Balance: ' + bal.toFixed(3);
+        badge.style.background = 'rgba(239,68,68,0.1)';
+        badge.style.color = '#ef4444';
+    } else if (bal < -0.001) {
+        badge.textContent = 'Balance: -' + Math.abs(bal).toFixed(3);
+        badge.style.background = 'rgba(99,102,241,0.1)';
+        badge.style.color = '#6366f1';
+    } else {
+        badge.textContent = '✓ Clear';
+        badge.style.background = 'rgba(16,185,129,0.1)';
+        badge.style.color = '#10b981';
+    }
+    badge.style.display = 'block';
+    focusReturnQuickScan();
+}
+
+function renderRetPartyDropdown(parties) {
+    const drop = document.getElementById('retPartyDrop');
+    if (!parties.length) { drop.style.display = 'none'; retPartyHighlightIdx = -1; return; }
+    retPartyStore['results'] = parties;
+    retPartyHighlightIdx = -1;
+    drop.innerHTML = parties.map((p, idx) => {
+        const bal = parseFloat(p.balance || 0);
+        const balStr = bal > 0.001
+            ? `<span style="color:#ef4444;font-weight:700;">${bal.toFixed(3)}</span>`
+            : bal < -0.001
+            ? `<span style="color:#6366f1;font-weight:700;">-${Math.abs(bal).toFixed(3)}</span>`
+            : `<span style="color:#10b981;">Clear</span>`;
+        return `<div class="autocomplete-item" data-idx="${idx}" style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <strong>${p.name}</strong>
+                ${p.party_code ? `<small style="color:#94a3b8;"> · ${p.party_code}</small>` : ''}
+                ${p.phone ? `<br><small style="color:#94a3b8;">${p.phone}</small>` : ''}
+            </div>
+            <div style="text-align:right;font-size:0.8rem;">
+                ${balStr}
+            </div>
+        </div>`;
+    }).join('');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectReturnParty(retPartyStore['results'][parseInt(this.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            retPartyHighlightIdx = parseInt(this.dataset.idx, 10);
+            updateRetPartyHighlight();
+        });
+    });
+    drop.style.display = 'block';
+}
+
 document.getElementById('retPartySearch').addEventListener('input', function() {
     this.classList.remove('selected');
     document.getElementById('retPartyId').value = '';
@@ -407,62 +561,41 @@ document.getElementById('retPartySearch').addEventListener('input', function() {
     clearTimeout(retPartyTimer);
     const q = this.value.trim();
     const drop = document.getElementById('retPartyDrop');
-    if (q.length < 1) { drop.style.display = 'none'; return; }
+    if (q.length < 1) { drop.style.display = 'none'; retPartyHighlightIdx = -1; return; }
     retPartyTimer = setTimeout(() => {
         fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}`)
             .then(r => r.json())
-            .then(parties => {
-                if (!parties.length) { drop.style.display = 'none'; return; }
-                retPartyStore['results'] = parties;
-                drop.innerHTML = parties.map((p, idx) => {
-                    const bal = parseFloat(p.balance || 0);
-                    const balStr = bal > 0.001
-                        ? `<span style="color:#ef4444;font-weight:700;">${bal.toFixed(3)}</span>`
-                        : bal < -0.001
-                        ? `<span style="color:#6366f1;font-weight:700;">-${Math.abs(bal).toFixed(3)}</span>`
-                        : `<span style="color:#10b981;">Clear</span>`;
-                    return `<div class="autocomplete-item" data-idx="${idx}" style="display:flex;justify-content:space-between;align-items:center;">
-                        <div>
-                            <strong>${p.name}</strong>
-                            ${p.party_code ? `<small style="color:#94a3b8;"> · ${p.party_code}</small>` : ''}
-                            ${p.phone ? `<br><small style="color:#94a3b8;">${p.phone}</small>` : ''}
-                        </div>
-                        <div style="text-align:right;font-size:0.8rem;">
-                            ${balStr}
-                        </div>
-                    </div>`;
-                }).join('');
-                drop.querySelectorAll('.autocomplete-item').forEach(el => {
-                    el.addEventListener('mousedown', function(e) {
-                        e.preventDefault();
-                        const p = retPartyStore['results'][parseInt(this.dataset.idx)];
-                        document.getElementById('retPartySearch').value = p.name;
-                        document.getElementById('retPartySearch').classList.add('selected');
-                        document.getElementById('retPartyId').value = p.id;
-                        drop.style.display = 'none';
-                        // Show balance badge
-                        const badge = document.getElementById('retPartyBalBadge');
-                        const bal = parseFloat(p.balance || 0);
-                        if (bal > 0.001) {
-                            badge.textContent = 'Balance: ' + bal.toFixed(3);
-                            badge.style.background = 'rgba(239,68,68,0.1)';
-                            badge.style.color = '#ef4444';
-                        } else if (bal < -0.001) {
-                            badge.textContent = 'Balance: -' + Math.abs(bal).toFixed(3);
-                            badge.style.background = 'rgba(99,102,241,0.1)';
-                            badge.style.color = '#6366f1';
-                        } else {
-                            badge.textContent = '✓ Clear';
-                            badge.style.background = 'rgba(16,185,129,0.1)';
-                            badge.style.color = '#10b981';
-                        }
-                        badge.style.display = 'block';
-                    });
-                });
-                drop.style.display = 'block';
-            });
+            .then(parties => renderRetPartyDropdown(parties));
     }, 250);
 });
+
+document.getElementById('retPartySearch').addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && !e.shiftKey && document.getElementById('retPartyId').value) {
+        e.preventDefault();
+        focusReturnQuickScan();
+        return;
+    }
+
+    const drop = document.getElementById('retPartyDrop');
+    const visible = drop.style.display !== 'none';
+    const parties = retPartyStore['results'] || [];
+    if (!visible || !parties.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        retPartyHighlightIdx = retPartyHighlightIdx < parties.length - 1 ? retPartyHighlightIdx + 1 : 0;
+        updateRetPartyHighlight();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        retPartyHighlightIdx = retPartyHighlightIdx > 0 ? retPartyHighlightIdx - 1 : parties.length - 1;
+        updateRetPartyHighlight();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = retPartyHighlightIdx >= 0 ? retPartyHighlightIdx : 0;
+        selectReturnParty(parties[idx]);
+    }
+}, true);
 
 // ── LOAD FROM INVOICE ──
 let invoiceTimer;
@@ -511,6 +644,7 @@ function searchInvoice(q) {
                             invEl.style.background  = '#f0fdf4';
                         }
                         drop.style.display = 'none';
+                        focusReturnQuickScan();
                     });
                 });
                 drop.style.display = 'block';
@@ -581,6 +715,10 @@ function removeRetImei(idx) { retActiveImeis.splice(idx, 1); renderRetImeiTags()
 
 function saveRetImeiModal() {
     if (!retCurrentRow) return;
+    const prevCount = (retImeiData[retCurrentRow] || []).length;
+    if (retActiveImeis.length === 0 && prevCount > 0) {
+        if (!confirm('Remove all scanned IMEIs from this row?')) return;
+    }
     const qty = parseInt(document.getElementById('rQty_' + retCurrentRow)?.value) || 0;
     if (qty > 0 && retActiveImeis.length !== qty) {
         if (!confirm(`${retActiveImeis.length} IMEI(s) entered but quantity is ${qty}. Quantity will update. Continue?`)) return;
@@ -597,27 +735,168 @@ function saveRetImeiModal() {
     closeRetImeiModal();
 }
 
-document.getElementById('retForm').addEventListener('submit', function(e) {
-    // Client-side submit lock (server also validates one-time nonce)
-    if (this.dataset.submitting === '1') { e.preventDefault(); return; }
+document.querySelectorAll('#retForm button[type="submit"]').forEach(function(btn) {
+    btn.addEventListener('click', function() { retAllowFormSubmit = true; });
+});
 
-    if (!document.getElementById('retPartyId').value) { e.preventDefault(); alert('Please select a customer.'); return; }
+// Prevent accidental form submit on Enter (barcode scanners send Enter after each scan).
+document.getElementById('retForm').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    // quickScanInput has its own handler below → processQuickScan()
+    if (e.target && e.target.id === 'quickScanInput') return;
+    if (e.target && e.target.tagName === 'INPUT' &&
+        !['submit', 'hidden', 'button'].includes((e.target.type || 'text').toLowerCase())) {
+        e.preventDefault();
+    }
+}, true);
+
+document.getElementById('retForm').addEventListener('submit', function(e) {
+    if (!retAllowFormSubmit) { e.preventDefault(); return; }
+
+    if (this.dataset.submitting === '1') { e.preventDefault(); return; }
+    if (quickScanBusy) { e.preventDefault(); retAllowFormSubmit = true; return; }
+
+    if (!document.getElementById('retPartyId').value) {
+        e.preventDefault(); alert('Please select a customer.'); retAllowFormSubmit = true; return;
+    }
     let hasItem = false;
     document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
         const rid = tr.dataset.rowId;
         if (rid && document.getElementById('rItemId_' + rid)?.value) hasItem = true;
     });
-    if (!hasItem) { e.preventDefault(); alert('Please add at least one item.'); return; }
+    if (!hasItem) {
+        e.preventDefault(); alert('Please add at least one item.'); retAllowFormSubmit = true; return;
+    }
 
-    if (e.defaultPrevented) return;
+    if (retSubmitValidated) {
+        retAllowFormSubmit = false;
+        retSubmitValidated = false;
+        this.dataset.submitting = '1';
+        this.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => { btn.disabled = true; });
+        return;
+    }
+
+    const refId = document.getElementById('refIdInput').value;
+    if (refId && !returnFormHasScannedImeis()) {
+        e.preventDefault();
+        retAllowFormSubmit = false;
+        validateReturnSaleLimits(refId).then(function(errMsg) {
+            if (errMsg) {
+                showScanMsg('✗ ' + errMsg, 'err');
+                retAllowFormSubmit = true;
+                return;
+            }
+            retSubmitValidated = true;
+            retAllowFormSubmit = true;
+            const form = document.getElementById('retForm');
+            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+            else form.submit();
+        }).catch(function() {
+            showScanMsg('✗ Could not verify return limits — try again.', 'err');
+            retAllowFormSubmit = true;
+        });
+        return;
+    }
+
+    retAllowFormSubmit = false;
     this.dataset.submitting = '1';
     this.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => { btn.disabled = true; });
 });
 
+function collectReturnQtyByItem() {
+    const totals = {};
+    document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
+        const rid = tr.dataset.rowId;
+        if (!rid) return;
+        const itemId = parseInt(document.getElementById('rItemId_' + rid)?.value, 10);
+        if (!itemId) return;
+        const qty = parseInt(document.getElementById('rQty_' + rid)?.value, 10) || 0;
+        totals[itemId] = (totals[itemId] || 0) + qty;
+    });
+    return totals;
+}
+
+function returnFormHasScannedImeis() {
+    for (const rid in retImeiData) {
+        if (retImeiData[rid] && retImeiData[rid].length > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function validateReturnSaleLimits(refId) {
+    const whId = document.getElementById('retWhSelect')?.value || '';
+    return fetch(`?page=returns&action=saleReturnLimits&ref_id=${encodeURIComponent(refId)}&warehouse_id=${encodeURIComponent(whId)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.message) return data.message;
+            const limits = data.limits || {};
+            const totals = collectReturnQtyByItem();
+            for (const itemId in totals) {
+                const qty = totals[itemId];
+                const lim = limits[itemId];
+                if (!lim) continue;
+                const max = parseInt(lim.remaining, 10) || 0;
+                if (qty > max) {
+                    return `Cannot return ${qty} of "${lim.name}" — only ${max} remaining from this sale.`;
+                }
+            }
+            return null;
+        });
+}
+
 // ── QUICK SCAN ──
 const quickScanInput = document.getElementById('quickScanInput');
 const quickScanMsg   = document.getElementById('quickScanMsg');
-let quickScanBusy = false;
+let quickScanInputTimer = null;
+
+function normalizeReturnScanImei(raw) {
+    return String(raw || '').replace(/[\r\n\t]/g, '').trim();
+}
+
+function findFirstEmptyReturnRow() {
+    let found = null;
+    document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
+        const rowId = tr.dataset.rowId;
+        if (!rowId || found) return;
+        if (document.getElementById('rItemId_' + rowId)?.value) return;
+        if (retImeiData[rowId] && retImeiData[rowId].length > 0) return;
+        found = rowId;
+    });
+    return found;
+}
+
+function ensureTrailingEmptyReturnRow() {
+    let hasBlank = false;
+    document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
+        const rowId = tr.dataset.rowId;
+        if (!rowId) return;
+        if (!document.getElementById('rItemId_' + rowId)?.value &&
+            (!retImeiData[rowId] || retImeiData[rowId].length === 0)) {
+            hasBlank = true;
+        }
+    });
+    if (!hasBlank) addReturnRow();
+}
+
+function applyReturnScanRefData(data) {
+    if (data.party_id) {
+        const partyEl = document.getElementById('retPartyId');
+        if (partyEl && partyEl.value && partyEl.value !== String(data.party_id)) {
+            return false;
+        }
+        if (partyEl && !partyEl.value) {
+            partyEl.value = String(data.party_id);
+            const ps = document.getElementById('retPartySearch');
+            if (ps && data.party_name) {
+                ps.value = data.party_name;
+                ps.classList.add('selected');
+            }
+        }
+    }
+    return true;
+}
 
 function showScanMsg(msg, type) {
     quickScanMsg.style.display = 'block';
@@ -657,149 +936,180 @@ function findExistingRowForItem(itemId) {
 }
 
 quickScanInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
+        e.stopPropagation();
         processQuickScan();
     }
 });
 
-// Also auto-trigger when 15-18 digits are entered (barcode scanner)
+// Auto-trigger when a complete IMEI is entered (barcode scanner without Enter)
 quickScanInput.addEventListener('input', function() {
-    const val = this.value.trim();
-    if (/^\d{15,18}$/.test(val)) {
-        setTimeout(() => processQuickScan(), 100);
+    if (quickScanInputTimer) clearTimeout(quickScanInputTimer);
+    const val = normalizeReturnScanImei(this.value);
+    if (/^\d{13}$/.test(val) || /^\d{15,18}$/.test(val)) {
+        quickScanInputTimer = setTimeout(() => processQuickScan(), 120);
     }
 });
 
+function parseReturnLookupResponse(r) {
+    if (!r.ok) {
+        throw new Error(r.status === 403 ? 'Permission denied.' : 'Server error (' + r.status + ').');
+    }
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+        throw new Error('Unexpected server response — refresh and try again.');
+    }
+    return r.json();
+}
+
+function attachReturnImeiToRow(rid, imei) {
+    if (!rid) return;
+    if (!retImeiData[rid]) retImeiData[rid] = [];
+    if (!retImeiData[rid].includes(imei)) retImeiData[rid].push(imei);
+    const imeiEl = document.getElementById('rImei_' + rid);
+    const qtyEl  = document.getElementById('rQty_' + rid);
+    if (imeiEl) imeiEl.value = retImeiData[rid].join('\n');
+    if (qtyEl) qtyEl.value = retImeiData[rid].length;
+    const btn = document.getElementById('retImeiBtn_' + rid);
+    if (btn) {
+        btn.classList.add('has-imei');
+        btn.innerHTML = `<i class="bi bi-upc-scan"></i> ${retImeiData[rid].length}`;
+    }
+    calcReturnRow(rid);
+}
+
+function fillReturnRowFromScan(targetRid, data) {
+    const searchEl = document.getElementById('rSearch_' + targetRid);
+    const itemEl   = document.getElementById('rItemId_' + targetRid);
+    const priceEl  = document.getElementById('rPrice_' + targetRid);
+    const qtyEl    = document.getElementById('rQty_' + targetRid);
+    const imeiEl   = document.getElementById('rImei_' + targetRid);
+    if (!itemEl || !priceEl || !qtyEl || !imeiEl) {
+        throw new Error('Could not update return row.');
+    }
+    if (searchEl) searchEl.value = data.item_name || '';
+    itemEl.value = data.item_id;
+    priceEl.value = parseFloat(data.sale_price || 0).toFixed(3);
+    if (!window.retRowItemNameMap) window.retRowItemNameMap = {};
+    window.retRowItemNameMap[targetRid] = (data.item_name || '').toLowerCase();
+    retImeiData[targetRid] = [data.imei];
+    imeiEl.value = data.imei;
+    qtyEl.value = 1;
+    const btn = document.getElementById('retImeiBtn_' + targetRid);
+    if (btn) {
+        btn.classList.add('has-imei');
+        btn.innerHTML = `<i class="bi bi-upc-scan"></i> 1`;
+    }
+    calcReturnRow(targetRid);
+}
+
+function highlightReturnRowNeedsItem(rid) {
+    const searchInput = document.getElementById('rSearch_' + rid);
+    if (!searchInput) return;
+    searchInput.style.borderColor = '#f59e0b';
+    searchInput.style.background = '#fefce8';
+    searchInput.placeholder = '← Select item model for scanned IMEI...';
+    const tr = document.getElementById(rid);
+    if (tr) {
+        tr.style.background = '#fffbeb';
+        setTimeout(() => { tr.style.background = ''; }, 4000);
+    }
+}
+
 function processQuickScan() {
-    const imei = quickScanInput.value.trim();
+    const imei = normalizeReturnScanImei(quickScanInput.value);
     if (!imei) return;
     if (quickScanBusy) return;
 
+    if (!/^\d{13}$/.test(imei) && !/^\d{15,18}$/.test(imei)) {
+        showScanMsg('✗ IMEI must be 13 digits (H40) or 15–18 digits (phones).', 'err');
+        quickScanInput.value = '';
+        quickScanInput.focus();
+        return;
+    }
+
     if (isImeiAlreadyAdded(imei)) {
         showScanMsg('⚠ IMEI already added in this return.', 'err');
-        quickScanInput.select();
+        quickScanInput.value = '';
+        quickScanInput.focus();
         return;
     }
 
     quickScanBusy = true;
+    quickScanInput.value = '';
     quickScanInput.style.borderColor = '#fbbf24';
 
-    fetch(`?page=returns&action=lookupImei&imei=${encodeURIComponent(imei)}`)
-        .then(r => r.json())
+    const whId = document.getElementById('retWhSelect')?.value || '';
+    fetch(`?page=returns&action=lookupImei&imei=${encodeURIComponent(imei)}&warehouse_id=${encodeURIComponent(whId)}`)
+        .then(parseReturnLookupResponse)
         .then(data => {
-            quickScanBusy = false;
-            quickScanInput.style.borderColor = '#86efac';
-
-            // Rejected entirely (already returned, invalid, etc.)
-            if (!data.accepted) {
-                showScanMsg('✗ ' + data.message, 'err');
-                quickScanInput.select();
-                return;
-            }
-
-            // IMEI found in system — auto-fill item + price
-            if (data.found) {
-                if (data.sale_id) {
-                    document.getElementById('refIdInput').value = String(data.sale_id);
-                }
-                if (data.party_id) {
-                    document.getElementById('retPartyId').value = String(data.party_id);
-                    const ps = document.getElementById('retPartySearch');
-                    if (ps && data.party_name) {
-                        ps.value = data.party_name;
-                        ps.classList.add('selected');
-                    }
-                }
-                const existingRid = findExistingRowForItem(data.item_id);
-
-                if (existingRid) {
-                    if (!retImeiData[existingRid]) retImeiData[existingRid] = [];
-                    retImeiData[existingRid].push(data.imei);
-                    document.getElementById('rImei_' + existingRid).value = retImeiData[existingRid].join('\n');
-                    document.getElementById('rQty_' + existingRid).value = retImeiData[existingRid].length;
-                    const btn = document.getElementById('retImeiBtn_' + existingRid);
-                    if (btn) {
-                        btn.classList.add('has-imei');
-                        btn.innerHTML = `<i class="bi bi-upc-scan"></i> ${retImeiData[existingRid].length}`;
-                    }
-                    calcReturnRow(existingRid);
-                } else {
-                    // Use first empty row if available, otherwise add new one
-                    let targetRid = null;
-                    document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
-                        const rowId = tr.dataset.rowId;
-                        if (!rowId || targetRid) return;
-                        if (!document.getElementById('rItemId_' + rowId)?.value) targetRid = rowId;
-                    });
-                    if (!targetRid) {
-                        addReturnRow();
-                        const rows = document.querySelectorAll('#returnItemsBody tr');
-                        targetRid = rows[rows.length - 1].dataset.rowId;
-                    }
-                    document.getElementById('rSearch_' + targetRid).value = data.item_name;
-                    document.getElementById('rItemId_' + targetRid).value = data.item_id;
-                    document.getElementById('rPrice_'  + targetRid).value = parseFloat(data.sale_price).toFixed(3);
-                    if (!window.retRowItemNameMap) window.retRowItemNameMap = {};
-                    window.retRowItemNameMap[targetRid] = (data.item_name || '').toLowerCase();
-                    document.getElementById('rQty_' + targetRid).value = 1;
-                    retImeiData[targetRid] = [data.imei];
-                    document.getElementById('rImei_' + targetRid).value = data.imei;
-                    const btn = document.getElementById('retImeiBtn_' + targetRid);
-                    if (btn) {
-                        btn.classList.add('has-imei');
-                        btn.innerHTML = `<i class="bi bi-upc-scan"></i> 1`;
-                    }
-                    calcReturnRow(targetRid);
+            try {
+                // Rejected entirely (already returned, invalid, etc.) — keep existing rows untouched
+                if (!data.accepted) {
+                    showScanMsg('✗ ' + (data.message || 'IMEI cannot be returned.'), 'err');
+                    return;
                 }
 
-                const invoice = data.sold_invoice ? ` (${data.sold_invoice})` : '';
-                showScanMsg(`✓ ${data.item_name}${invoice} — ${data.sale_price} ${currency}`, 'ok');
-                quickScanInput.value = '';
-                quickScanInput.focus();
-                return;
-            }
+                // IMEI found in system — auto-fill item + price
+                if (data.found) {
+                    if (applyReturnScanRefData(data) === false) {
+                        showScanMsg('✗ This IMEI belongs to a different customer — use one customer per return.', 'err');
+                        return;
+                    }
+                    const existingRid = findExistingRowForItem(data.item_id);
 
-            // IMEI NOT in system — accepted, cashier picks item manually
-            // Use first empty row if available, otherwise add new one
-            let rid = null;
-            document.querySelectorAll('#returnItemsBody tr').forEach(tr => {
-                const rowId = tr.dataset.rowId;
-                if (!rowId || rid) return;
-                if (!document.getElementById('rItemId_' + rowId)?.value) rid = rowId;
-            });
-            if (!rid) {
-                addReturnRow();
-                const rows = document.querySelectorAll('#returnItemsBody tr');
-                rid = rows[rows.length - 1].dataset.rowId;
-            }
+                    if (existingRid) {
+                        attachReturnImeiToRow(existingRid, data.imei);
+                    } else {
+                        let targetRid = findFirstEmptyReturnRow();
+                        if (!targetRid) {
+                            addReturnRow();
+                            const rows = document.querySelectorAll('#returnItemsBody tr');
+                            targetRid = rows[rows.length - 1].dataset.rowId;
+                        }
+                        fillReturnRowFromScan(targetRid, data);
+                    }
 
-            // Pre-attach the IMEI to this new row
-            retImeiData[rid] = [data.imei];
-            document.getElementById('rImei_' + rid).value = data.imei;
-            document.getElementById('rQty_' + rid).value = 1;
-            const btn = document.getElementById('retImeiBtn_' + rid);
-            if (btn) {
-                btn.classList.add('has-imei');
-                btn.innerHTML = `<i class="bi bi-upc-scan"></i> 1`;
-            }
+                    ensureTrailingEmptyReturnRow();
+                    const invoice = data.sold_invoice ? ` (${data.sold_invoice})` : '';
+                    showScanMsg(`✓ ${data.item_name}${invoice} — ${data.sale_price} ${currency}`, 'ok');
+                    return;
+                }
 
-            // Highlight the item search field so cashier picks the model
-            const searchInput = document.getElementById('rSearch_' + rid);
-            if (searchInput) {
-                searchInput.style.borderColor = '#f59e0b';
-                searchInput.style.background = '#fefce8';
-                searchInput.placeholder = '← Select item model for scanned IMEI...';
-                searchInput.focus();
-            }
+                // IMEI NOT in system — accepted, cashier picks item manually
+                let rid = findFirstEmptyReturnRow();
+                if (!rid) {
+                    addReturnRow();
+                    const rows = document.querySelectorAll('#returnItemsBody tr');
+                    rid = rows[rows.length - 1].dataset.rowId;
+                }
 
-            showScanMsg('⚠ IMEI accepted — now select the item model ↓', 'warn');
-            quickScanInput.value = '';
+                retImeiData[rid] = [data.imei];
+                const imeiEl = document.getElementById('rImei_' + rid);
+                const qtyEl  = document.getElementById('rQty_' + rid);
+                if (imeiEl) imeiEl.value = data.imei;
+                if (qtyEl) qtyEl.value = 1;
+                const btn = document.getElementById('retImeiBtn_' + rid);
+                if (btn) {
+                    btn.classList.add('has-imei');
+                    btn.innerHTML = `<i class="bi bi-upc-scan"></i> 1`;
+                }
+
+                highlightReturnRowNeedsItem(rid);
+                ensureTrailingEmptyReturnRow();
+                showScanMsg('⚠ IMEI accepted — select item model in highlighted row ↓', 'warn');
+            } catch (err) {
+                showScanMsg('✗ ' + (err.message || 'Could not add scan — existing rows kept.'), 'err');
+            }
         })
         .catch(err => {
+            showScanMsg('✗ ' + (err.message || 'Network error — try again.'), 'err');
+        })
+        .finally(() => {
             quickScanBusy = false;
             quickScanInput.style.borderColor = '#86efac';
-            showScanMsg('Network error — try again.', 'err');
+            quickScanInput.focus();
         });
 }
 

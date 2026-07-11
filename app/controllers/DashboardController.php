@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../models/Party.php';
 
 class DashboardController extends BaseController {
     private static function perfLoggingEnabled(): bool {
@@ -46,10 +47,9 @@ class DashboardController extends BaseController {
 
         // Cache key based on user + warehouse + date
         $cacheKey  = 'dash_' . Auth::id() . '_' . $whId . '_' . date('Ymd_H');
-        $cacheDir  = __DIR__ . '/../../backups/cache';
-        if (!is_dir($cacheDir)) @mkdir($cacheDir, 0700, true);
+        $cacheDir  = self::dashboardCacheDir();
         $cacheFile = $cacheDir . '/' . $cacheKey . '.cache';
-        $cacheLife = 900; // 15 minutes — reduces heavy receivables/payables (per-party net balance) recomputation
+        $cacheLife = 1800; // 30 minutes — heavy receivables/payables recompute
 
         // Force refresh with ?refresh=1
         if (isset($_GET['refresh'])) {
@@ -63,7 +63,7 @@ class DashboardController extends BaseController {
 
         // Always-fresh data (not cached) — accounts and today's cash need real-time values
         $accounts = $db->fetchAll(
-            "SELECT name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+            "SELECT id, name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
         );
         $todayCashFresh = $db->fetchOne(
             "SELECT
@@ -79,7 +79,8 @@ class DashboardController extends BaseController {
              WHERE py.date = CURDATE()
                AND py.payment_type = 'in'
                AND py.ref_type != 'discount'
-               AND py.warehouse_id = ?",
+               AND py.warehouse_id = ?
+               AND py.status = 'active'",
             [$whId]
         );
         $mainCashReceived = (float)($todayCashFresh['main_cash_total'] ?? 0);
@@ -110,7 +111,23 @@ class DashboardController extends BaseController {
             'count' => (int)($todaySalesFresh['sales_count'] ?? 0),
         ];
 
-        $expectedKeys = ['todayExpenses','stockValue','pendingReceivables','pendingPayables','lowStockItems','recentSales','topItems','pendingPOs'];
+        // Always-fresh: pending PO card must update immediately after convert/cancel/create.
+        $pendingPOsFresh = $db->fetchOne(
+            "SELECT COALESCE(SUM(subtotal_kwd + COALESCE(other_charges_kwd, 0)),0) as total, COUNT(*) as count
+             FROM purchase_orders WHERE status IN ('draft','paid') AND warehouse_id = ?",
+            [$whId]
+        );
+        $pendingPOs = [
+            'total' => (float)($pendingPOsFresh['total'] ?? 0),
+            'count' => (int)($pendingPOsFresh['count'] ?? 0),
+        ];
+
+        $expectedKeys = ['todayExpenses','stockValue','pendingReceivables','pendingPayables','monthCompare','recentSales','topItems'];
+        // Invalidate stale caches written before the "receipts" comparison was added.
+        if ($cached && (!isset($cached['monthCompare']['receipts']))) {
+            $cached = null;
+        }
+
         $usedCache = false;
         if ($cached && !array_diff($expectedKeys, array_keys($cached))) {
             foreach ($expectedKeys as $key) {
@@ -139,83 +156,78 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Receivables / payables by unified party net balance (Party model semantics), not party type:
-            // positive net = they owe you → receivables; negative = you owe them → payables.
-            // Transactions are scoped to the active warehouse; opening_balance applies when the party
-            // record is unassigned or assigned to this warehouse (avoids duplicating opening on other branches).
-            $rpParams = array_fill(0, 7, $whId);
-            $rpRow    = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN party_net > 0.001 THEN party_net ELSE 0 END), 0) AS rec_total,
-                    COALESCE(SUM(CASE WHEN party_net < -0.001 THEN -party_net ELSE 0 END), 0) AS pay_total,
-                    COALESCE(SUM(CASE WHEN party_net > 0.001 THEN 1 ELSE 0 END), 0) AS rec_count,
-                    COALESCE(SUM(CASE WHEN party_net < -0.001 THEN 1 ELSE 0 END), 0) AS pay_count
-                 FROM (
-                    SELECT
-                        (CASE WHEN p.warehouse_id IS NULL OR p.warehouse_id = ? THEN p.opening_balance ELSE 0 END)
-                        + COALESCE(g.sales_total, 0)
-                        - COALESCE(g.sale_payments, 0)
-                        - COALESCE(g.sale_returns, 0)
-                        - COALESCE(g.purchase_total, 0)
-                        + COALESCE(g.purchase_payments, 0)
-                        + COALESCE(g.purchase_returns, 0) AS party_net
-                    FROM parties p
-                    LEFT JOIN (
-                        SELECT party_id,
-                               SUM(sales_total) AS sales_total,
-                               SUM(sale_payments) AS sale_payments,
-                               SUM(sale_returns) AS sale_returns,
-                               SUM(purchase_total) AS purchase_total,
-                               SUM(purchase_payments) AS purchase_payments,
-                               SUM(purchase_returns) AS purchase_returns
-                        FROM (
-                            SELECT party_id, grand_total AS sales_total, 0 AS sale_payments, 0 AS sale_returns,
-                                   0 AS purchase_total, 0 AS purchase_payments, 0 AS purchase_returns
-                            FROM sales WHERE status != 'cancelled' AND warehouse_id = ?
-                            UNION ALL
-                            SELECT party_id, 0,
-                                   CASE WHEN payment_type = 'in' THEN amount ELSE -amount END,
-                                   0, 0, 0, 0
-                            FROM payments WHERE ref_type IN ('sale','discount') AND warehouse_id = ?
-                            UNION ALL
-                            SELECT party_id, 0, 0, grand_total, 0, 0, 0
-                            FROM `returns` WHERE type = 'sale_return' AND status = 'approved' AND warehouse_id = ?
-                            UNION ALL
-                            SELECT party_id, 0, 0, 0, grand_total, 0, 0
-                            FROM purchases WHERE status != 'cancelled' AND warehouse_id = ?
-                            UNION ALL
-                            SELECT party_id, 0, 0, 0, 0, amount, 0
-                            FROM payments WHERE ref_type IN ('purchase','purchase_order') AND warehouse_id = ?
-                            UNION ALL
-                            SELECT party_id, 0, 0, 0, 0, 0, grand_total
-                            FROM `returns` WHERE type = 'purchase_return' AND status = 'approved' AND warehouse_id = ?
-                        ) u
-                        GROUP BY party_id
-                    ) g ON g.party_id = p.id
-                    WHERE p.is_active = 1
-                 ) z",
-                $rpParams
-            );
+            // Receivables / payables — Party model unified balance (same rules as Party Master).
+            $partyModel = new Party();
+            $rpRow      = $partyModel->receivablePayableTotals($whId > 0 ? (int) $whId : null);
             $pendingReceivables = [
-                'total' => (float)($rpRow['rec_total'] ?? 0),
-                'count' => (int)($rpRow['rec_count'] ?? 0),
+                'total' => (float) ($rpRow['rec_total'] ?? 0),
+                'count' => (int) ($rpRow['rec_count'] ?? 0),
             ];
             $pendingPayables = [
-                'total' => (float)($rpRow['pay_total'] ?? 0),
-                'count' => (int)($rpRow['pay_count'] ?? 0),
+                'total' => (float) ($rpRow['pay_total'] ?? 0),
+                'count' => (int) ($rpRow['pay_count'] ?? 0),
             ];
 
-            // Low stock — filtered by warehouse
-            $lowStockItems = $db->fetchAll(
-                "SELECT i.name, i.sku, COALESCE(SUM(s.quantity),0) as qty, i.min_stock
-                 FROM items i
-                 LEFT JOIN stock s ON s.item_id = i.id AND s.warehouse_id = ?
-                 WHERE i.is_active = 1
-                 GROUP BY i.id, i.name, i.sku, i.min_stock
-                 HAVING qty <= i.min_stock AND i.min_stock > 0
-                 ORDER BY qty ASC LIMIT 10",
+            // This month vs last month — sales, purchases, expenses (warehouse scoped)
+            $salesCompare = $db->fetchOne(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
+                 FROM sales
+                 WHERE status != 'cancelled' AND warehouse_id = ?",
                 [$whId]
             );
+            $purchasesCompare = $db->fetchOne(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
+                 FROM purchases
+                 WHERE status != 'cancelled' AND warehouse_id = ?",
+                [$whId]
+            );
+            $expensesCompare = $db->fetchOne(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
+                 FROM expenses
+                 WHERE warehouse_id = ?",
+                [$whId]
+            );
+            $receiptsCompare = $db->fetchOne(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
+                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
+                 FROM payments
+                 WHERE payment_type = 'in'
+                   AND ref_type != 'discount'
+                   AND status = 'active'
+                   AND warehouse_id = ?",
+                [$whId]
+            );
+            $monthCompare = [
+                'this_label' => date('M Y'),
+                'last_label' => date('M Y', strtotime('first day of last month')),
+                'sales' => [
+                    'this_month' => (float)($salesCompare['this_month'] ?? 0),
+                    'last_month' => (float)($salesCompare['last_month'] ?? 0),
+                ],
+                'purchases' => [
+                    'this_month' => (float)($purchasesCompare['this_month'] ?? 0),
+                    'last_month' => (float)($purchasesCompare['last_month'] ?? 0),
+                ],
+                'expenses' => [
+                    'this_month' => (float)($expensesCompare['this_month'] ?? 0),
+                    'last_month' => (float)($expensesCompare['last_month'] ?? 0),
+                ],
+                'receipts' => [
+                    'this_month' => (float)($receiptsCompare['this_month'] ?? 0),
+                    'last_month' => (float)($receiptsCompare['last_month'] ?? 0),
+                ],
+            ];
 
             // Recent sales — filtered by warehouse
             $recentSales = $db->fetchAll(
@@ -239,18 +251,11 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Pending Purchase Orders — filtered by warehouse
-            $pendingPOs = $db->fetchOne(
-                "SELECT COALESCE(SUM(subtotal_kwd),0) as total, COUNT(*) as count
-                 FROM purchase_orders WHERE status IN ('draft','paid') AND warehouse_id = ?",
-                [$whId]
-            );
-
-            // Cache results (excluding accounts and todayCash — those are fetched live above)
+            // Cache results (excluding accounts, todayCash, todaySales, pendingPOs — fetched live above)
             $toCache = compact(
                 'todayExpenses','stockValue',
-                'pendingReceivables','pendingPayables','lowStockItems',
-                'recentSales','topItems','pendingPOs'
+                'pendingReceivables','pendingPayables','monthCompare',
+                'recentSales','topItems'
             );
             @file_put_contents($cacheFile, json_encode($toCache), LOCK_EX);
         }
@@ -260,8 +265,8 @@ class DashboardController extends BaseController {
             try {
                 $miRow = $db->fetchOne(
                     "SELECT
-                        COALESCE(SUM(CASE WHEN next_due_date IS NOT NULL AND next_due_date < CURDATE() THEN 1 ELSE 0 END), 0) AS overdue,
-                        COALESCE(SUM(CASE WHEN next_due_date IS NOT NULL AND next_due_date >= CURDATE()
+                        COALESCE(SUM(CASE WHEN is_paused = 0 AND next_due_date IS NOT NULL AND next_due_date < CURDATE() THEN 1 ELSE 0 END), 0) AS overdue,
+                        COALESCE(SUM(CASE WHEN is_paused = 0 AND next_due_date IS NOT NULL AND next_due_date >= CURDATE()
                             AND next_due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END), 0) AS due_soon
                      FROM mandoob_inventory_schedules
                      WHERE is_active = 1 AND warehouse_id = ?",

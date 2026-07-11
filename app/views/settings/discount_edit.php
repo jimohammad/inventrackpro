@@ -1,7 +1,7 @@
 <!-- Edit Discount -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="page-title">Edit Discount — <?= $discount['discount_no'] ?></h1>
+        <h1 class="page-title">Edit Discount — <?= htmlspecialchars($discount['discount_no']) ?></h1>
     </div>
     <a href="?page=discounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Back</a>
 </div>
@@ -15,7 +15,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label" style="font-weight:600;font-size:0.82rem;">Date</label>
-                    <input type="date" name="date" class="form-control form-control-sm" value="<?= $discount['date'] ?>" required>
+                    <input type="date" name="date" class="form-control form-control-sm" value="<?= htmlspecialchars($discount['date'] ?? '') ?>" required>
                 </div>
 
                 <div class="col-md-4">

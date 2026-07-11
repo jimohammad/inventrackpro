@@ -5,14 +5,11 @@
  * @var array $stages
  * @var string $trackUrl  Staff link with token (no-print only)
  */
-$curr = APP_CURRENCY;
+require_once __DIR__ . '/../../helpers/ServiceLockPattern.php';
+
 $customerName = trim((string) ($record['party_name'] ?: $record['customer_name'] ?: ''));
 $deviceLine     = trim((string) ($record['device_brand'] . ' ' . $record['device_model']));
 $receivedTs     = $record['received_date'] ?: $record['created_at'];
-$ds             = (int) $record['device_stage'];
-$stageLabel     = $ds === 3
-    ? 'Replaced (Factory)'
-    : (($stages[$ds] ?? null)['label'] ?? '—');
 $companyName = (string) ($settings['company_name'] ?? APP_NAME);
 
 $rawImei = preg_replace('/\s+/', '', (string) ($record['imei'] ?? ''));
@@ -23,6 +20,20 @@ if (strlen($imeiDigits) >= 14) {
 }
 
 $trackShort = function_exists('app_service_track_short_label') ? app_service_track_short_label() : 'website/service';
+$lockPatternRaw = $record['lock_pattern'] ?? null;
+$lockPatternSvg = ServiceLockPattern::toGridSvg($lockPatternRaw, 132);
+$screenPinRaw = trim((string) ($record['screen_pin'] ?? ''));
+$screenPin = ServiceLockPattern::parseScreenPin($screenPinRaw);
+if ($screenPin === null && $screenPinRaw !== '') {
+    $screenPin = $screenPinRaw;
+}
+$pinDigitChars = $screenPin !== null
+    ? preg_split('//u', $screenPin, -1, PREG_SPLIT_NO_EMPTY)
+    : [];
+$pinUseCells = count($pinDigitChars) > 0 && count($pinDigitChars) <= 6;
+$printUnlockOnReceipt = !empty($record['print_unlock_on_receipt']);
+$hasLockPattern = ServiceLockPattern::hasPattern($lockPatternRaw);
+$showUnlockOnReceipt = $printUnlockOnReceipt && ($hasLockPattern || $screenPin !== null);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -31,15 +42,13 @@ $trackShort = function_exists('app_service_track_short_label') ? app_service_tra
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= htmlspecialchars($record['service_no']) ?> — Service Receipt</title>
 <style>
+<?php include __DIR__ . '/../partials/thermal_print_font.css.php'; ?>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 11px;
+    font-size: 12px;
     color: #000;
     background: #fff;
     padding: 8px 2px;
-    -webkit-print-color-adjust: economy;
-    print-color-adjust: economy;
 }
 .no-print {
     padding: 8px 12px;
@@ -68,6 +77,7 @@ body {
     max-width: 72mm;
     margin: 0 auto;
     padding: 10px 6px 12px;
+    font-family: monospace;
 }
 
 .receipt-header {
@@ -78,16 +88,16 @@ body {
 }
 .company-name {
     font-size: 13px;
-    font-weight: 800;
     color: #000;
-    letter-spacing: 0.02em;
+    letter-spacing: 0;
     line-height: 1.25;
+    text-transform: uppercase;
 }
 .company-meta {
-    font-size: 9px;
-    color: #64748b;
+    font-size: 11px;
+    color: #000;
     margin-top: 5px;
-    line-height: 1.45;
+    line-height: 1.35;
 }
 
 .doc-title {
@@ -96,14 +106,13 @@ body {
 }
 .doc-title h1 {
     font-size: 12px;
-    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 0.04em;
     color: #000;
 }
 .doc-title p {
-    font-size: 9px;
-    color: #64748b;
+    font-size: 11px;
+    color: #000;
     margin-top: 3px;
 }
 
@@ -111,35 +120,33 @@ body {
     margin: 12px 0;
 }
 .section-label {
-    font-size: 8px;
-    font-weight: 800;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 0.04em;
     color: #000;
     margin-bottom: 6px;
     padding-bottom: 3px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #000;
 }
 
 .row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 10px;
-    padding: 4px 0;
-    font-size: 11px;
-    line-height: 1.35;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+    line-height: 1.3;
 }
 .row .lbl {
-    color: #64748b;
+    color: #000;
     flex-shrink: 0;
-    font-weight: 600;
 }
 .row .val {
     text-align: right;
-    font-weight: 700;
     color: #000;
     word-break: break-word;
+    font-variant-numeric: tabular-nums;
 }
 
 /* IMEI — primary focus */
@@ -152,38 +159,43 @@ body {
     border-radius: 10px;
 }
 .imei-hero .imei-caption {
-    font-size: 8px;
-    font-weight: 800;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 0.04em;
     color: #000;
     margin-bottom: 6px;
 }
 .imei-hero .imei-digits {
-    font-size: 15px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
+    font-size: 14px;
+    letter-spacing: 0.06em;
     color: #000;
     font-variant-numeric: tabular-nums;
-    line-height: 1.35;
+    line-height: 1.3;
     word-break: break-all;
 }
-.block-note {
-    margin-top: 8px;
-    font-size: 10px;
-    line-height: 1.45;
-    color: #334155;
+.issue-box {
+    margin-top: 12px;
+    border: 2px solid #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.issue-box .issue-label {
+    display: block;
+    text-align: center;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #000;
+    padding: 5px 8px 4px;
+    border-bottom: 2px dashed #000;
+}
+.issue-box .issue-text {
+    padding: 8px 9px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: #000;
     white-space: pre-wrap;
     word-break: break-word;
-}
-.block-note .bn-lbl {
-    font-size: 8px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: #94a3b8;
-    display: block;
-    margin-bottom: 4px;
 }
 
 .track-box {
@@ -193,27 +205,25 @@ body {
     text-align: center;
 }
 .track-box .track-title {
-    font-size: 9px;
-    font-weight: 800;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.04em;
     color: #000;
     margin-bottom: 6px;
 }
 .track-box .track-url {
     margin-top: 0;
     margin-bottom: 2px;
-    font-size: 16px;
-    font-weight: 800;
+    font-size: 14px;
     color: #000;
-    line-height: 1.35;
-    letter-spacing: 0.03em;
+    line-height: 1.3;
+    letter-spacing: 0;
     word-break: break-all;
 }
 .track-box .track-hint {
-    font-size: 9px;
-    color: #64748b;
-    line-height: 1.45;
+    font-size: 11px;
+    color: #000;
+    line-height: 1.35;
     margin-top: 8px;
     max-width: 100%;
 }
@@ -226,14 +236,120 @@ body {
     font-weight: 600;
 }
 
+.disclaimer {
+    margin-top: 12px;
+    padding: 10px 8px;
+    border: 1px dashed #94a3b8;
+    border-radius: 6px;
+    text-align: center;
+    line-height: 1.45;
+    color: #000;
+}
+.disclaimer .disclaimer-en {
+    font-size: 11px;
+}
+.disclaimer .disclaimer-ar {
+    margin-top: 6px;
+    font-size: 11px;
+    direction: rtl;
+    unicode-bidi: embed;
+}
+
+.pattern-lock-box {
+    margin: 14px 0 12px;
+    padding: 10px 8px 12px;
+    text-align: center;
+    border: 2px solid #000;
+    border-radius: 10px;
+    color: #000;
+    background: #f1f5f9;
+}
+.pattern-lock-box .pl-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #000;
+}
+.pin-hero {
+    margin: 0 0 12px;
+    padding: 10px 8px 11px;
+    text-align: center;
+    background: #fff;
+    border: 2px solid #000;
+    border-radius: 8px;
+}
+.pin-hero .pin-caption {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #000;
+    margin-bottom: 8px;
+}
+.pin-digits-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+.pin-cell {
+    min-width: 28px;
+    height: 32px;
+    padding: 0 5px;
+    border: 2px solid #000;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    background: #fff;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+.pin-cell.empty {
+    border-style: dashed;
+    border-color: #64748b;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+}
+.pin-digits-wide {
+    font-size: 15px;
+    letter-spacing: 0.16em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    word-break: break-all;
+    font-family: inherit;
+}
+.pl-pattern-divider {
+    margin: 0 0 8px;
+    border-top: 1px dashed #94a3b8;
+}
+.pattern-lock-box .pl-caption {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+.pattern-lock-box svg {
+    display: block;
+    margin: 0 auto;
+    width: 132px;
+    height: 132px;
+}
+
 .footer {
     text-align: center;
-    font-size: 9px;
+    font-size: 11px;
     margin-top: 14px;
     padding-top: 10px;
-    border-top: 1px dashed #cbd5e1;
-    color: #64748b;
-    line-height: 1.45;
+    border-top: 1px dashed #000;
+    color: #000;
+    line-height: 1.35;
 }
 
 @media screen {
@@ -245,9 +361,22 @@ body {
     }
 }
 @media print {
-    body { padding: 0; background: #fff; }
+    body {
+        padding: 0;
+        background: #fff;
+        font-family: monospace;
+        font-weight: 400;
+        -webkit-font-smoothing: none;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .wrap {
+        font-family: monospace;
+        box-shadow: none;
+        max-width: 100%;
+        border-radius: 0;
+    }
     .no-print { display: none !important; }
-    .wrap { box-shadow: none; max-width: 100%; border-radius: 0; }
     @page { size: 72mm auto; margin: 2mm; }
 }
 </style>
@@ -312,24 +441,41 @@ body {
         <div class="row"><span class="lbl">Category</span><span class="val"><?= htmlspecialchars((string) $record['fault_category']) ?></span></div>
         <?php endif; ?>
         <?php if (!empty($record['fault_description'])): ?>
-        <div class="block-note">
-            <span class="bn-lbl">Reported issue</span>
-            <?= htmlspecialchars((string) $record['fault_description']) ?>
+        <div class="issue-box">
+            <span class="issue-label">Reported Issue</span>
+            <div class="issue-text"><?= htmlspecialchars(trim((string) $record['fault_description'])) ?></div>
         </div>
         <?php endif; ?>
     </div>
 
-    <div class="section">
-        <div class="section-label">Status</div>
-        <div class="row"><span class="lbl">Status</span><span class="val"><?= htmlspecialchars((string) $record['status']) ?></span></div>
-        <div class="row"><span class="lbl">Stage</span><span class="val"><?= htmlspecialchars($stageLabel) ?></span></div>
-        <?php if ((float) $record['repair_cost'] > 0): ?>
-        <div class="row"><span class="lbl">Est. repair</span><span class="val"><?= htmlspecialchars($curr) ?> <?= number_format((float) $record['repair_cost'], DECIMAL_PLACES) ?></span></div>
+    <?php if ($showUnlockOnReceipt): ?>
+    <div class="pattern-lock-box">
+        <div class="pl-section-title">Device unlock (for return)</div>
+
+        <?php if ($screenPin !== null): ?>
+        <div class="pin-hero">
+            <div class="pin-caption">Screen PIN</div>
+            <?php if ($pinUseCells): ?>
+            <div class="pin-digits-row" aria-label="Screen PIN">
+                <?php foreach ($pinDigitChars as $digit): ?>
+                <span class="pin-cell"><?= htmlspecialchars($digit) ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div class="pin-digits-wide" aria-label="Screen PIN"><?= htmlspecialchars(implode(' ', $pinDigitChars)) ?></div>
+            <?php endif; ?>
+        </div>
         <?php endif; ?>
-        <?php if (!empty($record['technician_name'])): ?>
-        <div class="row"><span class="lbl">Technician</span><span class="val"><?= htmlspecialchars((string) $record['technician_name']) ?></span></div>
+
+        <?php if ($hasLockPattern): ?>
+        <?php if ($screenPin !== null): ?>
+        <div class="pl-pattern-divider"></div>
+        <?php endif; ?>
+        <div class="pl-caption">Screen lock pattern</div>
+        <?= $lockPatternSvg ?>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="track-box">
         <div class="track-title">Track repair status</div>
@@ -337,6 +483,11 @@ body {
         <div class="track-hint" style="margin-top:6px;">
             Enter your device <strong>IMEI</strong> on that page to see live status.
         </div>
+    </div>
+
+    <div class="disclaimer">
+        <div class="disclaimer-en">Company is not responsible in case customer personal data is deleted.</div>
+        <div class="disclaimer-ar">الشركة غير مسؤولة في حال حذف البيانات الشخصية للعميل.</div>
     </div>
 
     <div class="footer">
@@ -352,8 +503,13 @@ body {
     window.addEventListener('load', function () {
         var p = new URLSearchParams(window.location.search);
         if (p.get('autoprint') === '1') {
-            setTimeout(function () { window.print(); }, 400);
+            setTimeout(function () { window.print(); }, 300);
         }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        window.location.href = '?page=dashboard';
     });
 })();
 </script>

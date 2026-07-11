@@ -1,12 +1,49 @@
 <?php
 /**
  * Public Customer Statement — standalone entry point
- * URL: https://iqbal.app/statement.php?token=XXXX
+ * URL: https://iqbal.app/s/XXXX  (legacy: statement.php?token=XXXX)
  * No login required
  */
 
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/app/helpers/Auth.php';
+require_once __DIR__ . '/app/models/BaseModel.php';
+require_once __DIR__ . '/app/models/Party.php';
+
+header('X-Frame-Options: SAMEORIGIN');
+header('X-Content-Type-Options: nosniff');
+
+// IP-based rate limit — statements trigger heavy balance queries with no auth gate.
+// Keyed on REMOTE_ADDR only (proxy headers are spoofable) and atomic via flock.
+$rlIp = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+$rlDir = sys_get_temp_dir() . '/field_stmt_rl';
+if (!is_dir($rlDir)) { @mkdir($rlDir, 0700, true); }
+$rlFh = @fopen($rlDir . '/' . md5($rlIp), 'c+');
+if ($rlFh) {
+    $rlLimited = false;
+    if (flock($rlFh, LOCK_EX)) {
+        $rlNow  = time();
+        $rlRaw  = stream_get_contents($rlFh);
+        $rlHits = $rlRaw ? (array) @json_decode($rlRaw, true) : [];
+        $rlHits = array_values(array_filter($rlHits, static fn($t) => is_numeric($t) && $t > $rlNow - 300));
+        if (count($rlHits) >= 60) {
+            $rlLimited = true;
+        } else {
+            $rlHits[] = $rlNow;
+            ftruncate($rlFh, 0);
+            rewind($rlFh);
+            fwrite($rlFh, json_encode($rlHits));
+            fflush($rlFh);
+        }
+        flock($rlFh, LOCK_UN);
+    }
+    fclose($rlFh);
+    if ($rlLimited) {
+        http_response_code(429);
+        die('<h2>Too many requests</h2><p>Please try again in a few minutes.</p>');
+    }
+}
 
 $token = trim($_GET['token'] ?? '');
 $action = trim($_GET['action'] ?? 'index');
@@ -16,63 +53,54 @@ if (!$token) {
 }
 
 $db = Database::getInstance();
+$partyModel = new Party();
 
 // AJAX: Invoice detail
 if ($action === 'invoiceDetail') {
     header('Content-Type: application/json');
     $refNo = trim($_GET['ref'] ?? '');
     
-    $party = $db->fetchOne("SELECT id FROM parties WHERE statement_token = ?", [$token]);
+    $party = $partyModel->findByStatementToken($token);
     if (!$party) { echo json_encode(['error' => 'Invalid token']); exit; }
     
-    $sale = $db->fetchOne(
-        "SELECT invoice_no, date, subtotal, discount, grand_total, paid_amount, balance, status
-         FROM sales WHERE invoice_no = ? AND party_id = ? AND status != 'cancelled'",
-        [$refNo, $party['id']]
-    );
+    $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
+    $saleSql = "SELECT invoice_no, date, subtotal, discount, grand_total, paid_amount, balance, status
+         FROM sales WHERE invoice_no = ? AND party_id = ? AND status != 'cancelled'";
+    $saleParams = [$refNo, $party['id']];
+    if ($statementWhId > 0) {
+        $saleSql .= ' AND warehouse_id = ?';
+        $saleParams[] = $statementWhId;
+    }
+    $sale = $db->fetchOne($saleSql, $saleParams);
     if (!$sale) { echo json_encode(['error' => 'Invoice not found']); exit; }
     
-    $items = $db->fetchAll(
-        "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
+    $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
          FROM sale_items si
          JOIN items i ON i.id = si.item_id
          JOIN sales s ON s.id = si.sale_id
-         WHERE s.invoice_no = ? AND s.party_id = ?",
-        [$refNo, $party['id']]
-    );
+         WHERE s.invoice_no = ? AND s.party_id = ?";
+    $itemsParams = [$refNo, $party['id']];
+    if ($statementWhId > 0) {
+        $itemsSql .= ' AND s.warehouse_id = ?';
+        $itemsParams[] = $statementWhId;
+    }
+    $items = $db->fetchAll($itemsSql, $itemsParams);
     
     echo json_encode(['invoice' => $sale, 'items' => $items]);
     exit;
 }
 
 // Main statement page
-$party = $db->fetchOne(
-    "SELECT p.*,
-        p.opening_balance
-        + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-        - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-        as net_balance
-     FROM parties p WHERE p.statement_token = ?",
-    [$token]
-);
+$party = $partyModel->findByStatementToken($token);
 
 if (!$party) {
     die('<h2>Invalid or expired link</h2><p>Please contact the business for a valid statement link.</p>');
 }
 
-$transactions = $db->fetchAll(
-    "SELECT 'Sale' as type, invoice_no as ref_no, date, grand_total as debit, 0 as credit, status, created_at
-     FROM sales WHERE party_id = ? AND status != 'cancelled'
-     UNION ALL
-     SELECT 'Payment', payment_no, date, 0, amount, 'paid', created_at
-     FROM payments WHERE party_id = ? AND ref_type IN ('sale','discount')
-     UNION ALL
-     SELECT 'Return', return_no, date, 0, grand_total, status, created_at
-     FROM returns WHERE party_id = ? AND type = 'sale_return' AND status = 'approved'
-     ORDER BY date ASC, created_at ASC",
-    [$party['id'], $party['id'], $party['id']]
-);
+$statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
+$transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', '', $statementWhId);
+$openingBal    = $partyModel->computeStatementOpeningBalance((int) $party['id'], '', $statementWhId);
+$closingBal    = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
 
 $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
 $companyName = $company['value'] ?? 'Iqbal Sons';
@@ -85,7 +113,8 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Statement — <?= htmlspecialchars($party['name']) ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"
+          integrity="sha384-tViUnnbYAV00FLIhhi3v/dWt3Jxw4gZQcNoSCxCIFNJVCx7/D55/wXsrNIRANwdD" crossorigin="anonymous">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f1f5f9; color:#1e293b; min-height:100vh; }
@@ -106,8 +135,10 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
         .stmt-table tfoot td { background:#f0f4ff; font-weight:700; border-top:2px solid #c7d2fe; }
         .badge { display:inline-block; padding:2px 8px; border-radius:5px; font-size:0.7rem; font-weight:600; }
         .badge-sale { background:rgba(99,102,241,0.12); color:#6366f1; }
+        .badge-purchase { background:rgba(245,158,11,0.12); color:#f59e0b; }
         .badge-payment { background:rgba(16,185,129,0.12); color:#10b981; }
         .badge-return { background:rgba(220,38,38,0.12); color:#dc2626; }
+        .badge-discount { background:rgba(139,92,246,0.12); color:#8b5cf6; }
         .footer { text-align:center; margin-top:20px; font-size:0.75rem; color:#94a3b8; }
         .print-btn { display:inline-flex; align-items:center; gap:6px; background:#1e3a5f; color:#fff; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-size:0.82rem; font-weight:600; margin-bottom:16px; }
         .print-btn:hover { background:#2d5a9e; }
@@ -126,12 +157,12 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
         <div style="font-size:0.78rem;opacity:0.7;margin-top:4px;">Account Statement as of <?= date('d M Y, h:i A') ?></div>
     </div>
 
-    <button class="print-btn" onclick="window.print()"><i class="bi bi-printer"></i> Print Statement</button>
+    <button type="button" class="print-btn" id="stmtPrintBtn"><i class="bi bi-printer"></i> Print Statement</button>
 
     <div class="summary">
         <div class="sum-card">
             <div class="label">Opening Balance</div>
-            <div class="value" style="color:#64748b;"><?= APP_CURRENCY ?> <?= number_format((float)$party['opening_balance'], DECIMAL_PLACES) ?></div>
+            <div class="value" style="color:#64748b;"><?= APP_CURRENCY ?> <?= number_format($openingBal, DECIMAL_PLACES) ?></div>
         </div>
         <div class="sum-card">
             <div class="label">Total Invoices</div>
@@ -144,10 +175,16 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
             <div class="value" style="color:#10b981;"><?= APP_CURRENCY ?> <?= number_format($totalCredit, DECIMAL_PLACES) ?></div>
         </div>
         <div class="sum-card">
-            <div class="label">Balance Due</div>
-            <?php $balance = (float)$party['net_balance']; ?>
-            <div class="value" style="color:<?= $balance > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                <?= $balance > 0.001 ? APP_CURRENCY . ' ' . number_format($balance, DECIMAL_PLACES) : '✓ Clear' ?>
+            <div class="label">Balance</div>
+            <?php $balance = (float) $closingBal; ?>
+            <div class="value" style="color:<?= $balance > 0.001 ? '#ef4444' : ($balance < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                <?php if ($balance > 0.001): ?>
+                <?= APP_CURRENCY ?> <?= number_format($balance, DECIMAL_PLACES) ?>
+                <?php elseif ($balance < -0.001): ?>
+                -<?= APP_CURRENCY ?> <?= number_format(abs($balance), DECIMAL_PLACES) ?>
+                <?php else: ?>
+                ✓ Clear
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -158,7 +195,7 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
         </thead>
         <tbody>
             <?php
-            $running = (float)$party['opening_balance'];
+            $running = (float) $openingBal;
             if (abs($running) > 0.001):
             ?>
             <tr style="background:#f8fafc;">
@@ -175,32 +212,46 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
                 $debit  = (float)$t['debit'];
                 $credit = (float)$t['credit'];
                 $running += $debit - $credit;
-                $badgeClass = $t['type'] === 'Sale' ? 'badge-sale' : ($t['type'] === 'Payment' ? 'badge-payment' : 'badge-return');
+                $badgeMap = [
+                    'Sale'     => 'badge-sale',
+                    'Purchase' => 'badge-purchase',
+                    'Payment'  => 'badge-payment',
+                    'Return'   => 'badge-return',
+                    'Discount' => 'badge-discount',
+                ];
+                $badgeClass = $badgeMap[$t['type']] ?? 'badge-payment';
             ?>
             <tr>
                 <td><?= date('d M Y', strtotime($t['date'])) ?></td>
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;">
                     <?php if ($t['type'] === 'Sale'): ?>
-                    <a href="javascript:void(0)" onclick="showInvoice('<?= $t['ref_no'] ?>')" class="inv-link"><?= $t['ref_no'] ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i></a>
+                    <a href="javascript:void(0)" class="inv-link inv-view-link" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>"><?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i></a>
                     <?php else: ?>
-                    <span style="color:#4338ca;"><?= $t['ref_no'] ?></span>
+                    <span style="color:#4338ca;"><?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?></span>
                     <?php endif; ?>
                 </td>
                 <td style="text-align:right;"><?= $debit > 0 ? APP_CURRENCY . ' ' . number_format($debit, DECIMAL_PLACES) : '—' ?></td>
                 <td style="text-align:right;color:#10b981;"><?= $credit > 0 ? APP_CURRENCY . ' ' . number_format($credit, DECIMAL_PLACES) : '—' ?></td>
-                <td style="text-align:right;font-weight:700;color:<?= $running > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                    <?= APP_CURRENCY ?> <?= number_format(abs($running), DECIMAL_PLACES) ?>
+                <td style="text-align:right;font-weight:700;color:<?= $running > 0.001 ? '#ef4444' : ($running < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                    <?= $running < -0.001 ? '-' : '' ?><?= APP_CURRENCY ?> <?= number_format(abs($running), DECIMAL_PLACES) ?>
                 </td>
             </tr>
             <?php endforeach; ?>
         </tbody>
         <tfoot>
+            <?php $closingBalance = (float) $closingBal; ?>
             <tr>
                 <td colspan="3" style="text-align:right;color:#4338ca;">Closing Balance</td>
                 <td></td><td></td>
-                <td style="text-align:right;font-size:1rem;color:<?= $running > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                    <?= $running > 0.001 ? APP_CURRENCY . ' ' . number_format($running, DECIMAL_PLACES) : '✓ Clear' ?>
+                <td style="text-align:right;font-size:1rem;color:<?= $closingBalance > 0.001 ? '#ef4444' : ($closingBalance < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                    <?php if ($closingBalance > 0.001): ?>
+                    <?= APP_CURRENCY ?> <?= number_format($closingBalance, DECIMAL_PLACES) ?>
+                    <?php elseif ($closingBalance < -0.001): ?>
+                    -<?= APP_CURRENCY ?> <?= number_format(abs($closingBalance), DECIMAL_PLACES) ?>
+                    <?php else: ?>
+                    ✓ Clear
+                    <?php endif; ?>
                 </td>
             </tr>
         </tfoot>
@@ -213,37 +264,46 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
 </div>
 
 <!-- Invoice Modal -->
-<div id="invModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(2px);" onclick="if(event.target===this)closeInvModal()">
+<div id="invModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(2px);">
     <div style="background:#fff;border-radius:14px;width:95%;max-width:550px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #e2e8f0;">
             <div>
                 <div id="invNo" style="font-size:1.05rem;font-weight:800;color:#4338ca;"></div>
                 <div id="invDate" style="font-size:0.78rem;color:#64748b;margin-top:2px;"></div>
             </div>
-            <button onclick="closeInvModal()" style="background:none;border:none;font-size:1.5rem;color:#94a3b8;cursor:pointer;line-height:1;">×</button>
+            <button type="button" id="invCloseBtn" style="background:none;border:none;font-size:1.5rem;color:#94a3b8;cursor:pointer;line-height:1;">×</button>
         </div>
         <div id="invBody" style="padding:16px 20px;"><div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div></div>
     </div>
 </div>
 
 <script>
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function showInvoice(refNo) {
     document.getElementById('invModal').style.display = 'flex';
     document.getElementById('invNo').textContent = refNo;
     document.getElementById('invDate').textContent = 'Loading...';
     document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div>';
 
-    fetch('statement.php?token=<?= htmlspecialchars($token) ?>&action=invoiceDetail&ref=' + encodeURIComponent(refNo))
+    fetch('/s/<?= rawurlencode($token) ?>?action=invoiceDetail&ref=' + encodeURIComponent(refNo))
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.error) { document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + data.error + '</div>'; return; }
+            if (data.error) { document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + escapeHtml(data.error) + '</div>'; return; }
             var inv = data.invoice, items = data.items;
             document.getElementById('invDate').textContent = inv.date;
             var c = '<?= APP_CURRENCY ?>';
             var html = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
             html += '<thead><tr style="background:#f8fafc;"><th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#64748b;">ITEM</th><th style="padding:8px 10px;text-align:center;font-size:0.7rem;color:#64748b;">QTY</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">PRICE</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">TOTAL</th></tr></thead><tbody>';
             items.forEach(function(it) {
-                html += '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 10px;font-weight:500;">' + it.item_name + '</td><td style="padding:8px 10px;text-align:center;">' + it.quantity + '</td><td style="padding:8px 10px;text-align:right;">' + parseFloat(it.unit_price).toFixed(3) + '</td><td style="padding:8px 10px;text-align:right;font-weight:600;">' + parseFloat(it.total).toFixed(3) + '</td></tr>';
+                html += '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 10px;font-weight:500;">' + escapeHtml(it.item_name) + '</td><td style="padding:8px 10px;text-align:center;">' + escapeHtml(it.quantity) + '</td><td style="padding:8px 10px;text-align:right;">' + parseFloat(it.unit_price).toFixed(3) + '</td><td style="padding:8px 10px;text-align:right;font-weight:600;">' + parseFloat(it.total).toFixed(3) + '</td></tr>';
             });
             html += '</tbody></table>';
             html += '<div style="margin-top:12px;padding-top:12px;border-top:2px solid #e2e8f0;">';
@@ -259,6 +319,15 @@ function showInvoice(refNo) {
         .catch(function() { document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">Failed to load</div>'; });
 }
 function closeInvModal() { document.getElementById('invModal').style.display = 'none'; }
+
+document.getElementById('stmtPrintBtn')?.addEventListener('click', function() { window.print(); });
+document.getElementById('invCloseBtn')?.addEventListener('click', closeInvModal);
+document.getElementById('invModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeInvModal();
+});
+document.querySelectorAll('.inv-view-link').forEach(function(a) {
+    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref')); });
+});
 </script>
 </body>
 </html>

@@ -197,7 +197,7 @@ function addPurRow() {
             </button>
         </td>
         <td class="col-qty-td"><input type="number" name="items[${purRowCount}][quantity]" id="purQty_${rid}"
-                value="1" min="1" style="text-align:center;" oninput="calcPurRow('${rid}')"></td>
+                value="" min="1" placeholder="1" style="text-align:center;" oninput="calcPurRow('${rid}')"></td>
         <input type="hidden" name="items[${purRowCount}][unit]" value="pcs">
         <td class="col-cost-td"><input type="number" name="items[${purRowCount}][unit_price]" id="purPrice_${rid}"
                 value="" step="0.001" placeholder="0.000" style="text-align:right;" oninput="calcPurRow('${rid}')"></td>
@@ -257,6 +257,8 @@ function selectPurItem(rid, item) {
     document.getElementById('purHasImei_' + rid).value = item.has_imei;
     document.getElementById('purPrice_'   + rid).value = parseFloat(item.purchase_price || 0).toFixed(3);
     document.getElementById('purDrop_'    + rid).style.display = 'none';
+    const qtyEl = document.getElementById('purQty_' + rid);
+    if (qtyEl && !qtyEl.value) qtyEl.value = 1;
 
     // Always show IMEI button after item selected
     const imeiBtn = document.getElementById('purImeiBtn_' + rid);
@@ -336,6 +338,25 @@ document.getElementById('supplierSearch').addEventListener('input', function() {
     }, 250);
 });
 
+function focusFirstPurItem() {
+    let target = null;
+    document.querySelectorAll('#purItemsBody tr').forEach(tr => {
+        const rid = tr.dataset.rowId;
+        if (!rid || target) return;
+        if (!document.getElementById('purItemId_' + rid)?.value) {
+            target = tr.querySelector('.pur-item-search');
+        }
+    });
+    if (!target) {
+        target = document.querySelector('#purItemsBody .pur-item-search');
+    }
+    if (!target) return;
+    requestAnimationFrame(() => {
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'nearest' });
+    });
+}
+
 function selectSupplier(p) {
     const wrap   = document.getElementById('supplierFieldWrap');
     const search = document.getElementById('supplierSearch');
@@ -347,6 +368,7 @@ function selectSupplier(p) {
     document.getElementById('supplierIdInput').value = p.id;
     document.getElementById('supplierPhone').value = p.phone || '';
     document.getElementById('supplierDrop').style.display = 'none';
+    setTimeout(focusFirstPurItem, 0);
 }
 
 document.getElementById('purForm').addEventListener('submit', e => {

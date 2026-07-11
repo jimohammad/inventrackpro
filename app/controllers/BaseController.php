@@ -45,6 +45,17 @@ abstract class BaseController {
         return self::$accountsCache;
     }
 
+    /** Human-readable account label with database id (e.g. "#3 — NBK Bank Account"). */
+    public static function formatAccountLabel(array $acc, bool $withBalance = false): string {
+        $id   = (int) ($acc['id'] ?? 0);
+        $name = trim((string) ($acc['name'] ?? ''));
+        $label = '#' . $id . ' — ' . ($name !== '' ? $name : 'Account');
+        if ($withBalance) {
+            $label .= ' (' . APP_CURRENCY . ' ' . number_format((float) ($acc['current_balance'] ?? 0), DECIMAL_PLACES) . ')';
+        }
+        return $label;
+    }
+
     /**
      * Normalize legacy/special account names into behavior types used by payment flows.
      */
@@ -69,11 +80,37 @@ abstract class BaseController {
     }
 
     /**
+     * Dashboard stats cache directory — must match where DashboardController reads/writes.
+     * Prefers OS temp when the project lives on a synced drive (Google Drive etc.).
+     */
+    protected static function dashboardCacheDir(): string {
+        static $dir = null;
+        if ($dir !== null) {
+            return $dir;
+        }
+
+        $preferred = dirname(__DIR__, 2) . '/backups/cache';
+        $rootReal  = realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2);
+        $onSynced  = stripos($rootReal, 'My Drive') !== false
+            || stripos($rootReal, 'Google Drive') !== false;
+
+        $dir = $onSynced
+            ? rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_dash_cache'
+            : $preferred;
+
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+
+        return $dir;
+    }
+
+    /**
      * Clear persisted dashboard stat cards after writes that affect sales, stock,
      * receivables, payables, or recent activity.
      */
     protected static function clearDashboardCache(?int $warehouseId = null): void {
-        $cacheDir = dirname(__DIR__, 2) . '/backups/cache';
+        $cacheDir = self::dashboardCacheDir();
         if (!is_dir($cacheDir)) {
             return;
         }
@@ -90,11 +127,7 @@ abstract class BaseController {
     }
 
     public function __construct() {
-        Auth::startSession();
-        $page = preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['page'] ?? 'dashboard'));
-        if (!Auth::isPublicPage($page)) {
-            Auth::required();
-        }
+        // Auth/session bootstrap runs in index.php — avoid duplicate work here.
 
         // Auto CSRF check on every POST request
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -139,6 +172,11 @@ abstract class BaseController {
 
     // Get and clear flash message
     public static function getFlash(): array|null {
+        if (array_key_exists('erp_prefetched_flash', $GLOBALS)) {
+            $flash = $GLOBALS['erp_prefetched_flash'];
+            unset($GLOBALS['erp_prefetched_flash']);
+            return $flash;
+        }
         if (!empty($_SESSION['flash'])) {
             $flash = $_SESSION['flash'];
             unset($_SESSION['flash']);
@@ -177,6 +215,13 @@ abstract class BaseController {
      */
     protected function inputRaw(string $key, string $default = '', string $from = 'post', int $maxLen = 1000): string {
         return $this->input($key, $default, $from, $maxLen);
+    }
+
+    /**
+     * Bulk IMEI paste field — default input() cap (1000 chars) truncates at ~62 IMEIs.
+     */
+    protected function inputImeiBulk(string $key, string $default = '', string $from = 'post'): string {
+        return $this->input($key, $default, $from, 200000);
     }
 
     /**
@@ -237,7 +282,16 @@ abstract class BaseController {
     }
 
     protected static function clientIp(): string {
-        // Prefer known proxy headers when present; fall back to REMOTE_ADDR.
+        $remote = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        $remote = filter_var($remote, FILTER_VALIDATE_IP) ? $remote : '';
+
+        // Proxy headers (CF-Connecting-IP, X-Forwarded-For) are attacker-controlled
+        // unless a trusted proxy sets them. Without one, trusting them lets callers
+        // spoof a new IP per request and bypass every per-IP rate limit.
+        if (!defined('TRUSTED_PROXY') || !TRUSTED_PROXY) {
+            return $remote;
+        }
+
         $candidates = [
             $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '',
             $_SERVER['HTTP_X_REAL_IP'] ?? '',
@@ -250,13 +304,57 @@ abstract class BaseController {
                 $candidates[] = $parts[0];
             }
         }
-        $candidates[] = $_SERVER['REMOTE_ADDR'] ?? '';
         foreach ($candidates as $ip) {
             $ip = trim((string) $ip);
             if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
                 return $ip;
             }
         }
-        return '';
+        return $remote;
+    }
+
+    /**
+     * File-based per-IP rate limiter for public endpoints.
+     * Atomic via flock so concurrent requests cannot double the allowed burst.
+     * Returns true when the caller exceeded the limit. Fails open on IO errors.
+     */
+    protected static function ipRateLimited(string $bucket, int $maxHits = 60, int $windowSec = 300): bool {
+        $ip  = self::clientIp();
+        $dir = sys_get_temp_dir() . '/' . $bucket;
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        // Best-effort cleanup to prevent unbounded growth.
+        foreach (@scandir($dir) ?: [] as $f) {
+            if ($f === '.' || $f === '..') continue;
+            $p = $dir . '/' . $f;
+            if (@is_file($p) && @filemtime($p) && @filemtime($p) < time() - 86400) {
+                @unlink($p);
+            }
+        }
+
+        $fh = @fopen($dir . '/' . md5($ip), 'c+');
+        if (!$fh) {
+            return false;
+        }
+        $limited = false;
+        if (flock($fh, LOCK_EX)) {
+            $now  = time();
+            $raw  = stream_get_contents($fh);
+            $hits = $raw ? (array) @json_decode($raw, true) : [];
+            $hits = array_values(array_filter($hits, static fn($t) => is_numeric($t) && $t > $now - $windowSec));
+            if (count($hits) >= $maxHits) {
+                $limited = true;
+            } else {
+                $hits[] = $now;
+                ftruncate($fh, 0);
+                rewind($fh);
+                fwrite($fh, json_encode($hits));
+                fflush($fh);
+            }
+            flock($fh, LOCK_UN);
+        }
+        fclose($fh);
+        return $limited;
     }
 }

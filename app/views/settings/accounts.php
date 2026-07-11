@@ -101,6 +101,22 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     background:rgba(245,158,11,.14);color:#b45309;text-decoration:none;
 }
 .trf-edit:hover{color:#92400e;filter:brightness(1.05);}
+
+/* Permanent transfer form */
+#transferPanel{overflow:visible;}
+.acc-form-row.trf-form-row{
+    display:grid;
+    grid-template-columns:minmax(0,1.4fr) 44px minmax(0,1.4fr) minmax(120px,0.85fr) minmax(130px,0.85fr);
+    gap:14px;
+    align-items:start;
+}
+@media(max-width:1100px){
+    .acc-form-row.trf-form-row{grid-template-columns:1fr 1fr;}
+    .acc-form-row.trf-form-row .transfer-arrow{grid-column:1/-1;padding-top:0;}
+}
+@media(max-width:640px){
+    .acc-form-row.trf-form-row{grid-template-columns:1fr;}
+}
 </style>
 
 <!-- Header -->
@@ -112,9 +128,6 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     <div class="acc-actions">
         <button class="btn-acc" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,0.3);" onclick="togglePanel('adjustPanel')">
             <i class="bi bi-sliders"></i> Adjust Balance
-        </button>
-        <button class="btn-acc btn-transfer" onclick="togglePanel('transferPanel')">
-            <i class="bi bi-arrow-left-right"></i> Transfer Funds
         </button>
         <button class="btn-acc btn-new-acc" onclick="togglePanel('newAccPanel')">
             <i class="bi bi-plus-lg"></i> New Account
@@ -175,6 +188,65 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
         <span class="acc-total-val"><?= APP_CURRENCY ?> <?= number_format($totalBal, DECIMAL_PLACES) ?></span>
     </div>
     <?php endif; ?>
+</div>
+
+<!-- Transfer Funds (permanent) -->
+<div class="acc-panel" id="transferPanel" style="margin-bottom:24px;">
+    <div class="acc-panel-header green">
+        <div class="acc-panel-title"><i class="bi bi-arrow-left-right" style="color:#10b981;"></i> Transfer Funds Between Accounts</div>
+    </div>
+    <div class="acc-panel-body">
+        <form method="POST" action="?page=accounts&action=transfer">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="account_transfer_nonce" value="<?= htmlspecialchars($accountTransferNonce ?? '') ?>">
+            <div class="acc-form-row trf-form-row">
+
+                <div class="acc-field acc-field-green">
+                    <label>From Account <span style="color:#ef4444;">*</span></label>
+                    <select name="from_account_id" id="fromAcc" required>
+                        <option value="">Select source account...</option>
+                        <?php foreach ($accounts as $a): ?>
+                        <option value="<?= $a['id'] ?>" data-balance="<?= $a['current_balance'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultFromId ?? 0) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($a['name']) ?> — <?= APP_CURRENCY ?> <?= number_format($a['current_balance'], DECIMAL_PLACES) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div id="fromBalance" style="margin-top:5px;font-size:0.77rem;color:#10b981;font-weight:600;min-height:16px;"></div>
+                </div>
+
+                <div class="transfer-arrow"><i class="bi bi-arrow-right-circle-fill" style="color:#10b981;"></i></div>
+
+                <div class="acc-field acc-field-green">
+                    <label>To Account <span style="color:#ef4444;">*</span></label>
+                    <select name="to_account_id" id="toAcc" required>
+                        <option value="">Select destination...</option>
+                        <?php foreach ($accounts as $a): ?>
+                        <option value="<?= $a['id'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultToId ?? 0) ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="acc-field acc-field-green">
+                    <label>Amount <span style="color:#ef4444;">*</span></label>
+                    <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required>
+                </div>
+
+                <div class="acc-field acc-field-green">
+                    <label>Date</label>
+                    <input type="date" name="date" value="<?= date('Y-m-d') ?>">
+                </div>
+            </div>
+            <div class="acc-form-row" style="margin-top:0;">
+                <div class="acc-field acc-field-green" style="grid-column:1/-1;">
+                    <label>Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+                    <input type="text" name="notes" placeholder="Reason for transfer...">
+                </div>
+            </div>
+            <div class="acc-save-row">
+                <button type="submit" class="btn-panel-save green"><i class="bi bi-arrow-left-right me-1"></i> Execute Transfer</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <!-- Account Transactions Panel -->
@@ -339,67 +411,6 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
     </div>
 </div>
 
-<!-- Transfer Funds Panel -->
-<div class="acc-panel" id="transferPanel" style="display:<?= isset($_GET['transfer']) ? 'block' : 'none' ?>;">
-    <div class="acc-panel-header green">
-        <div class="acc-panel-title"><i class="bi bi-arrow-left-right" style="color:#10b981;"></i> Transfer Funds Between Accounts</div>
-        <button class="panel-close" onclick="togglePanel('transferPanel')">×</button>
-    </div>
-    <div class="acc-panel-body">
-        <form method="POST" action="?page=accounts&action=transfer">
-            <?= Auth::csrfField() ?>
-            <input type="hidden" name="account_transfer_nonce" value="<?= htmlspecialchars($accountTransferNonce ?? '') ?>">
-            <div class="acc-form-row" style="grid-template-columns:1fr 60px 1fr 160px 200px;">
-
-                <div class="acc-field acc-field-green">
-                    <label>From Account <span style="color:#ef4444;">*</span></label>
-                    <select name="from_account_id" id="fromAcc" onchange="updateBalance()" required>
-                        <option value="">Select source account...</option>
-                        <?php foreach ($accounts as $a): ?>
-                        <option value="<?= $a['id'] ?>" data-balance="<?= $a['current_balance'] ?>">
-                            <?= htmlspecialchars($a['name']) ?> — <?= APP_CURRENCY ?> <?= number_format($a['current_balance'], DECIMAL_PLACES) ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div id="fromBalance" style="margin-top:5px;font-size:0.77rem;color:#10b981;font-weight:600;min-height:16px;"></div>
-                </div>
-
-                <div class="transfer-arrow"><i class="bi bi-arrow-right-circle-fill" style="color:#10b981;"></i></div>
-
-                <div class="acc-field acc-field-green">
-                    <label>To Account <span style="color:#ef4444;">*</span></label>
-                    <select name="to_account_id" required>
-                        <option value="">Select destination...</option>
-                        <?php foreach ($accounts as $a): ?>
-                        <option value="<?= $a['id'] ?>"><?= htmlspecialchars($a['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <div class="acc-field acc-field-green">
-                    <label>Amount <span style="color:#ef4444;">*</span></label>
-                    <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required>
-                </div>
-
-                <div class="acc-field acc-field-green">
-                    <label>Date</label>
-                    <input type="date" name="date" value="<?= date('Y-m-d') ?>">
-                </div>
-            </div>
-            <div class="acc-form-row" style="margin-top:0;">
-                <div class="acc-field acc-field-green" style="grid-column:1/-1;">
-                    <label>Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-                    <input type="text" name="notes" placeholder="Reason for transfer...">
-                </div>
-            </div>
-            <div class="acc-save-row">
-                <button type="button" class="btn-panel-cancel" onclick="togglePanel('transferPanel')">Cancel</button>
-                <button type="submit" class="btn-panel-save green"><i class="bi bi-arrow-left-right me-1"></i> Execute Transfer</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <!-- Edit Transfer Panel -->
 <?php if (!empty($editingTransfer) && Auth::can('settings', 'edit')): ?>
 <div class="acc-panel" id="editTransferPanel" style="display:block;border-color:rgba(245,158,11,0.35);">
@@ -517,9 +528,10 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
 <script>
 function togglePanel(id) {
     const panel = document.getElementById(id);
-    const allPanels = ['newAccPanel', 'transferPanel'];
+    const allPanels = ['newAccPanel', 'adjustPanel'];
     allPanels.forEach(p => {
-        if (p !== id) document.getElementById(p).style.display = 'none';
+        const el = document.getElementById(p);
+        if (el && p !== id) el.style.display = 'none';
     });
     const isHidden = panel.style.display === 'none';
     panel.style.display = isHidden ? 'block' : 'none';
@@ -528,9 +540,10 @@ function togglePanel(id) {
 
 function updateBalance() {
     const sel = document.getElementById('fromAcc');
+    const el  = document.getElementById('fromBalance');
+    if (!sel || !el) return;
     const opt = sel.options[sel.selectedIndex];
     const bal = parseFloat(opt.dataset.balance || 0);
-    const el  = document.getElementById('fromBalance');
     if (sel.value) {
         el.textContent = 'Available: <?= APP_CURRENCY ?> ' + bal.toFixed(<?= DECIMAL_PLACES ?>);
         el.style.color = bal > 0 ? '#10b981' : '#ef4444';
@@ -540,6 +553,12 @@ function updateBalance() {
 }
 
 $(document).ready(() => {
+    const fromAcc = document.getElementById('fromAcc');
+    if (fromAcc) {
+        fromAcc.addEventListener('change', updateBalance);
+        updateBalance();
+    }
+
     var tt = document.getElementById('transferTable');
     if (tt && tt.querySelectorAll('tbody tr').length > 5) {
         var noOrder = [3];

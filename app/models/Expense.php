@@ -58,32 +58,41 @@ class Expense extends BaseModel {
         return EXPENSE_PREFIX . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * Insert one expense and deduct the account balance.
+     * The CALLER must manage the transaction (used for atomic multi-row saves).
+     * Exceptions propagate so the caller can roll back the whole batch.
+     */
+    public function createInTransaction(array $data): int|false {
+        $id = $this->db->insert(
+            "INSERT INTO expenses (expense_no, category_id, account_id, warehouse_id, amount, date, description, created_by)
+             VALUES (?,?,?,?,?,?,?,?)",
+            [
+                $this->nextExpenseNo(),
+                $data['category_id'] ?: null,
+                $data['account_id'],
+                Auth::warehouseId(),
+                (float) $data['amount'],
+                $data['date'] ?? date('Y-m-d'),
+                $data['description'] ?: null,
+                Auth::id(),
+            ]
+        );
+
+        if ($id) {
+            $this->db->execute(
+                "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
+                [(float)$data['amount'], $data['account_id']]
+            );
+        }
+
+        return $id;
+    }
+
     public function create(array $data): int|false {
         $this->db->beginTransaction();
         try {
-            $id = $this->db->insert(
-                "INSERT INTO expenses (expense_no, category_id, account_id, warehouse_id, amount, date, description, created_by)
-                 VALUES (?,?,?,?,?,?,?,?)",
-                [
-                    $this->nextExpenseNo(),
-                    $data['category_id'] ?: null,
-                    $data['account_id'],
-                    Auth::warehouseId(),
-                    (float) $data['amount'],
-                    $data['date'] ?? date('Y-m-d'),
-                    $data['description'] ?: null,
-                    Auth::id(),
-                ]
-            );
-
-            // Deduct from account (inside transaction)
-            if ($id) {
-                $this->db->execute(
-                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
-                    [(float)$data['amount'], $data['account_id']]
-                );
-            }
-
+            $id = $this->createInTransaction($data);
             $this->db->commit();
             return $id;
         } catch (Exception $e) {
@@ -99,7 +108,11 @@ class Expense extends BaseModel {
     public function delete(int $id): int {
         $this->db->beginTransaction();
         try {
-            $exp = $this->db->fetchOne("SELECT * FROM expenses WHERE id = ? FOR UPDATE", [$id]);
+            // Branch-scoped: never delete (and reverse balances for) another warehouse's expense
+            $exp = $this->db->fetchOne(
+                "SELECT * FROM expenses WHERE id = ? AND warehouse_id = ? FOR UPDATE",
+                [$id, Auth::warehouseId()]
+            );
             if (!$exp) {
                 $this->db->rollback();
                 return 0;
@@ -125,14 +138,20 @@ class Expense extends BaseModel {
     }
 
     public function getSummaryByCategory(string $fromDate, string $toDate): array {
+        $params = [$fromDate, $toDate];
+        $where  = 'WHERE e.date BETWEEN ? AND ?';
+        if (Auth::warehouseId()) {
+            $where .= ' AND e.warehouse_id = ?';
+            $params[] = Auth::warehouseId();
+        }
         return $this->db->fetchAll(
             "SELECT ec.name as category, COUNT(*) as count, SUM(e.amount) as total
              FROM expenses e
              LEFT JOIN expense_categories ec ON ec.id = e.category_id
-             WHERE e.date BETWEEN ? AND ?
+             {$where}
              GROUP BY e.category_id
              ORDER BY total DESC",
-            [$fromDate, $toDate]
+            $params
         );
     }
 

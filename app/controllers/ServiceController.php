@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../helpers/ServiceLockPattern.php';
 
 class ServiceController extends BaseController {
 
@@ -11,11 +12,7 @@ class ServiceController extends BaseController {
         return [
             'Pending',
             'In Progress',
-            // legacy values (keep for existing data / filtering)
-            'Returned (No Repair)',
             'Fixed',
-            'Replaced',
-            'No Repair',
             'Fixed & Delivered',
             'Replaced & Delivered',
             'No Repair & Delivered',
@@ -59,7 +56,9 @@ class ServiceController extends BaseController {
         if ($raw === '') {
             return null;
         }
-        $dt = DateTime::createFromFormat('Y-m-d', $raw);
+        // '!' resets time to 00:00:00 — without it the current clock time is
+        // used, making today's date compare as "future" and get rejected.
+        $dt = DateTime::createFromFormat('!Y-m-d', $raw);
         if (!$dt || $dt->format('Y-m-d') !== $raw) {
             return null;
         }
@@ -78,6 +77,7 @@ class ServiceController extends BaseController {
             'Laptop',
             'Meizu',
             'Motorola',
+            'Nokia',
             'Realme',
             'Redmi',
             'Samsung',
@@ -87,6 +87,55 @@ class ServiceController extends BaseController {
     public function __construct() {
         parent::__construct();
         $this->db = Database::getInstance();
+    }
+
+    /** Add lock_pattern / screen_pin columns once per request when missing (deployed DB may lag migrations). */
+    private function ensureServiceLockColumns(): void {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+        $ensured = true;
+
+        try {
+            $rows = $this->db->fetchAll(
+                "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'service_records'"
+            );
+            $existing = array_column($rows, 'COLUMN_NAME');
+
+            if (!in_array('lock_pattern', $existing, true)) {
+                $this->db->execute(
+                    "ALTER TABLE service_records ADD COLUMN lock_pattern VARCHAR(32) NULL DEFAULT NULL AFTER fault_description"
+                );
+                $existing[] = 'lock_pattern';
+            }
+
+            if (!in_array('screen_pin', $existing, true)) {
+                $after = in_array('lock_pattern', $existing, true) ? 'lock_pattern' : 'fault_description';
+                $this->db->execute(
+                    "ALTER TABLE service_records ADD COLUMN screen_pin VARCHAR(16) NULL DEFAULT NULL AFTER {$after}"
+                );
+                $existing[] = 'screen_pin';
+            }
+
+            if (!in_array('print_unlock_on_receipt', $existing, true)) {
+                $after = in_array('screen_pin', $existing, true) ? 'screen_pin' : 'fault_description';
+                $this->db->execute(
+                    "ALTER TABLE service_records ADD COLUMN print_unlock_on_receipt TINYINT(1) NOT NULL DEFAULT 0 AFTER {$after}"
+                );
+            }
+        } catch (Throwable $e) {
+            error_log('[ERP] service_records lock column ensure failed: ' . $e->getMessage());
+        }
+    }
+
+    private function rollbackQuietly(): void {
+        try {
+            $this->db->rollback();
+        } catch (Throwable $e) {
+            error_log('[ERP] service rollback failed: ' . $e->getMessage());
+        }
     }
 
     public function index(): void {
@@ -161,6 +210,8 @@ class ServiceController extends BaseController {
         Auth::authorize('service', 'add');
 
         if ($this->isPost()) {
+            $this->ensureServiceLockColumns();
+
             $imei = trim($this->input('imei'));
             if (!$imei) {
                 $this->flash('error', 'IMEI is required');
@@ -177,9 +228,18 @@ class ServiceController extends BaseController {
                 $num = $lastNo ? (int)substr($lastNo['service_no'], 4) : 0;
                 $serviceNo = 'SRV-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
+                $lockPattern = ServiceLockPattern::parse($this->input('lock_pattern'));
+                $screenPinRaw = trim($this->input('screen_pin'));
+                $screenPin = ServiceLockPattern::parseScreenPin($screenPinRaw);
+                if ($screenPinRaw !== '' && $screenPin === null) {
+                    throw new RuntimeException('Screen PIN must be 4–16 digits.');
+                }
+
+                $printUnlockOnReceipt = $this->input('print_unlock_on_receipt') ? 1 : 0;
+
                 $id = $this->db->insert(
-                    "INSERT INTO service_records (service_no, imei, party_id, customer_name, customer_phone, device_brand, device_model, warehouse_id, fault_category, fault_description, technician_name, repair_cost, tracking_token, notes, received_date, created_by)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO service_records (service_no, imei, party_id, customer_name, customer_phone, device_brand, device_model, warehouse_id, fault_category, fault_description, lock_pattern, screen_pin, print_unlock_on_receipt, technician_name, repair_cost, tracking_token, notes, received_date, created_by)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         $serviceNo,
                         $imei,
@@ -191,6 +251,9 @@ class ServiceController extends BaseController {
                         Auth::warehouseId(),
                         $this->input('fault_category'),
                         $this->input('fault_description'),
+                        $lockPattern,
+                        $screenPin,
+                        $printUnlockOnReceipt,
                         $this->input('technician_name'),
                         (float)$this->input('repair_cost', 0),
                         $token,
@@ -206,14 +269,14 @@ class ServiceController extends BaseController {
                 );
 
                 $this->db->commit();
-            } catch (Exception $e) {
-                $this->db->rollback();
+            } catch (Throwable $e) {
+                $this->rollbackQuietly();
                 $this->flash('error', 'Failed to create service record: ' . $e->getMessage());
                 $this->redirect('?page=service&action=create');
                 return;
             }
 
-            $this->logActivity('create_service', 'service', $id, "Service {$serviceNo} for {$imei}");
+            $this->logActivity('create_service', 'service', (int) $id, "Service {$serviceNo} for {$imei}");
             $this->flash('success', "Service {$serviceNo} created.");
             if ($this->input('save_action') === 'thermal') {
                 $this->redirect('?page=service&action=thermalReceipt&id=' . $id . '&autoprint=1');
@@ -269,6 +332,7 @@ class ServiceController extends BaseController {
      */
     public function thermalReceipt(): void {
         Auth::authorize('service', 'view');
+        $this->ensureServiceLockColumns();
 
         $id = $this->inputInt('id', 0, 'get');
         $record = $this->db->fetchOne(
@@ -406,19 +470,47 @@ class ServiceController extends BaseController {
             }
         }
 
+        // Replacement device IMEI is only relevant when a unit is replaced and handed over.
+        $replacementImei = null;
+        $setReplacementImei = ($status === 'Replaced & Delivered');
+        if ($setReplacementImei) {
+            $rawImei = preg_replace('/\s+/', '', trim((string)$this->input('replacement_imei', '')));
+            if ($rawImei === '') {
+                $this->json(['success' => false, 'message' => 'New device IMEI is required for a replacement.'], 400);
+                return;
+            }
+            if (!preg_match('/^[0-9]{10,18}$/', $rawImei)) {
+                $this->json(['success' => false, 'message' => 'New device IMEI must be 10-18 digits.'], 400);
+                return;
+            }
+            $replacementImei = $rawImei;
+        }
+
         $this->db->beginTransaction();
         try {
-            $this->db->execute(
-                "UPDATE service_records
-                 SET status = ?, device_stage = ?, delivered_date = ?
-                 WHERE id = ? AND warehouse_id = ?",
-                [$status, $newStage, $delivered, $id, Auth::warehouseId()]
-            );
+            if ($setReplacementImei) {
+                $this->db->execute(
+                    "UPDATE service_records
+                     SET status = ?, device_stage = ?, delivered_date = ?, replacement_imei = ?
+                     WHERE id = ? AND warehouse_id = ?",
+                    [$status, $newStage, $delivered, $replacementImei, $id, Auth::warehouseId()]
+                );
+            } else {
+                $this->db->execute(
+                    "UPDATE service_records
+                     SET status = ?, device_stage = ?, delivered_date = ?
+                     WHERE id = ? AND warehouse_id = ?",
+                    [$status, $newStage, $delivered, $id, Auth::warehouseId()]
+                );
+            }
 
+            $historyNote = $setReplacementImei
+                ? 'Updated from list (new IMEI: ' . $replacementImei . ')'
+                : 'Updated from list';
             $this->db->insert(
                 "INSERT INTO service_history (service_id, event_type, old_value, new_value, note, user_id)
                  VALUES (?,?,?,?,?,?)",
-                [$id, 'status_change', (string)$old['status'], $status, 'Updated from list', Auth::id()]
+                [$id, 'status_change', (string)$old['status'], $status, $historyNote, Auth::id()]
             );
 
             $this->db->commit();
@@ -434,6 +526,7 @@ class ServiceController extends BaseController {
             'status' => $status,
             'stage' => $newStage,
             'delivered_date' => $delivered,
+            'replacement_imei' => $setReplacementImei ? $replacementImei : null,
             'message' => "{$old['service_no']} updated.",
         ]);
     }
@@ -505,6 +598,7 @@ class ServiceController extends BaseController {
 
     public function edit(): void {
         Auth::authorize('service', 'edit');
+        $this->ensureServiceLockColumns();
 
         $id = $this->inputInt('id', 0, 'get');
         $record = $this->db->fetchOne(
@@ -527,6 +621,8 @@ class ServiceController extends BaseController {
         Auth::authorize('service', 'edit');
         if (!$this->isPost()) { $this->redirect('?page=service'); return; }
 
+        $this->ensureServiceLockColumns();
+
         $id = $this->inputInt('id');
         $record = $this->db->fetchOne("SELECT * FROM service_records WHERE id = ? AND warehouse_id = ?", [$id, Auth::warehouseId()]);
         if (!$record) { $this->flash('error', 'Service record not found'); $this->redirect('?page=service'); return; }
@@ -545,11 +641,23 @@ class ServiceController extends BaseController {
             }
         }
 
+        $lockPattern = ServiceLockPattern::parse($this->input('lock_pattern'));
+        $screenPinRaw = trim($this->input('screen_pin'));
+        $screenPin = ServiceLockPattern::parseScreenPin($screenPinRaw);
+        if ($screenPinRaw !== '' && $screenPin === null) {
+            $this->flash('error', 'Screen PIN must be 4–16 digits.');
+            $this->redirect('?page=service&action=edit&id=' . $id);
+            return;
+        }
+
+        $printUnlockOnReceipt = $this->input('print_unlock_on_receipt') ? 1 : 0;
+
         $this->db->execute(
             "UPDATE service_records SET
                 imei = ?, device_brand = ?, device_model = ?,
                 party_id = ?, customer_name = ?, customer_phone = ?,
-                fault_category = ?, fault_description = ?,
+                fault_category = ?, fault_description = ?, lock_pattern = ?, screen_pin = ?,
+                print_unlock_on_receipt = ?,
                 technician_name = ?, repair_cost = ?,
                 received_date = ?, delivered_date = ?, notes = ?
              WHERE id = ? AND warehouse_id = ?",
@@ -562,6 +670,9 @@ class ServiceController extends BaseController {
                 $this->input('customer_phone'),
                 $this->input('fault_category'),
                 $this->input('fault_description'),
+                $lockPattern,
+                $screenPin,
+                $printUnlockOnReceipt,
                 $this->input('technician_name'),
                 $this->inputFloat('repair_cost'),
                 $this->input('received_date') ?: date('Y-m-d'),

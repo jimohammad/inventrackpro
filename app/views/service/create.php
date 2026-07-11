@@ -216,6 +216,10 @@
                         <input type="text" name="device_model" placeholder="A17 5G 6GB/128GB">
                     </div>
                 </div>
+
+                <?php $lockPatternValue = ''; include __DIR__ . '/partials/pattern_lock_input.php'; ?>
+                <?php $screenPinValue = ''; include __DIR__ . '/partials/screen_pin_input.php'; ?>
+                <?php $printUnlockOnReceipt = 0; include __DIR__ . '/partials/print_unlock_on_receipt_input.php'; ?>
             </div>
 
             <!-- Section 2: Customer -->

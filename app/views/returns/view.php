@@ -4,25 +4,45 @@
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=returns" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0"><?= $return['return_no'] ?></h1>
+    <?php
+    $retStatus = $return['status'] ?? '';
+    $statusBg  = $retStatus === 'approved' ? 'rgba(16,185,129,0.15)' : ($retStatus === 'cancelled' ? 'rgba(100,116,139,0.15)' : 'rgba(245,158,11,0.15)');
+    $statusFg  = $retStatus === 'approved' ? '#059669' : ($retStatus === 'cancelled' ? '#475569' : '#d97706');
+    ?>
     <span class="badge px-3 py-1" style="border-radius:20px;font-size:0.78rem;font-weight:700;
-        background:<?= $return['status'] === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)' ?>;
-        color:<?= $return['status'] === 'approved' ? '#059669' : '#d97706' ?>;">
-        <?= ucfirst($return['status']) ?>
+        background:<?= $statusBg ?>;
+        color:<?= $statusFg ?>;">
+        <?= $retStatus === 'cancelled' ? 'Voided' : ucfirst($retStatus) ?>
     </span>
     <div class="ms-auto d-flex gap-2">
-        <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+        <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autoprint=1" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
-        <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autopdf=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">
+        <a href="?page=returns&action=print&id=<?= $return['id'] ?>&autopdf=1" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">
             <i class="bi bi-file-earmark-pdf me-1"></i> PDF
         </a>
-        <?php if (Auth::isAdmin() && $return['status'] !== 'cancelled'): ?>
+        <?php if (Auth::isAdmin() && ($return['type'] ?? '') === 'sale_return' && $retStatus !== 'cancelled'): ?>
         <a href="?page=returns&action=edit&id=<?= $return['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
         <?php endif; ?>
+        <?php if (Auth::can('returns', 'delete') && $retStatus === 'approved'): ?>
+        <form method="POST" action="?page=returns&action=cancel" class="d-inline">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int) $return['id'] ?>">
+            <button type="submit" class="btn btn-sm btn-outline-danger pin-protect">
+                <i class="bi bi-x-circle me-1"></i> Void
+            </button>
+        </form>
+        <?php endif; ?>
     </div>
 </div>
+
+<?php if ($retStatus === 'cancelled'): ?>
+<div class="alert alert-secondary border mb-3" style="border-radius:12px;">
+    <strong>Voided return</strong> — excluded from stock, party ledger, and linked invoice balances.
+</div>
+<?php endif; ?>
 
 <div class="row justify-content-center">
     <div class="col-md-7">
@@ -47,7 +67,11 @@
                     <span style="background:#e0f2fe;color:#0369a1;padding:2px 10px;border-radius:6px;font-size:0.78rem;font-weight:600;"><?= date('d M Y', strtotime($return['date'])) ?></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
-                    <span style="color:var(--text-muted);">Customer</span>
+                    <span style="color:var(--text-muted);">Type</span>
+                    <span style="font-weight:700;"><?= ($return['type'] ?? '') === 'purchase_return' ? 'Purchase return (to supplier)' : 'Sale return (from customer)' ?></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
+                    <span style="color:var(--text-muted);"><?= ($return['type'] ?? '') === 'purchase_return' ? 'Supplier' : 'Customer' ?></span>
                     <span style="font-weight:700;"><?= htmlspecialchars($return['party_name']) ?></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
@@ -57,7 +81,11 @@
                 <?php if (!empty($return['original_invoice'])): ?>
                 <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
                     <span style="color:var(--text-muted);">Original Invoice</span>
-                    <span style="font-weight:600;color:var(--primary);"><?= $return['original_invoice'] ?></span>
+                    <?php if (($return['type'] ?? '') === 'purchase_return' && !empty($return['ref_id'])): ?>
+                    <a href="?page=purchases&action=detail&id=<?= (int) $return['ref_id'] ?>" style="font-weight:600;color:#b45309;text-decoration:none;"><?= htmlspecialchars($return['original_invoice']) ?></a>
+                    <?php else: ?>
+                    <span style="font-weight:600;color:var(--primary);"><?= htmlspecialchars($return['original_invoice']) ?></span>
+                    <?php endif; ?>
                 </div>
                 <?php endif; ?>
                 <?php if ($return['reason']): ?>

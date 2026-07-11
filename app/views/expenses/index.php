@@ -2,8 +2,16 @@
 /* ══ EXPENSE PAGE ══ */
 .exp-page-top{margin-bottom:22px;}
 .exp-page-title h1{font-size:1.4rem;font-weight:800;color:var(--text-main);margin:0;}
-.exp-page-title p{color:var(--text-muted);font-size:0.82rem;margin:4px 0 0;}
-.exp-hero-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;}
+.exp-page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.exp-add-btn{
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    padding:7px 14px;border-radius:9px;font-size:0.82rem;font-weight:700;
+    background:rgba(139,92,246,0.10);color:#7c3aed;border:1px solid rgba(139,92,246,0.28);
+    transition:background 0.15s,border-color 0.15s,transform 0.15s;
+}
+.exp-add-btn:hover{background:rgba(139,92,246,0.18);border-color:rgba(139,92,246,0.45);transform:translateY(-1px);}
+.exp-add-btn:focus{outline:2px solid #a78bfa;outline-offset:2px;}
+.exp-hero-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px;}
 @media (max-width:900px){.exp-hero-cards{grid-template-columns:1fr;}}
 .exp-hero-card{
     display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
@@ -55,10 +63,149 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 .exp-field label{display:block;font-size:0.77rem;font-weight:600;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;}
 .exp-field input,.exp-field select{width:100%;padding:9px 12px;border:2px solid var(--border-color);border-radius:9px;font-size:0.85rem;background:var(--bg-main);color:var(--text-main);outline:none;transition:border-color 0.15s;}
 .exp-field input:focus,.exp-field select:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,0.1);}
+
+/* Meta fields: date + account */
+.exp-meta-row{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+.exp-meta-field{
+    display:flex;align-items:stretch;border-radius:12px;border:1.5px solid;
+    overflow:hidden;transition:box-shadow 0.15s,border-color 0.15s,transform 0.15s;
+}
+.exp-meta-field:hover{transform:translateY(-1px);}
+.exp-meta-field:focus-within{box-shadow:0 6px 20px rgba(15,23,42,0.08);}
+.exp-meta-date{
+    flex:0 1 220px;min-width:190px;
+    background:linear-gradient(135deg,#fafaff,#f5f3ff);border-color:#ddd6fe;
+}
+.exp-meta-date:focus-within{border-color:#8b5cf6;box-shadow:0 6px 20px rgba(139,92,246,0.14);}
+.exp-meta-account{
+    flex:1 1 280px;min-width:240px;
+    background:linear-gradient(135deg,#f0fdf9,#ecfdf5);border-color:#a7f3d0;
+}
+.exp-meta-account:focus-within{border-color:#10b981;box-shadow:0 6px 20px rgba(16,185,129,0.14);}
+.exp-meta-icon{
+    display:flex;align-items:center;justify-content:center;width:46px;flex-shrink:0;
+    font-size:1.1rem;
+}
+.exp-meta-date .exp-meta-icon{background:linear-gradient(180deg,rgba(139,92,246,0.16),rgba(99,102,241,0.08));color:#7c3aed;}
+.exp-meta-account .exp-meta-icon{background:linear-gradient(180deg,rgba(16,185,129,0.16),rgba(5,150,105,0.08));color:#059669;}
+.exp-meta-content{
+    flex:1;min-width:0;padding:10px 14px 10px 2px;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;
+}
+.exp-meta-content label{
+    display:flex;align-items:center;gap:4px;
+    font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
+    margin:0;
+}
+.exp-meta-date .exp-meta-content label{color:#7c3aed;}
+.exp-meta-account .exp-meta-content label{color:#047857;}
+.exp-meta-req{font-size:0.72rem;line-height:1;}
+.exp-meta-date .exp-meta-req{color:#a78bfa;}
+.exp-meta-account .exp-meta-req{color:#34d399;}
+.exp-meta-content input,.exp-meta-content select{
+    width:100%;border:none;background:transparent;padding:0;
+    font-size:0.92rem;font-weight:700;color:var(--text-main);outline:none;
+    cursor:pointer;line-height:1.3;
+}
+.exp-meta-content select{
+    appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath fill='%2364748b' d='M4.5 6L8 9.5 11.5 6z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 2px center;padding-right:18px;
+}
+.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.55;}
+.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:0.85;}
+
+/* Expense line items */
+.exp-lines-card{
+    border:1.5px solid #e9e5ff;border-radius:14px;overflow:hidden;
+    background:linear-gradient(180deg,#fff,#fcfbff);
+    box-shadow:0 4px 18px rgba(139,92,246,0.06);
+}
+.exp-lines-table-wrap{overflow-x:auto;}
+.exp-rows-table{width:100%;border-collapse:collapse;font-size:0.85rem;}
+.exp-rows-table thead th{
+    padding:10px 12px;font-size:0.68rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:0.06em;color:#94a3b8;background:#f8fafc;
+    border-bottom:1.5px solid #e2e8f0;white-space:nowrap;
+}
+.exp-rows-table thead th.col-num{width:44px;text-align:center;}
+.exp-rows-table thead th.col-amt{width:200px;text-align:right;font-size:0.72rem;}
+.exp-rows-table thead th.col-act{width:44px;}
+.exp-data-row{transition:background 0.12s;}
+.exp-data-row:hover{background:rgba(139,92,246,0.03);}
+.exp-data-row td{padding:9px 10px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.exp-data-row:last-child td{border-bottom:none;}
+.exp-row-num-cell{text-align:center;}
+.exp-row-num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:8px;
+    background:rgba(139,92,246,0.1);color:#7c3aed;
+    font-size:0.75rem;font-weight:800;
+}
+.exp-row-select,.exp-row-input{
+    width:100%;padding:8px 11px;border:1.5px solid #e2e8f0;border-radius:9px;
+    font-size:0.84rem;background:#fff;color:var(--text-main);outline:none;
+    transition:border-color 0.15s,box-shadow 0.15s;box-sizing:border-box;
+}
+.exp-row-amount{
+    width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;
+    font-family:inherit;font-size:1.1rem;font-weight:700;text-align:right;
+    background:#fff;color:var(--text-main);outline:none;
+    transition:border-color 0.15s,box-shadow 0.15s;box-sizing:border-box;
+    min-height:46px;
+}
+.exp-row-select:focus,.exp-row-input:focus,.exp-row-amount:focus{
+    border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,0.1);
+}
+.exp-row-cell-amt{width:200px;}
+.exp-row-cell-act{text-align:center;}
+.exp-row-remove{
+    width:28px;height:28px;border-radius:8px;
+    border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.06);color:#ef4444;
+    display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:0.72rem;transition:all 0.15s;padding:0;
+}
+.exp-row-remove:hover{background:#ef4444;color:#fff;border-color:#ef4444;}
+.exp-rows-total{
+    display:flex;align-items:center;justify-content:flex-end;gap:14px;
+    padding:12px 16px;
+    background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(167,139,250,0.04));
+    border-top:1.5px solid rgba(139,92,246,0.12);
+}
+.exp-rows-total-label{
+    font-size:0.76rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:0.05em;color:#7c3aed;
+}
+.exp-rows-total-value{
+    font-size:1.15rem;font-weight:800;color:#7c3aed;
+    font-variant-numeric:tabular-nums;min-width:96px;text-align:right;
+}
+.exp-form-actions{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-top:16px;flex-wrap:wrap;
+}
+.exp-form-actions-right{display:flex;gap:10px;flex-wrap:wrap;}
+.btn-exp-add-row{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:8px 18px;background:#fff;color:#7c3aed;
+    border:1.5px dashed #c4b5fd;border-radius:10px;
+    font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.15s;
+}
+.btn-exp-add-row:hover{background:rgba(139,92,246,0.08);border-color:#8b5cf6;border-style:solid;}
+
 .exp-save-row{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);}
-.btn-exp-save{padding:9px 24px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;color:#fff;border-radius:9px;font-weight:700;font-size:0.88rem;cursor:pointer;transition:all 0.15s;}
-.btn-exp-save:hover{transform:translateY(-1px);}
-.btn-exp-cancel{padding:9px 18px;background:var(--bg-main);border:1.5px solid var(--border-color);color:var(--text-muted);border-radius:9px;font-weight:500;font-size:0.88rem;cursor:pointer;}
+.btn-exp-save{
+    padding:9px 24px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;color:#fff;
+    border-radius:10px;font-weight:700;font-size:0.88rem;cursor:pointer;
+    transition:all 0.15s;box-shadow:0 4px 14px rgba(139,92,246,0.3);
+    display:inline-flex;align-items:center;gap:6px;
+}
+.btn-exp-save:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(139,92,246,0.38);}
+.btn-exp-cancel{
+    padding:9px 18px;background:#fff;border:1.5px solid var(--border-color);color:var(--text-muted);
+    border-radius:10px;font-weight:600;font-size:0.88rem;cursor:pointer;transition:all 0.15s;
+}
+.btn-exp-cancel:hover{border-color:#c4b5fd;color:#7c3aed;background:#fafaff;}
 
 /* Filters */
 .exp-filters{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:14px 18px;margin-bottom:18px;}
@@ -94,9 +241,13 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 
 <!-- Title + month cards + add (same row height) -->
 <div class="exp-page-top">
-    <div class="exp-page-title">
-        <h1><i class="bi bi-receipt me-2" style="color:#8b5cf6;"></i>Expenses</h1>
-        <p>Track and manage all business expenses</p>
+    <div class="exp-page-head">
+        <div class="exp-page-title">
+            <h1><i class="bi bi-receipt me-2" style="color:#8b5cf6;"></i>Expenses</h1>
+        </div>
+        <button type="button" class="exp-add-btn" id="expBtnOpenAddForm">
+            <i class="bi bi-plus-lg"></i> Add expense
+        </button>
     </div>
     <div class="exp-hero-cards">
         <a class="exp-hero-card exp-hero-card-accent exp-card-this"
@@ -111,10 +262,6 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
             <span class="exp-metric-value"><?= APP_CURRENCY ?> <?= number_format($expenseLastMonth ?? 0, DECIMAL_PLACES) ?></span>
             <span class="exp-metric-hint"><?= htmlspecialchars(date('M j', strtotime($lastMonthStart)) . ' – ' . date('M j, Y', strtotime($lastMonthEnd))) ?> · show in list</span>
         </a>
-        <button type="button" class="exp-hero-card exp-metric-add" id="expBtnOpenAddForm">
-            <span class="exp-metric-label">Quick entry</span>
-            <span class="exp-metric-value"><i class="bi bi-plus-lg"></i> Add expense</span>
-        </button>
     </div>
 </div>
 
@@ -123,7 +270,7 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 <div class="exp-form-panel" id="addExpenseForm" style="display:<?= isset($_GET['new']) ? 'block' : 'none' ?>;">
     <div class="exp-form-header">
         <span><i class="bi bi-plus-circle-fill"></i> Add Expenses</span>
-        <button class="exp-form-close" onclick="toggleExpForm()">×</button>
+        <button type="button" class="exp-form-close" id="expFormCloseBtn">×</button>
     </div>
     <div class="exp-form-body">
         <form method="POST" action="?page=expenses&action=store">
@@ -131,50 +278,57 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
             <input type="hidden" name="expense_form_nonce" value="<?= htmlspecialchars($expenseFormNonce ?? '') ?>">
 
             <!-- Date & Account (shared for all rows) -->
-            <div style="display:flex;gap:14px;margin-bottom:16px;flex-wrap:wrap;">
-                <div class="exp-field" style="width:160px;">
-                    <label>Date <span style="color:#8b5cf6;">*</span></label>
-                    <input type="date" name="date" value="<?= date('Y-m-d') ?>" required>
+            <div class="exp-meta-row">
+                <div class="exp-meta-field exp-meta-date">
+                    <div class="exp-meta-icon" aria-hidden="true"><i class="bi bi-calendar3"></i></div>
+                    <div class="exp-meta-content">
+                        <label for="expFormDate">Expense Date <span class="exp-meta-req">*</span></label>
+                        <input type="date" id="expFormDate" name="date" value="<?= date('Y-m-d') ?>" required>
+                    </div>
                 </div>
-                <div class="exp-field" style="width:200px;">
-                    <label>Account <span style="color:#8b5cf6;">*</span></label>
-                    <select name="account_id" required>
-                        <?php foreach ($accounts as $acc): ?>
-                        <option value="<?= $acc['id'] ?>"><?= htmlspecialchars($acc['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="exp-meta-field exp-meta-account">
+                    <div class="exp-meta-icon" aria-hidden="true"><i class="bi bi-wallet2"></i></div>
+                    <div class="exp-meta-content">
+                        <label for="expFormAccount">Paid From <span class="exp-meta-req">*</span></label>
+                        <select id="expFormAccount" name="account_id" required>
+                            <?php foreach ($accounts as $acc): ?>
+                            <option value="<?= $acc['id'] ?>"><?= htmlspecialchars($acc['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </div>
             </div>
 
             <!-- Expense Rows -->
-            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;" id="expRowsTable">
-                <thead>
-                    <tr style="background:rgba(139,92,246,0.06);">
-                        <th style="padding:8px 10px;text-align:left;font-size:0.72rem;font-weight:700;color:var(--text-muted);width:40px;">#</th>
-                        <th style="padding:8px 10px;text-align:left;font-size:0.72rem;font-weight:700;color:var(--text-muted);">CATEGORY</th>
-                        <th style="padding:8px 10px;text-align:left;font-size:0.72rem;font-weight:700;color:var(--text-muted);">DESCRIPTION</th>
-                        <th style="padding:8px 10px;text-align:left;font-size:0.72rem;font-weight:700;color:var(--text-muted);width:140px;">AMOUNT</th>
-                        <th style="padding:8px 10px;width:40px;"></th>
-                    </tr>
-                </thead>
-                <tbody id="expRowsBody">
-                </tbody>
-                <tfoot>
-                    <tr style="border-top:2px solid var(--border-color);">
-                        <td colspan="3" style="padding:10px;text-align:right;font-weight:800;color:#8b5cf6;">Grand Total</td>
-                        <td style="padding:10px;text-align:right;font-weight:800;font-size:1rem;color:#8b5cf6;" id="expGrandTotal">0.000</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-            </table>
+            <div class="exp-lines-card">
+                <div class="exp-lines-table-wrap">
+                    <table class="exp-rows-table" id="expRowsTable">
+                        <thead>
+                            <tr>
+                                <th class="col-num">#</th>
+                                <th>Category</th>
+                                <th>Description</th>
+                                <th class="col-amt">Amount</th>
+                                <th class="col-act"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="expRowsBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="exp-rows-total">
+                    <span class="exp-rows-total-label">Grand Total</span>
+                    <span class="exp-rows-total-value" id="expGrandTotal">0.000</span>
+                </div>
+            </div>
 
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
-                <button type="button" onclick="addExpRow()" style="background:rgba(139,92,246,0.1);color:#8b5cf6;border:1px dashed #8b5cf6;border-radius:8px;padding:6px 16px;font-size:0.82rem;font-weight:600;cursor:pointer;">
-                    <i class="bi bi-plus-lg me-1"></i> Add Row
+            <div class="exp-form-actions">
+                <button type="button" class="btn-exp-add-row" id="expAddRowBtn">
+                    <i class="bi bi-plus-lg"></i> Add Row
                 </button>
-                <div style="display:flex;gap:10px;">
-                    <button type="button" class="btn-exp-cancel" onclick="toggleExpForm()">Cancel</button>
-                    <button type="submit" class="btn-exp-save"><i class="bi bi-check-lg me-1"></i> Save All Expenses</button>
+                <div class="exp-form-actions-right">
+                    <button type="button" class="btn-exp-cancel" id="expCancelBtn">Cancel</button>
+                    <button type="submit" class="btn-exp-save"><i class="bi bi-check-lg"></i> Save All Expenses</button>
                 </div>
             </div>
         </form>
@@ -274,7 +428,7 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
                 <?php else: ?>
                 <?php foreach ($expenses as $e): ?>
                 <tr>
-                    <td><span class="exp-no"><?= $e['expense_no'] ?></span></td>
+                    <td><span class="exp-no"><?= htmlspecialchars($e['expense_no']) ?></span></td>
                     <td><span class="exp-date"><?= date('d M Y', strtotime($e['date'])) ?></span></td>
                     <td>
                         <?php if (!empty($e['category_name'])): ?>
@@ -313,7 +467,13 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 
 <script>
 var expRowCount = 0;
-var categories = <?= json_encode($categories) ?>;
+var categories = <?= json_encode($categories, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(ch) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+}
 var defaultGeneralCategoryId = '';
 for (var i = 0; i < categories.length; i++) {
     var name = String(categories[i].name || '').trim().toLowerCase();
@@ -323,37 +483,46 @@ for (var i = 0; i < categories.length; i++) {
     }
 }
 
-function focusLastDescriptionField() {
-    var descInputs = document.querySelectorAll('#expRowsBody input[name$="[description]"]');
-    var target = descInputs.length ? descInputs[descInputs.length - 1] : null;
+function focusLastAmountField() {
+    var amountInputs = document.querySelectorAll('#expRowsBody input[name$="[amount]"]');
+    var target = amountInputs.length ? amountInputs[amountInputs.length - 1] : null;
     if (target) {
         target.focus();
         target.select();
     }
 }
 
+function defaultDescriptionForCategory(categoryId) {
+    if (defaultGeneralCategoryId !== '' && String(categoryId) === defaultGeneralCategoryId) {
+        return 'General';
+    }
+    return '';
+}
+
 function addExpRow() {
     expRowCount++;
     var catOptions = '<option value="">—</option>';
+    var defaultCatId = defaultGeneralCategoryId;
     categories.forEach(function(c) {
         var selected = (defaultGeneralCategoryId !== '' && String(c.id) === defaultGeneralCategoryId) ? ' selected' : '';
-        catOptions += '<option value="' + c.id + '"' + selected + '>' + c.name + '</option>';
+        catOptions += '<option value="' + escHtml(c.id) + '"' + selected + '>' + escHtml(c.name) + '</option>';
     });
+    var defaultDesc = defaultDescriptionForCategory(defaultCatId);
 
     var tr = document.createElement('tr');
     tr.id = 'expRow_' + expRowCount;
-    tr.style.borderBottom = '1px solid var(--border-color)';
+    tr.className = 'exp-data-row';
     tr.innerHTML =
-        '<td style="padding:8px 10px;text-align:center;color:var(--text-muted);">' + expRowCount + '</td>' +
-        '<td style="padding:8px 6px;"><select name="rows[' + expRowCount + '][category_id]" style="width:100%;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:7px;font-size:0.82rem;background:var(--bg-main);color:var(--text-main);">' + catOptions + '</select></td>' +
-        '<td style="padding:8px 6px;"><input type="text" name="rows[' + expRowCount + '][description]" placeholder="Description..." style="width:100%;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:7px;font-size:0.82rem;background:var(--bg-main);color:var(--text-main);"></td>' +
-        '<td style="padding:8px 6px;"><input type="number" name="rows[' + expRowCount + '][amount]" step="0.001" min="0.001" placeholder="0.000" required oninput="calcExpTotal()" style="width:100%;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:7px;font-size:0.85rem;font-weight:700;text-align:right;background:var(--bg-main);color:var(--text-main);"></td>' +
-        '<td style="padding:8px 4px;text-align:center;"><button type="button" onclick="removeExpRow(' + expRowCount + ')" style="background:none;border:none;color:#fca5a8;cursor:pointer;font-size:1.1rem;" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#fca5a8\'">×</button></td>';
+        '<td class="exp-row-num-cell"><span class="exp-row-num">' + expRowCount + '</span></td>' +
+        '<td class="exp-row-cell"><select class="exp-row-select" name="rows[' + expRowCount + '][category_id]">' + catOptions + '</select></td>' +
+        '<td class="exp-row-cell exp-row-cell-desc"><input type="text" class="exp-row-input" name="rows[' + expRowCount + '][description]" value="' + escHtml(defaultDesc) + '" placeholder="What was this for?"></td>' +
+        '<td class="exp-row-cell exp-row-cell-amt"><input type="number" class="exp-row-amount" name="rows[' + expRowCount + '][amount]" step="0.001" min="0.001" placeholder="0.000" required></td>' +
+        '<td class="exp-row-cell exp-row-cell-act"><button type="button" class="exp-row-remove" data-row="' + expRowCount + '" title="Remove row" aria-label="Remove row"><i class="bi bi-x-lg"></i></button></td>';
 
     document.getElementById('expRowsBody').appendChild(tr);
-    // Keep entry flow fast: jump directly to description
+    // Keep entry flow fast: jump directly to amount
     requestAnimationFrame(function() {
-        focusLastDescriptionField();
+        focusLastAmountField();
     });
 }
 
@@ -379,7 +548,7 @@ function toggleExpForm() {
             addExpRow(); // Start with one row
         } else {
             requestAnimationFrame(function() {
-                focusLastDescriptionField();
+                focusLastAmountField();
             });
         }
         setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -388,6 +557,32 @@ function toggleExpForm() {
 
 document.getElementById('expBtnOpenAddForm')?.addEventListener('click', function() {
     toggleExpForm();
+});
+document.getElementById('expFormCloseBtn')?.addEventListener('click', toggleExpForm);
+document.getElementById('expCancelBtn')?.addEventListener('click', toggleExpForm);
+document.getElementById('expAddRowBtn')?.addEventListener('click', function() {
+    addExpRow();
+});
+
+// Delegated handlers for dynamically added rows (no inline handlers)
+var expRowsBody = document.getElementById('expRowsBody');
+expRowsBody?.addEventListener('input', function(e) {
+    if (e.target.matches('input[type="number"]')) calcExpTotal();
+});
+expRowsBody?.addEventListener('change', function(e) {
+    if (!e.target.matches('select[name$="[category_id]"]')) return;
+    var row = e.target.closest('tr');
+    if (!row) return;
+    var descInput = row.querySelector('input[name$="[description]"]');
+    if (!descInput) return;
+    var suggested = defaultDescriptionForCategory(e.target.value);
+    if (suggested && !descInput.value.trim()) {
+        descInput.value = suggested;
+    }
+});
+expRowsBody?.addEventListener('click', function(e) {
+    var btn = e.target.closest('.exp-row-remove');
+    if (btn) removeExpRow(btn.getAttribute('data-row'));
 });
 
 <?php if (isset($_GET['new'])): ?>

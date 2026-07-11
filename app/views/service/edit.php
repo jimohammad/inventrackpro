@@ -79,6 +79,10 @@
                         <input type="text" name="device_model" value="<?= htmlspecialchars($record['device_model'] ?? '') ?>" placeholder="A17 5G 6GB/128GB">
                     </div>
                 </div>
+
+                <?php $lockPatternValue = (string) ($record['lock_pattern'] ?? ''); include __DIR__ . '/partials/pattern_lock_input.php'; ?>
+                <?php $screenPinValue = (string) ($record['screen_pin'] ?? ''); include __DIR__ . '/partials/screen_pin_input.php'; ?>
+                <?php $printUnlockOnReceipt = (int) ($record['print_unlock_on_receipt'] ?? 0); include __DIR__ . '/partials/print_unlock_on_receipt_input.php'; ?>
             </div>
 
             <!-- Section 2: Customer -->

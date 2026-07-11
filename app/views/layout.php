@@ -22,11 +22,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
     <!-- DataTables - only on list pages -->
     <?php $dtPages = ['sales','purchases','payments','returns','parties','expenses','stock','items','reports','purchaseorders','warranty','discounts']; ?>
-    <?php if (isset($page) && in_array($page, $dtPages)): ?>
+    <?php if (isset($page) && in_array($page, $dtPages) && empty($skipListAssets)): ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.21/css/dataTables.bootstrap5.min.css">
     <?php endif; ?>
     <!-- Select2 - only on pages that need it -->
-    <?php if (isset($page) && in_array($page, ['payments'])): ?>
+    <?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchaseorders']) && empty($skipListAssets)): ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css">
     <?php endif; ?>
 
@@ -205,7 +205,7 @@
     </a>
     <?php endif; ?>
     <a href="?page=landedcost" class="sidebar-link <?= ($page ?? '') === 'landedcost' ? 'active' : '' ?>">
-        <i class="bi bi-calculator"></i> Landed Cost
+        <i class="bi bi-globe2"></i> Import Logistics
     </a>
     <div class="sidebar-link-wrap">
         <a href="?page=discounts" class="sidebar-link <?= ($page ?? '') === 'discounts' ? 'active' : '' ?>">
@@ -373,15 +373,17 @@
 </main>
 
 <!-- Scripts -->
+<?php if (empty($skipJquery)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<?php endif; ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
-<?php if (isset($page) && in_array($page, $dtPages ?? [])): ?>
+<?php if (isset($page) && in_array($page, $dtPages ?? []) && empty($skipListAssets)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.21/js/jquery.dataTables.min.js"></script>
 <?php endif; ?>
-<?php if (isset($page) && in_array($page, ['payments'])): ?>
+<?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchaseorders']) && empty($skipListAssets)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/js/select2.min.js"></script>
 <?php endif; ?>
-<?php if (isset($page) && $page === 'reports'): ?>
+<?php if (isset($page) && in_array($page, ['reports', 'dashboard'])): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <?php endif; ?>
 <script src="assets/js/app.js?v=<?= htmlspecialchars(ASSETS_VER) ?>"></script>

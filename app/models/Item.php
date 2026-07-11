@@ -6,20 +6,21 @@ class Item extends BaseModel {
     protected string $table = 'items';
 
     // All active items with total stock
-    public function getAllWithStock(?int $warehouseId = null): array {
+    public function getAllWithStock(?int $warehouseId = null, bool $includeInactive = false): array {
         $params = [];
         $warehouseClause = '';
         if ($warehouseId) {
             $warehouseClause = "AND s.warehouse_id = ?";
             $params[] = $warehouseId;
         }
+        $activeClause = $includeInactive ? '' : 'WHERE i.is_active = 1';
         return $this->db->fetchAll(
             "SELECT i.*, c.name as category_name,
                     COALESCE(SUM(s.quantity), 0) as total_stock
              FROM items i
              LEFT JOIN categories c ON c.id = i.category_id
              LEFT JOIN stock s ON s.item_id = i.id {$warehouseClause}
-             WHERE i.is_active = 1
+             {$activeClause}
              GROUP BY i.id
              ORDER BY i.name ASC",
             $params
@@ -78,9 +79,9 @@ class Item extends BaseModel {
     public function create(array $data): int|false {
         return $this->db->insert(
             "INSERT INTO items
-                (name, sku, barcode, category_id, brand, model, unit, has_imei,
-                 purchase_price, sale_price, min_stock, description)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (name, sku, barcode, category_id, brand, model, unit, has_imei, imei_optional,
+                 purchase_price, price_aed, price_usd, sale_price, min_stock, description)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 $data['name'],
                 $data['sku'] ?: null,
@@ -90,7 +91,10 @@ class Item extends BaseModel {
                 $data['model'] ?: null,
                 $data['unit'] ?? 'pcs',
                 (int) ($data['has_imei'] ?? 0),
+                (int) ($data['imei_optional'] ?? 0),
                 (float) ($data['purchase_price'] ?? 0),
+                (float) ($data['price_aed'] ?? 0),
+                (float) ($data['price_usd'] ?? 0),
                 (float) ($data['sale_price'] ?? 0),
                 (int) ($data['min_stock'] ?? 0),
                 $data['description'] ?: null,
@@ -103,8 +107,8 @@ class Item extends BaseModel {
         return $this->db->execute(
             "UPDATE items SET
                 name=?, sku=?, barcode=?, category_id=?, brand=?, model=?,
-                unit=?, has_imei=?, purchase_price=?, sale_price=?,
-                min_stock=?, description=?, is_active=?
+                unit=?, has_imei=?, imei_optional=?, purchase_price=?, price_aed=?, price_usd=?,
+                sale_price=?, min_stock=?, description=?, is_active=?
              WHERE id=?",
             [
                 $data['name'],
@@ -115,7 +119,10 @@ class Item extends BaseModel {
                 $data['model'] ?: null,
                 $data['unit'] ?? 'pcs',
                 (int) ($data['has_imei'] ?? 0),
+                (int) ($data['imei_optional'] ?? 0),
                 (float) ($data['purchase_price'] ?? 0),
+                (float) ($data['price_aed'] ?? 0),
+                (float) ($data['price_usd'] ?? 0),
                 (float) ($data['sale_price'] ?? 0),
                 (int) ($data['min_stock'] ?? 0),
                 $data['description'] ?: null,

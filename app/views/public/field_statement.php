@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Statement — <?= htmlspecialchars($party['name']) ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"
+          integrity="sha384-tViUnnbYAV00FLIhhi3v/dWt3Jxw4gZQcNoSCxCIFNJVCx7/D55/wXsrNIRANwdD" crossorigin="anonymous">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f1f5f9; color:#1e293b; min-height:100vh; }
@@ -25,8 +26,10 @@
         .stmt-table tfoot td { background:#f0f4ff; font-weight:700; border-top:2px solid #c7d2fe; }
         .badge { display:inline-block; padding:2px 8px; border-radius:5px; font-size:0.7rem; font-weight:600; }
         .badge-sale { background:rgba(99,102,241,0.12); color:#6366f1; }
+        .badge-purchase { background:rgba(245,158,11,0.12); color:#f59e0b; }
         .badge-payment { background:rgba(16,185,129,0.12); color:#10b981; }
         .badge-return { background:rgba(220,38,38,0.12); color:#dc2626; }
+        .badge-discount { background:rgba(139,92,246,0.12); color:#8b5cf6; }
         .footer { text-align:center; margin-top:20px; font-size:0.75rem; color:#94a3b8; }
         .print-btn { display:inline-flex; align-items:center; gap:6px; background:#1e3a5f; color:#fff; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-size:0.82rem; font-weight:600; margin-bottom:16px; }
         .print-btn:hover { background:#2d5a9e; }
@@ -59,7 +62,7 @@
         </div>
     </div>
 
-    <button class="print-btn" onclick="window.print()"><i class="bi bi-printer"></i> Print Statement</button>
+    <button type="button" class="print-btn" id="stmtPrintBtn"><i class="bi bi-printer"></i> Print Statement</button>
 
     <!-- Summary Cards -->
     <div class="summary">
@@ -78,10 +81,16 @@
             <div class="value" style="color:#10b981;"><?= APP_CURRENCY ?> <?= number_format($totalCredit, DECIMAL_PLACES) ?></div>
         </div>
         <div class="sum-card">
-            <div class="label">Balance Due</div>
-            <?php $balance = (float)$party['net_balance']; ?>
-            <div class="value" style="color:<?= $balance > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                <?= $balance > 0.001 ? APP_CURRENCY . ' ' . number_format($balance, DECIMAL_PLACES) : '✓ Clear' ?>
+            <div class="label">Balance</div>
+            <?php $balance = (float)($closingBal ?? $party['net_balance']); ?>
+            <div class="value" style="color:<?= $balance > 0.001 ? '#ef4444' : ($balance < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                <?php if ($balance > 0.001): ?>
+                <?= APP_CURRENCY ?> <?= number_format($balance, DECIMAL_PLACES) ?>
+                <?php elseif ($balance < -0.001): ?>
+                -<?= APP_CURRENCY ?> <?= number_format(abs($balance), DECIMAL_PLACES) ?>
+                <?php else: ?>
+                ✓ Clear
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -117,20 +126,21 @@
                 $debit  = (float)$t['debit'];
                 $credit = (float)$t['credit'];
                 $running += $debit - $credit;
-                $badgeClass = $t['type'] === 'Sale' ? 'badge-sale' : ($t['type'] === 'Payment' ? 'badge-payment' : 'badge-return');
+                $badgeMap = [
+                    'Sale'     => 'badge-sale',
+                    'Purchase' => 'badge-purchase',
+                    'Payment'  => 'badge-payment',
+                    'Return'   => 'badge-return',
+                    'Discount' => 'badge-discount',
+                ];
+                $badgeClass = $badgeMap[$t['type']] ?? 'badge-payment';
             ?>
             <tr>
                 <td><?= date('d M Y', strtotime($t['date'])) ?></td>
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;color:#4338ca;">
                     <?php if ($t['type'] === 'Sale'): ?>
-                    <?php
-                        $refNoJs = json_encode(
-                            (string)($t['ref_no'] ?? ''),
-                            JSON_HEX_QUOT | JSON_HEX_APOS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE
-                        );
-                    ?>
-                    <a href="javascript:void(0)" onclick="showInvoice(<?= $refNoJs ?>)" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
+                    <a href="javascript:void(0)" class="inv-view-link" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
                         <?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i>
                     </a>
                     <?php else: ?>
@@ -139,19 +149,26 @@
                 </td>
                 <td style="text-align:right;"><?= $debit > 0 ? APP_CURRENCY . ' ' . number_format($debit, DECIMAL_PLACES) : '—' ?></td>
                 <td style="text-align:right;color:#10b981;"><?= $credit > 0 ? APP_CURRENCY . ' ' . number_format($credit, DECIMAL_PLACES) : '—' ?></td>
-                <td style="text-align:right;font-weight:700;color:<?= $running > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                    <?= APP_CURRENCY ?> <?= number_format(abs($running), DECIMAL_PLACES) ?>
+                <td style="text-align:right;font-weight:700;color:<?= $running > 0.001 ? '#ef4444' : ($running < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                    <?= $running < -0.001 ? '-' : '' ?><?= APP_CURRENCY ?> <?= number_format(abs($running), DECIMAL_PLACES) ?>
                 </td>
             </tr>
             <?php endforeach; ?>
         </tbody>
         <tfoot>
+            <?php $closingBalance = (float)($closingBal ?? $party['net_balance']); ?>
             <tr>
                 <td colspan="3" style="text-align:right;color:#4338ca;">Closing Balance</td>
                 <td></td>
                 <td></td>
-                <td style="text-align:right;font-size:1rem;color:<?= $running > 0.001 ? '#ef4444' : '#10b981' ?>;">
-                    <?= $running > 0.001 ? APP_CURRENCY . ' ' . number_format($running, DECIMAL_PLACES) : '✓ Clear' ?>
+                <td style="text-align:right;font-size:1rem;color:<?= $closingBalance > 0.001 ? '#ef4444' : ($closingBalance < -0.001 ? '#6366f1' : '#10b981') ?>;">
+                    <?php if ($closingBalance > 0.001): ?>
+                    <?= APP_CURRENCY ?> <?= number_format($closingBalance, DECIMAL_PLACES) ?>
+                    <?php elseif ($closingBalance < -0.001): ?>
+                    -<?= APP_CURRENCY ?> <?= number_format(abs($closingBalance), DECIMAL_PLACES) ?>
+                    <?php else: ?>
+                    ✓ Clear
+                    <?php endif; ?>
                 </td>
             </tr>
         </tfoot>
@@ -164,14 +181,14 @@
 </div>
 
 <!-- Invoice Detail Modal -->
-<div id="invModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(2px);" onclick="if(event.target===this)closeInvModal()">
+<div id="invModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(2px);">
     <div style="background:#fff;border-radius:14px;width:95%;max-width:550px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #e2e8f0;">
             <div>
                 <div id="invNo" style="font-size:1.05rem;font-weight:800;color:#4338ca;"></div>
                 <div id="invDate" style="font-size:0.78rem;color:#64748b;margin-top:2px;"></div>
             </div>
-            <button onclick="closeInvModal()" style="background:none;border:none;font-size:1.5rem;color:#94a3b8;cursor:pointer;line-height:1;">×</button>
+            <button type="button" id="invCloseBtn" style="background:none;border:none;font-size:1.5rem;color:#94a3b8;cursor:pointer;line-height:1;">×</button>
         </div>
         <div id="invBody" style="padding:16px 20px;">
             <div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div>
@@ -258,6 +275,15 @@ function showInvoice(refNo) {
 function closeInvModal() {
     document.getElementById('invModal').style.display = 'none';
 }
+
+document.getElementById('stmtPrintBtn')?.addEventListener('click', function() { window.print(); });
+document.getElementById('invCloseBtn')?.addEventListener('click', closeInvModal);
+document.getElementById('invModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeInvModal();
+});
+document.querySelectorAll('.inv-view-link').forEach(function(a) {
+    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref')); });
+});
 </script>
 
 </body>

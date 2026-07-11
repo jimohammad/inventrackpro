@@ -193,7 +193,7 @@
 
 <script>
 function copyStatementLink(token, btn) {
-    const url = window.location.origin + '/statement.php?token=' + token;
+    const url = window.location.origin + '/s/' + encodeURIComponent(token);
     navigator.clipboard.writeText(url).then(() => {
         const orig = btn.innerHTML;
         btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Copied!';

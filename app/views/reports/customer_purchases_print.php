@@ -5,7 +5,7 @@
     <title>Customer Purchases — <?= htmlspecialchars($party['name']) ?></title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Segoe UI',Arial,sans-serif; font-size:12px; color:#1e293b; background:#fff; }
+        body { font-family:'Segoe UI',Arial,sans-serif; font-size:13px; color:#1e293b; background:#fff; line-height:1.45; }
         .page { padding:28px 32px; max-width:820px; margin:0 auto; }
 
         .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:14px; border-bottom:2px solid #1e3a5f; }
@@ -32,11 +32,11 @@
 
         table { width:100%; border-collapse:collapse; margin-bottom:18px; }
         thead tr { background:#1e3a5f; }
-        thead th { color:#fff; padding:7px 10px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+        thead th { color:#fff; padding:8px 10px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
         tbody tr:nth-child(even) { background:#faf5ff; }
-        tbody td { padding:6px 10px; border-bottom:1px solid #f0f3f8; font-size:11px; }
+        tbody td { padding:7px 10px; border-bottom:1px solid #f0f3f8; font-size:12px; }
         tfoot tr { background:#f3e8ff; border-top:2px solid #d8b4fe; }
-        tfoot td { padding:7px 10px; font-weight:700; font-size:11px; }
+        tfoot td { padding:8px 10px; font-weight:700; font-size:12px; }
 
         .text-right  { text-align:right; }
         .text-center { text-align:center; }

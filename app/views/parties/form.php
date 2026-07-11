@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/../../helpers/PhoneInput.php'; ?>
 <!-- Party Form -->
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=parties" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
@@ -6,17 +7,20 @@
 
 <?php if (!isset($editMode)): ?>
 <!-- Type tabs for new party -->
-<div class="d-flex gap-0 mb-4" style="border-radius:12px;overflow:hidden;border:2px solid #e0e7ff;background:#f8faff;max-width:400px;">
-    <button type="button" id="tabCustomer"
-        onclick="setPartyType('customer')"
-        style="flex:1;padding:12px 20px;border:none;font-weight:700;font-size:0.95rem;cursor:pointer;transition:all 0.18s;background:rgba(16,185,129,0.15);color:#10b981;display:flex;align-items:center;justify-content:center;gap:8px;">
+<div class="d-flex gap-0 mb-4" style="border-radius:12px;overflow:hidden;border:2px solid #e0e7ff;background:#f8faff;max-width:560px;">
+    <button type="button" id="tabCustomer" data-party-type="customer"
+        style="flex:1;padding:12px 14px;border:none;font-weight:700;font-size:0.88rem;cursor:pointer;transition:all 0.18s;background:rgba(16,185,129,0.15);color:#10b981;display:flex;align-items:center;justify-content:center;gap:6px;">
         <i class="bi bi-person-fill"></i> Customer
     </button>
     <div style="width:2px;background:#e0e7ff;flex-shrink:0;"></div>
-    <button type="button" id="tabSupplier"
-        onclick="setPartyType('supplier')"
-        style="flex:1;padding:12px 20px;border:none;font-weight:700;font-size:0.95rem;cursor:pointer;transition:all 0.18s;background:transparent;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:8px;">
+    <button type="button" id="tabSupplier" data-party-type="supplier"
+        style="flex:1;padding:12px 14px;border:none;font-weight:700;font-size:0.88rem;cursor:pointer;transition:all 0.18s;background:transparent;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:6px;">
         <i class="bi bi-truck"></i> Supplier
+    </button>
+    <div style="width:2px;background:#e0e7ff;flex-shrink:0;"></div>
+    <button type="button" id="tabFreight" data-party-type="freight_forwarder"
+        style="flex:1;padding:12px 14px;border:none;font-weight:700;font-size:0.88rem;cursor:pointer;transition:all 0.18s;background:transparent;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <i class="bi bi-globe2"></i> Freight
     </button>
 </div>
 <?php endif; ?>
@@ -65,6 +69,7 @@
                                 <?php endif; ?>
                                 <?php if (Auth::can('suppliers', 'add') || Auth::can('suppliers', 'edit')): ?>
                                 <option value="supplier" <?= ($party['type'] ?? '') === 'supplier' ? 'selected' : '' ?>>Supplier</option>
+                                <option value="freight_forwarder" <?= ($party['type'] ?? '') === 'freight_forwarder' ? 'selected' : '' ?>>Freight forwarder</option>
                                 <option value="both"     <?= ($party['type'] ?? '') === 'both'     ? 'selected' : '' ?>>Both</option>
                                 <?php endif; ?>
                             </select>
@@ -87,16 +92,21 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-500">Country</label>
-                            <?php if (!isset($editMode)): ?>
-                            <input type="text" name="country" id="countryText" class="form-control" value="Kuwait" placeholder="Country">
-                            <select name="country" id="countrySelect" class="form-select" style="display:none;" disabled>
-                                <option value="UAE">UAE</option>
-                                <option value="Hong Kong">Hong Kong</option>
-                                <option value="China">China</option>
+                            <?php
+                                $partyCountries = ['Kuwait', 'UAE', 'Hong Kong', 'China', 'Malaysia'];
+                                $selectedCountry = trim((string)($party['country'] ?? 'Kuwait'));
+                                if ($selectedCountry === '') {
+                                    $selectedCountry = 'Kuwait';
+                                }
+                            ?>
+                            <select name="country" id="countrySelect" class="form-select">
+                                <?php if ($selectedCountry !== '' && !in_array($selectedCountry, $partyCountries, true)): ?>
+                                <option value="<?= htmlspecialchars($selectedCountry) ?>" selected><?= htmlspecialchars($selectedCountry) ?></option>
+                                <?php endif; ?>
+                                <?php foreach ($partyCountries as $countryOption): ?>
+                                <option value="<?= htmlspecialchars($countryOption) ?>" <?= $selectedCountry === $countryOption ? 'selected' : '' ?>><?= htmlspecialchars($countryOption) ?></option>
+                                <?php endforeach; ?>
                             </select>
-                            <?php else: ?>
-                            <input type="text" name="country" class="form-control" value="<?= htmlspecialchars($party['country'] ?? 'Kuwait') ?>">
-                            <?php endif; ?>
                         </div>
                         <div class="col-md-4" id="fieldIdCard">
                             <label class="form-label fw-500">Kuwait Civil ID</label>
@@ -122,28 +132,15 @@
                             <label class="form-label fw-500">Phone</label>
                             <?php
                                 $phone1 = $party['phone'] ?? '';
-                                $cc1 = '+965'; $num1 = '';
-                                if ($phone1 && preg_match('/^(\+\d{1,4})\s*(.*)$/', $phone1, $m)) {
-                                    $cc1 = $m[1]; $num1 = $m[2];
-                                } elseif ($phone1) {
-                                    $num1 = ltrim($phone1, '+');
-                                }
+                                $split1 = PhoneInput::splitStoredPhone($phone1);
+                                $cc1 = $split1['cc'];
+                                $num1 = $split1['num'];
                             ?>
                             <div class="d-flex gap-1">
                                 <select id="cc1" style="width:90px;flex-shrink:0;padding:6px 4px;border:1.5px solid var(--border-color);border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--text-main);background:var(--bg-card);cursor:pointer;" onchange="combinePhone(1)">
-                                    <option value="+965" <?= $cc1==='+965'?'selected':'' ?>>+965</option>
-                                    <option value="+91"  <?= $cc1==='+91'?'selected':'' ?>>+91</option>
-                                    <option value="+86"  <?= $cc1==='+86'?'selected':'' ?>>+86</option>
-                                    <option value="+92"  <?= $cc1==='+92'?'selected':'' ?>>+92</option>
-                                    <option value="+880" <?= $cc1==='+880'?'selected':'' ?>>+880</option>
-                                    <option value="+971" <?= $cc1==='+971'?'selected':'' ?>>+971</option>
-                                    <option value="+966" <?= $cc1==='+966'?'selected':'' ?>>+966</option>
-                                    <option value="+974" <?= $cc1==='+974'?'selected':'' ?>>+974</option>
-                                    <option value="+968" <?= $cc1==='+968'?'selected':'' ?>>+968</option>
-                                    <option value="+973" <?= $cc1==='+973'?'selected':'' ?>>+973</option>
-                                    <option value="+63"  <?= $cc1==='+63'?'selected':'' ?>>+63</option>
-                                    <option value="+977" <?= $cc1==='+977'?'selected':'' ?>>+977</option>
-                                    <option value="+94"  <?= $cc1==='+94'?'selected':'' ?>>+94</option>
+                                    <?php foreach (PhoneInput::PARTY_COUNTRY_CODES as $code): ?>
+                                    <option value="<?= htmlspecialchars($code) ?>" <?= $cc1 === $code ? 'selected' : '' ?>><?= htmlspecialchars($code) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
                                 <input type="text" id="num1" class="form-control" value="<?= htmlspecialchars($num1) ?>"
                                        placeholder="XXXX XXXX" maxlength="15" oninput="combinePhone(1)">
@@ -154,28 +151,15 @@
                             <label class="form-label fw-500">Phone 2</label>
                             <?php
                                 $phone2 = $party['phone2'] ?? '';
-                                $cc2 = '+965'; $num2 = '';
-                                if ($phone2 && preg_match('/^(\+\d{1,4})\s*(.*)$/', $phone2, $m)) {
-                                    $cc2 = $m[1]; $num2 = $m[2];
-                                } elseif ($phone2) {
-                                    $num2 = ltrim($phone2, '+');
-                                }
+                                $split2 = PhoneInput::splitStoredPhone($phone2);
+                                $cc2 = $split2['cc'];
+                                $num2 = $split2['num'];
                             ?>
                             <div class="d-flex gap-1">
                                 <select id="cc2" style="width:90px;flex-shrink:0;padding:6px 4px;border:1.5px solid var(--border-color);border-radius:8px;font-size:0.85rem;font-weight:600;color:var(--text-main);background:var(--bg-card);cursor:pointer;" onchange="combinePhone(2)">
-                                    <option value="+965" <?= $cc2==='+965'?'selected':'' ?>>+965</option>
-                                    <option value="+91"  <?= $cc2==='+91'?'selected':'' ?>>+91</option>
-                                    <option value="+86"  <?= $cc2==='+86'?'selected':'' ?>>+86</option>
-                                    <option value="+92"  <?= $cc2==='+92'?'selected':'' ?>>+92</option>
-                                    <option value="+880" <?= $cc2==='+880'?'selected':'' ?>>+880</option>
-                                    <option value="+971" <?= $cc2==='+971'?'selected':'' ?>>+971</option>
-                                    <option value="+966" <?= $cc2==='+966'?'selected':'' ?>>+966</option>
-                                    <option value="+974" <?= $cc2==='+974'?'selected':'' ?>>+974</option>
-                                    <option value="+968" <?= $cc2==='+968'?'selected':'' ?>>+968</option>
-                                    <option value="+973" <?= $cc2==='+973'?'selected':'' ?>>+973</option>
-                                    <option value="+63"  <?= $cc2==='+63'?'selected':'' ?>>+63</option>
-                                    <option value="+977" <?= $cc2==='+977'?'selected':'' ?>>+977</option>
-                                    <option value="+94"  <?= $cc2==='+94'?'selected':'' ?>>+94</option>
+                                    <?php foreach (PhoneInput::PARTY_COUNTRY_CODES as $code): ?>
+                                    <option value="<?= htmlspecialchars($code) ?>" <?= $cc2 === $code ? 'selected' : '' ?>><?= htmlspecialchars($code) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
                                 <input type="text" id="num2" class="form-control" value="<?= htmlspecialchars($num2) ?>"
                                        placeholder="Optional" maxlength="15" oninput="combinePhone(2)">
@@ -267,23 +251,29 @@ function setPartyType(type) {
     if (!inp) return;
     inp.value = type;
 
-    var tc = document.getElementById('tabCustomer');
-    var ts = document.getElementById('tabSupplier');
-    if (tc && ts) {
-        if (type === 'customer') {
-            tc.style.background = 'rgba(16,185,129,0.85)';
-            tc.style.color = '#fff';
-            ts.style.background = 'transparent';
-            ts.style.color = '#94a3b8';
+    var tabs = {
+        customer: document.getElementById('tabCustomer'),
+        supplier: document.getElementById('tabSupplier'),
+        freight_forwarder: document.getElementById('tabFreight')
+    };
+    var activeStyles = {
+        customer: ['rgba(16,185,129,0.85)', '#fff'],
+        supplier: ['rgba(99,102,241,0.85)', '#fff'],
+        freight_forwarder: ['rgba(14,165,233,0.85)', '#fff']
+    };
+    Object.keys(tabs).forEach(function (key) {
+        var tab = tabs[key];
+        if (!tab) return;
+        if (key === type) {
+            tab.style.background = activeStyles[key][0];
+            tab.style.color = activeStyles[key][1];
         } else {
-            ts.style.background = 'rgba(99,102,241,0.85)';
-            ts.style.color = '#fff';
-            tc.style.background = 'transparent';
-            tc.style.color = '#94a3b8';
+            tab.style.background = 'transparent';
+            tab.style.color = '#94a3b8';
         }
-    }
+    });
 
-    var sup = (type === 'supplier');
+    var sup = (type === 'supplier' || type === 'freight_forwarder');
 
     // Area field — hide for supplier
     var fa = document.getElementById('fieldArea');
@@ -297,21 +287,18 @@ function setPartyType(type) {
     var fc = document.getElementById('fieldCreditLimit');
     if (fc) fc.style.display = sup ? 'none' : '';
 
-    // Country: text input for customer, dropdown for supplier
-    var ct = document.getElementById('countryText');
-    var cs = document.getElementById('countrySelect');
-    if (ct && cs) {
-        ct.style.display = sup ? 'none' : '';
-        ct.disabled      = sup;
-        cs.style.display = sup ? '' : 'none';
-        cs.disabled      = !sup;
-    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     combinePhone(1);
     combinePhone(2);
-    // Activate default Customer tab on new party page
+    ['tabCustomer', 'tabSupplier', 'tabFreight'].forEach(function (id) {
+        var tab = document.getElementById(id);
+        if (!tab) return;
+        tab.addEventListener('click', function () {
+            setPartyType(tab.getAttribute('data-party-type'));
+        });
+    });
     if (document.getElementById('partyTypeInput')) {
         setPartyType('customer');
     }

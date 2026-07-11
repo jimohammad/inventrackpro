@@ -6,6 +6,68 @@ class Payment extends BaseModel {
     protected string $table = 'payments';
     private string $lastError = '';
 
+    public const STATUS_ACTIVE    = 'active';
+    public const STATUS_CANCELLED = 'cancelled';
+
+    /** Import logistics payments — no sale/purchase FIFO allocation. */
+    private const SHIPMENT_LEG_REFS = [
+        'shipment_freight_hk',
+        'shipment_packing_dxb',
+        'shipment_freight_dxb',
+        'shipment_partner',
+        'shipment_cost',
+    ];
+
+    private function usesFifoAllocation(array $pay): bool {
+        if ($this->isStandaloneOutPayment($pay)) {
+            return false;
+        }
+        return !in_array((string) ($pay['ref_type'] ?? ''), self::SHIPMENT_LEG_REFS, true);
+    }
+
+    /** Generic supplier pay (not linked to a purchase invoice) — e.g. old partner profit lump sum. */
+    private function isStandaloneOutPayment(array $pay): bool {
+        return ($pay['payment_type'] ?? '') === 'out'
+            && (string) ($pay['ref_type'] ?? '') === 'purchase'
+            && (int) ($pay['ref_id'] ?? 0) <= 0;
+    }
+
+    /** SQL AND-clause fragment: count only active (non-voided) payments in ledger totals. */
+    public static function sqlActiveOnly(string $alias = ''): string {
+        $col = $alias !== '' ? "{$alias}.status" : 'status';
+        return " AND {$col} = '" . self::STATUS_ACTIVE . "'";
+    }
+
+    /**
+     * List-page date filter: match payment date OR entry date (created_at).
+     * Receipts recorded today must appear in the current-month view even when the payment
+     * date is backdated to an older invoice.
+     *
+     * @param list<mixed> $params
+     */
+    private static function appendListDateFilters(string &$where, array &$params, array $filters): void {
+        $from = trim((string) ($filters['from_date'] ?? ''));
+        $to   = trim((string) ($filters['to_date'] ?? ''));
+        if ($from === '' && $to === '') {
+            return;
+        }
+        if ($from !== '' && $to !== '') {
+            $where .= " AND (
+                (py.date >= ? AND py.date <= ?)
+                OR (DATE(py.created_at) >= ? AND DATE(py.created_at) <= ?)
+            )";
+            array_push($params, $from, $to, $from, $to);
+            return;
+        }
+        if ($from !== '') {
+            $where .= " AND (py.date >= ? OR DATE(py.created_at) >= ?)";
+            array_push($params, $from, $from);
+            return;
+        }
+        $where .= " AND (py.date <= ? OR DATE(py.created_at) <= ?)";
+        array_push($params, $to, $to);
+    }
+
     public function getLastError(): string {
         return $this->lastError;
     }
@@ -18,7 +80,7 @@ class Payment extends BaseModel {
      * @return array{items:list<array<string,mixed>>,truncated:bool,limit:int}
      */
     public function getIndexPage(array $filters = [], int $limit = ListPage::MAX_ROWS): array {
-        $where  = "WHERE 1=1";
+        $where  = "WHERE 1=1" . self::sqlActiveOnly('py');
         $params = [];
 
         if (Auth::warehouseId()) {
@@ -40,14 +102,7 @@ class Payment extends BaseModel {
             $where .= " AND py.account_id = ?";
             $params[] = $filters['account_id'];
         }
-        if (!empty($filters['from_date'])) {
-            $where .= " AND py.date >= ?";
-            $params[] = $filters['from_date'];
-        }
-        if (!empty($filters['to_date'])) {
-            $where .= " AND py.date <= ?";
-            $params[] = $filters['to_date'];
-        }
+        self::appendListDateFilters($where, $params, $filters);
         if (!empty($filters['search'])) {
             $like   = '%' . $filters['search'] . '%';
             $where .= " AND (py.payment_no LIKE ? OR pa.name LIKE ?)";
@@ -64,7 +119,7 @@ class Payment extends BaseModel {
              LEFT JOIN accounts a ON a.id = py.account_id
              LEFT JOIN users u ON u.id = py.created_by
              {$where}
-             ORDER BY py.created_at DESC
+             ORDER BY py.id DESC
              LIMIT {$fetchCap}",
             $params
         );
@@ -113,8 +168,8 @@ class Payment extends BaseModel {
             for ($attempt = 1; $attempt <= 3; $attempt++) {
                 try {
                     $id = $this->db->insert(
-                        "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, warehouse_id, created_by)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, phone_no, payment_type, account_id, amount, payment_method, cheque_no, date, notes, warehouse_id, status, created_by)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [
                             $payNo,
                             $data['ref_type'] ?? 'sale',
@@ -129,6 +184,7 @@ class Payment extends BaseModel {
                             $data['date'] ?? date('Y-m-d'),
                             $data['notes'] ?? null,
                             Auth::warehouseId(),
+                            self::STATUS_ACTIVE,
                             Auth::id(),
                         ]
                     );
@@ -235,25 +291,34 @@ class Payment extends BaseModel {
                 throw new Exception('Discount-linked payments must be removed from the Discounts module.');
             }
 
+            if (($pay['status'] ?? self::STATUS_ACTIVE) === self::STATUS_CANCELLED) {
+                throw new Exception('This payment was voided with its invoice and cannot be deleted individually.');
+            }
+
             $amount    = (float) $pay['amount'];
             $type      = $pay['payment_type'] ?? 'in';
             $accId     = (int) $pay['account_id'];
             $partyId   = (int) ($pay['party_id'] ?? 0);
             $whId      = (int) ($pay['warehouse_id'] ?? 0);
 
-            // H1 gate: block delete if any newer payment exists for this party (same in/out direction).
-            // FIFO allocation made when this payment was saved is no longer the last applied, so LIFO
-            // reversal would unwind the wrong invoices and corrupt their balances.
-            if ($partyId > 0) {
+            // Block delete only when a newer FIFO-applicable payment exists (import legs are independent).
+            if ($partyId > 0 && $this->usesFifoAllocation($pay)) {
+                $legPh = implode(',', array_fill(0, count(self::SHIPMENT_LEG_REFS), '?'));
+                $params = array_merge(
+                    [$partyId, $type, $id, $pay['created_at'], $pay['created_at'], $id],
+                    self::SHIPMENT_LEG_REFS
+                );
                 $newer = $this->db->fetchOne(
                     "SELECT id, payment_no, date, created_at
                      FROM payments
                      WHERE party_id = ? AND payment_type = ? AND ref_type != 'discount'
+                       AND ref_type NOT IN ({$legPh})
+                       AND status = 'active'
                        AND id != ?
                        AND (created_at > ? OR (created_at = ? AND id > ?))
                      ORDER BY created_at ASC, id ASC
                      LIMIT 1",
-                    [$partyId, $type, $id, $pay['created_at'], $pay['created_at'], $id]
+                    $params
                 );
                 if ($newer) {
                     throw new Exception(
@@ -275,11 +340,15 @@ class Payment extends BaseModel {
                 );
             }
 
-            if ($partyId > 0 && $whId > 0) {
-                if ($type === 'in') {
-                    $this->reverseFifoSaleApplications($partyId, $whId, $amount);
-                } else {
-                    $this->reverseFifoPurchaseApplications($partyId, $whId, $amount);
+            if ($partyId > 0) {
+                require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+                LandedCostPaymentLinker::reopenPartnerPayment($this->db, $id);
+                if ($this->usesFifoAllocation($pay)) {
+                    if ($type === 'in') {
+                        $this->reverseFifoSaleApplications($partyId, $amount);
+                    } else {
+                        $this->reverseFifoPurchaseApplications($partyId, $amount);
+                    }
                 }
             }
 
@@ -295,14 +364,14 @@ class Payment extends BaseModel {
     }
 
     /** Undo OUT payment FIFO against purchases (newest paid rows first). */
-    private function reverseFifoPurchaseApplications(int $partyId, int $warehouseId, float $amount): void {
+    private function reverseFifoPurchaseApplications(int $partyId, float $amount): void {
         $remaining = $amount;
         $rows      = $this->db->fetchAll(
             "SELECT id, paid_amount, balance, grand_total
              FROM purchases
-             WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
+             WHERE party_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
              ORDER BY date DESC, id DESC",
-            [$partyId, $warehouseId]
+            [$partyId]
         );
         foreach ($rows as $row) {
             if ($remaining < 0.001) {
@@ -328,20 +397,20 @@ class Payment extends BaseModel {
             );
             $remaining -= $take;
         }
-        if ($remaining > 0.001) {
+        if ($remaining > 0.001 && ($amount - $remaining) > 0.001) {
             throw new Exception('Could not reverse full purchase allocation; aborting delete.');
         }
     }
 
     /** Undo IN payment FIFO against sales (newest paid rows first). */
-    private function reverseFifoSaleApplications(int $partyId, int $warehouseId, float $amount): void {
+    private function reverseFifoSaleApplications(int $partyId, float $amount): void {
         $remaining = $amount;
         $rows      = $this->db->fetchAll(
             "SELECT id, paid_amount, balance, grand_total
              FROM sales
-             WHERE party_id = ? AND warehouse_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
+             WHERE party_id = ? AND paid_amount > 0.001 AND status != 'cancelled'
              ORDER BY date DESC, id DESC",
-            [$partyId, $warehouseId]
+            [$partyId]
         );
         foreach ($rows as $row) {
             if ($remaining < 0.001) {
@@ -367,7 +436,7 @@ class Payment extends BaseModel {
             );
             $remaining -= $take;
         }
-        if ($remaining > 0.001) {
+        if ($remaining > 0.001 && ($amount - $remaining) > 0.001) {
             throw new Exception('Could not reverse full sale allocation; aborting delete.');
         }
     }

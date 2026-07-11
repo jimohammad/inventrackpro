@@ -2,7 +2,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title">Payments</h1>
-        <p class="page-subtitle">All payment transactions</p>
     </div>
     <?php if (Auth::can('payments','add')): ?>
     <div style="display:flex;gap:8px;">
@@ -28,10 +27,25 @@
             <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-search me-1"></i>Search
             </label>
-            <input type="text" name="search" placeholder="Payment no, party..."
+            <input type="text" name="search" placeholder="Payment no..."
                    value="<?= htmlspecialchars($filters['search']) ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+        </div>
+
+        <div style="flex:2;min-width:180px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+                <i class="bi bi-person me-1"></i>Party
+            </label>
+            <select name="party_id" id="paymentPartyFilter"
+                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
+                <option value="">All parties</option>
+                <?php foreach (($parties ?? []) as $p): ?>
+                <option value="<?= (int) $p['id'] ?>" <?= ((int) ($filters['party_id'] ?? 0) === (int) $p['id']) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($p['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
         </div>
 
         <div style="flex:1;min-width:140px;">
@@ -91,6 +105,9 @@ if (($filters['ref_type'] ?? '') !== '') {
 if (($filters['search'] ?? '') !== '') {
     $listPageExtra['search'] = (string) $filters['search'];
 }
+if (!empty($filters['party_id'])) {
+    $listPageExtra['party_id'] = (int) $filters['party_id'];
+}
 include __DIR__ . '/../partials/list_page_alerts.php';
 ?>
 
@@ -117,13 +134,13 @@ include __DIR__ . '/../partials/list_page_alerts.php';
                     <?php else: ?>
                     <?php foreach ($payments as $p): ?>
                     <tr>
-                        <td>
+                        <td data-order="<?= (int) substr((string) ($p['payment_no'] ?? ''), 4) ?>">
                             <a href="?page=payments&action=detail&id=<?= $p['id'] ?>"
                                style="color:var(--primary);font-weight:600;text-decoration:none;">
                                 <?= $p['payment_no'] ?>
                             </a>
                         </td>
-                        <td><span style="background:#e0f2fe;color:#0369a1;padding:4px 10px;border-radius:6px;font-size:0.78rem;font-weight:600;white-space:nowrap;"><?= date('m/d/Y', strtotime($p['date'])) ?>, <?= date('h:i A', strtotime($p['created_at'])) ?></span></td>
+                        <td data-order="<?= htmlspecialchars((string) ($p['created_at'] ?? '')) ?>"><span style="background:#e0f2fe;color:#0369a1;padding:4px 10px;border-radius:6px;font-size:0.78rem;font-weight:600;white-space:nowrap;"><?= date('m/d/Y', strtotime($p['date'])) ?>, <?= date('h:i A', strtotime($p['created_at'])) ?></span></td>
                         <td><?= htmlspecialchars($p['party_name'] ?? '—') ?></td>
                         <td>
                             <?php
@@ -194,8 +211,25 @@ include __DIR__ . '/../partials/list_page_alerts.php';
     </div>
 </div>
 
+<style>
+#paymentPartyFilter + .select2-container { width:100% !important; }
+#paymentPartyFilter + .select2-container .select2-selection--single {
+    min-height:38px;border:1.5px solid #c7d2fe;border-radius:10px;
+}
+#paymentPartyFilter + .select2-container .select2-selection__rendered {
+    line-height:36px;padding-left:12px;font-size:0.85rem;
+}
+#paymentPartyFilter + .select2-container .select2-selection__arrow { height:36px !important; }
+</style>
 <script>
 $(document).ready(() => {
-    $('#paymentsTable').DataTable({ pageLength: 25, order: [[1,'desc']], columnDefs: [{ orderable: false, targets: [7] }], language: { search: '', searchPlaceholder: 'Search...' } });
+    if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.select2) {
+        jQuery('#paymentPartyFilter').select2({
+            placeholder: 'All parties',
+            allowClear: true,
+            width: '100%'
+        });
+    }
+    $('#paymentsTable').DataTable({ pageLength: 25, order: [[0,'desc']], columnDefs: [{ orderable: false, targets: [7] }], language: { search: '', searchPlaceholder: 'Search...' } });
 });
 </script>

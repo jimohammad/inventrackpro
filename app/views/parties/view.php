@@ -4,7 +4,7 @@
     <div class="flex-grow-1">
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <h1 class="page-title mb-0"><?= htmlspecialchars($party['name']) ?></h1>
-            <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--primary);"><?= ucfirst($party['type']) ?></span>
+            <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--primary);"><?= htmlspecialchars(Party::typeLabel($party['type'])) ?></span>
         </div>
         <?php if (!empty($party['party_code'])): ?>
         <div class="mt-1 d-flex align-items-center gap-2">
@@ -47,12 +47,26 @@
     <div class="col-md-3">
         <div class="stat-card">
             <p class="stat-label mb-1">Net Balance</p>
-            <?php $netBal = (float)($party['net_balance'] ?? 0); ?>
-            <?php if ($netBal > 0.001): ?>
-            <p class="fw-bold" style="color:#ef4444;"><?= APP_CURRENCY ?> <?= number_format($netBal, DECIMAL_PLACES) ?></p>
+            <?php
+            $netBal  = (float) ($party['net_balance'] ?? 0);
+            $display = Party::displayBalanceDue($party, $netBal);
+            $shownBal = $display['amount'];
+            ?>
+            <?php if ($display['perspective'] === 'payable'): ?>
+                <?php if ($shownBal > 0.001): ?>
+                <p class="fw-bold" style="color:#ef4444;"><?= APP_CURRENCY ?> <?= number_format($shownBal, DECIMAL_PLACES) ?></p>
+                <small style="color:#ef4444;">Amount owed to supplier</small>
+                <?php elseif ($shownBal < -0.001): ?>
+                <p class="fw-bold" style="color:#6366f1;">-<?= APP_CURRENCY ?> <?= number_format(abs($shownBal), DECIMAL_PLACES) ?></p>
+                <small style="color:#6366f1;">Overpaid to supplier</small>
+                <?php else: ?>
+                <p class="fw-bold" style="color:#10b981;">✓ Clear</p>
+                <?php endif; ?>
+            <?php elseif ($shownBal > 0.001): ?>
+            <p class="fw-bold" style="color:#ef4444;"><?= APP_CURRENCY ?> <?= number_format($shownBal, DECIMAL_PLACES) ?></p>
             <small style="color:#ef4444;">They owe you</small>
-            <?php elseif ($netBal < -0.001): ?>
-            <p class="fw-bold" style="color:#6366f1;">-<?= APP_CURRENCY ?> <?= number_format(abs($netBal), DECIMAL_PLACES) ?></p>
+            <?php elseif ($shownBal < -0.001): ?>
+            <p class="fw-bold" style="color:#6366f1;">-<?= APP_CURRENCY ?> <?= number_format(abs($shownBal), DECIMAL_PLACES) ?></p>
             <small style="color:#6366f1;">You owe them</small>
             <?php else: ?>
             <p class="fw-bold" style="color:#10b981;">✓ Clear</p>
@@ -68,9 +82,9 @@
 </div>
 <?php elseif (!empty($ledgerReturnWrongParty)): ?>
 <div class="alert alert-danger border-0 mb-3" style="border-radius:12px;">
-    <strong>Likely wrong customer on a return:</strong> This ledger has payments/returns/purchases but <strong>no sale invoices</strong> tied to account <?= htmlspecialchars($party['party_code'] ?? '') ?> (ID <?= (int)$party['id'] ?>).
-    A <strong>sale return</strong> may have been saved while a different duplicate customer was selected; the real invoices sit on another party with the same name.
-    Open the return (e.g. from Returns), confirm the original invoice, then run <code>database/fix_return_party_mismatch.sql</code> on the server (after backup) to copy <code>party_id</code> from each sale into its linked return.
+    <strong>Likely wrong customer on a return:</strong> This account has <strong>approved sale return(s)</strong> but <strong>no active sale invoices</strong> on account <?= htmlspecialchars($party['party_code'] ?? '') ?> (ID <?= (int)$party['id'] ?>).
+    A return may have been posted to a duplicate customer while the original invoices sit on another account with the same name.
+    Open each return from <a href="?page=returns" class="fw-bold">Returns</a>, confirm the linked invoice, then use <strong>View customer</strong> on that invoice to reach the ledger that should own the return. New returns already copy the invoice customer automatically; older rows may need <code>party_id</code> corrected on the return to match the sale (after backup).
 </div>
 <?php elseif (!empty($cancelledSalesCount)): ?>
 <div class="alert alert-info border-0 mb-3" style="border-radius:12px;">
@@ -119,20 +133,24 @@
                 <tr><td colspan="7" class="text-center text-muted py-5">No transactions found</td></tr>
                 <?php else: ?>
                 <?php
-                    $running = (float)($party['opening_balance'] ?? 0);
+                    $running = (float)($ledgerOpeningBal ?? $party['opening_balance'] ?? 0);
                     $typeColors = [
-                        'sale'     => '#6366f1',
-                        'purchase' => '#f59e0b',
-                        'payment'  => '#10b981',
-                        'return'   => '#dc2626',
-                        'expense'  => '#8b5cf6',
+                        'sale'           => '#6366f1',
+                        'purchase'       => '#f59e0b',
+                        'import_payable' => '#0ea5e9',
+                        'payment'        => '#10b981',
+                        'return'         => '#dc2626',
+                        'expense'        => '#8b5cf6',
+                        'discount'       => '#a855f7',
                     ];
                     $typeLabels = [
-                        'sale'     => 'Sale',
-                        'purchase' => 'Purchase',
-                        'payment'  => 'Payment',
-                        'return'   => 'Return',
-                        'expense'  => 'Expense',
+                        'sale'           => 'Sale',
+                        'purchase'       => 'Purchase',
+                        'import_payable' => 'Import payable',
+                        'payment'        => 'Payment',
+                        'return'         => 'Return',
+                        'expense'        => 'Expense',
+                        'discount'       => 'Discount',
                     ];
                 ?>
                 <?php if (abs($running) > 0.001): ?>

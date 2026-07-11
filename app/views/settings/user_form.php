@@ -185,8 +185,11 @@
                         'rpt_expenses'      => ['Expenses Report',       'bi-receipt'],
                         'rpt_sales_returns' => ['Sales Returns Report',  'bi-arrow-return-left'],
                         'rpt_supplier_stmt' => ['Supplier Statement',    'bi-building'],
+                        'rpt_purchase_orders' => ['Purchase Orders Report', 'bi-file-earmark-text'],
                         'rpt_balance_sheet' => ['Balance Sheet',         'bi-clipboard-data'],
                         'rpt_customer_imei' => ['Customer IMEI Report',  'bi-phone'],
+                        'rpt_purchase_imei' => ['Purchase IMEI Report',  'bi-phone-fill'],
+                        'rpt_partner_profit' => ['Partner Profit Report', 'bi-handshake'],
                     ];
                     foreach ($reportModules as $mod => [$label, $icon]):
                         $v = $existing[$mod]['can_view'] ?? 0;

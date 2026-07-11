@@ -114,6 +114,8 @@ if (!empty($mismatches)):
 });</script>
 <p class="text-muted mt-3" style="font-size:0.78rem;">
     <i class="bi bi-info-circle me-1"></i>
-    As of the selected date, <strong>Calculated</strong> = Opening + Total In − Total Out − Expenses + Transfers (net) + Adjustments (net) − PO (no pay). “PO (no pay)” sums purchase-order paid amounts linked to this account where no matching payments row exists (same heuristic as the Accounts transaction list).
-    Recorded uses each account’s live <strong>current_balance</strong> (typically “today,” not rewound by this report date unless you reconcile only after aligning balances).
+    As of the selected date, <strong>Calculated</strong> uses the same rules as Settings → Recalculate
+    (<code>AccountBalanceService</code>): opening + payments (in/out) − expenses + transfers + adjustments − unlinked PO <code>paid_kwd</code>.
+    Branch scope includes this warehouse plus legacy rows with no <code>warehouse_id</code>.
+    <strong>Recorded</strong> is each account’s live <code>current_balance</code> (company-wide, not rewound to the report date).
 </p>

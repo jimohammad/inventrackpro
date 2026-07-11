@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS parties (
     party_code      VARCHAR(20),
     name            VARCHAR(255) NOT NULL,
     contact_person  VARCHAR(255),
-    type            ENUM('supplier', 'customer', 'both') NOT NULL,
+    type            ENUM('supplier', 'customer', 'both', 'freight_forwarder') NOT NULL,
     phone           VARCHAR(20),
     phone2          VARCHAR(20),
     email           VARCHAR(100),
@@ -181,7 +181,8 @@ CREATE TABLE IF NOT EXISTS stock (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_item_warehouse (item_id, warehouse_id)
+    UNIQUE KEY unique_item_warehouse (item_id, warehouse_id),
+    INDEX idx_stock_wh_qty (warehouse_id, quantity)
 );
 
 -- IMEI Registry - every device tracked individually
@@ -197,7 +198,8 @@ CREATE TABLE IF NOT EXISTS imei_records (
     notes           TEXT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (item_id) REFERENCES items(id)
+    FOREIGN KEY (item_id) REFERENCES items(id),
+    INDEX idx_imei_wh (warehouse_id, imei)
 );
 
 -- Opening stock log
@@ -286,6 +288,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     exchange_rate    DECIMAL(10,6) DEFAULT 1.000000,
     subtotal_foreign DECIMAL(15,3) DEFAULT 0.000,
     subtotal_kwd     DECIMAL(15,3) DEFAULT 0.000,
+    other_charges_kwd DECIMAL(15,3) NOT NULL DEFAULT 0.000,
     paid_foreign     DECIMAL(15,3) DEFAULT 0.000,
     paid_kwd         DECIMAL(15,3) DEFAULT 0.000,
     status           VARCHAR(20) DEFAULT 'draft',
@@ -375,7 +378,7 @@ CREATE TABLE IF NOT EXISTS sale_item_imei (
 CREATE TABLE IF NOT EXISTS payments (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     payment_no      VARCHAR(50) NOT NULL UNIQUE,
-    ref_type        ENUM('purchase', 'sale', 'expense', 'opening', 'transfer', 'discount') NOT NULL,
+    ref_type        ENUM('purchase', 'sale', 'expense', 'opening', 'transfer', 'discount', 'purchase_order', 'shipment_cost', 'shipment_freight_hk', 'shipment_packing_dxb', 'shipment_freight_dxb', 'shipment_partner') NOT NULL,
     ref_id          INT NOT NULL,
     party_id        INT,
     phone_no        VARCHAR(20),
@@ -387,6 +390,7 @@ CREATE TABLE IF NOT EXISTS payments (
     cheque_no       VARCHAR(100),
     date            DATE NOT NULL,
     notes           TEXT,
+    status          ENUM('active', 'cancelled') NOT NULL DEFAULT 'active',
     created_by      INT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
@@ -395,7 +399,9 @@ CREATE TABLE IF NOT EXISTS payments (
     INDEX idx_payments_party_date (party_id, date),
     INDEX idx_payments_party_reftype (party_id, ref_type),
     INDEX idx_payments_party_wh (party_id, warehouse_id),
-    INDEX idx_payments_ref (ref_type, ref_id)
+    INDEX idx_payments_ref (ref_type, ref_id),
+    INDEX idx_payments_status (status),
+    INDEX idx_payments_wh_date_status (warehouse_id, date, status, payment_type)
 );
 
 -- ============================================================
@@ -413,7 +419,7 @@ CREATE TABLE IF NOT EXISTS returns (
     subtotal        DECIMAL(15,3) DEFAULT 0.000,
     grand_total     DECIMAL(15,3) DEFAULT 0.000,
     reason          TEXT,
-    status          ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    status          ENUM('pending', 'approved', 'rejected', 'cancelled') DEFAULT 'pending',
     notes           TEXT,
     created_by      INT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -503,7 +509,8 @@ CREATE TABLE IF NOT EXISTS expenses (
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (created_by) REFERENCES users(id),
-    INDEX idx_expenses_party_date (party_id, date)
+    INDEX idx_expenses_party_date (party_id, date),
+    INDEX idx_expenses_wh_date (warehouse_id, date)
 );
 
 -- ============================================================
@@ -602,25 +609,50 @@ CREATE TABLE IF NOT EXISTS discounts (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS shipments (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    shipment_no VARCHAR(50) NOT NULL UNIQUE,
-    description VARCHAR(255),
-    date        DATE NOT NULL,
-    status      ENUM('draft', 'applied') DEFAULT 'draft',
-    notes       TEXT,
-    created_by  INT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    shipment_no         VARCHAR(50) NOT NULL UNIQUE,
+    description         VARCHAR(255),
+    route_stage         ENUM('dubai_hub', 'kuwait_inbound') NOT NULL DEFAULT 'dubai_hub',
+    parent_shipment_id  INT NULL,
+    date                DATE NOT NULL,
+    received_date       DATE NULL,
+    status              ENUM('draft', 'in_transit', 'received', 'applied') NOT NULL DEFAULT 'draft',
+    notes               TEXT,
+    warehouse_id        INT NULL,
+    created_by          INT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_shipment_id) REFERENCES shipments(id) ON DELETE SET NULL,
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    INDEX idx_shipments_wh_status (warehouse_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS shipment_costs (
     id                INT AUTO_INCREMENT PRIMARY KEY,
     shipment_id       INT NOT NULL,
     description       VARCHAR(255) NOT NULL,
+    cost_category     ENUM('freight','consolidation','customs','clearance','handling','insurance','partner_profit','other') NOT NULL DEFAULT 'freight',
+    pay_location      ENUM('dubai','kuwait') NOT NULL DEFAULT 'kuwait',
+    pay_timing        ENUM('immediate','monthly') NOT NULL DEFAULT 'immediate',
+    partner_party_id  INT NULL,
     amount            DECIMAL(15,3) NOT NULL,
-    allocation_method ENUM('by_qty', 'by_value', 'equal') DEFAULT 'by_qty',
+    per_piece_kwd     DECIMAL(15,3) NULL,
+    allocation_method ENUM('by_qty', 'by_value', 'equal', 'per_piece') DEFAULT 'by_qty',
     account_id        INT,
+    payment_id        INT NULL,
+    is_applied        TINYINT(1) NOT NULL DEFAULT 0,
     FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
-    FOREIGN KEY (account_id) REFERENCES accounts(id)
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    FOREIGN KEY (partner_party_id) REFERENCES parties(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS shipment_purchase_orders (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    shipment_id INT NOT NULL,
+    po_id       INT NOT NULL,
+    UNIQUE KEY uniq_shipment_po (shipment_id, po_id),
+    FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
+    FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
 );
 
 CREATE TABLE IF NOT EXISTS shipment_purchases (
@@ -629,6 +661,65 @@ CREATE TABLE IF NOT EXISTS shipment_purchases (
     purchase_id INT NOT NULL,
     FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
     FOREIGN KEY (purchase_id) REFERENCES purchases(id)
+);
+
+CREATE TABLE IF NOT EXISTS shipment_item_charges (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    shipment_id             INT NOT NULL,
+    po_item_id              INT NOT NULL,
+    item_id                 INT NOT NULL,
+    quantity                INT NOT NULL DEFAULT 1,
+    freight_hk_dxb          DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    freight_hk_dxb_party_id INT NULL,
+    packing_dxb             DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    packing_dxb_party_id    INT NULL,
+    freight_dxb_kwt         DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    freight_dxb_kwt_party_id INT NULL,
+    partner_profit_per_pc   DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    partner_party_id        INT NULL,
+    purchase_item_id        INT NULL,
+    is_applied              TINYINT(1) NOT NULL DEFAULT 0,
+    freight_hk_payment_id   INT NULL,
+    packing_dxb_payment_id  INT NULL,
+    freight_dxb_payment_id  INT NULL,
+    partner_payment_id      INT NULL,
+    UNIQUE KEY uniq_shipment_po_item (shipment_id, po_item_id),
+    FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
+    FOREIGN KEY (po_item_id) REFERENCES purchase_order_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES items(id),
+    FOREIGN KEY (purchase_item_id) REFERENCES purchase_items(id) ON DELETE SET NULL,
+    FOREIGN KEY (freight_hk_dxb_party_id) REFERENCES parties(id) ON DELETE SET NULL,
+    FOREIGN KEY (packing_dxb_party_id) REFERENCES parties(id) ON DELETE SET NULL,
+    FOREIGN KEY (freight_dxb_kwt_party_id) REFERENCES parties(id) ON DELETE SET NULL,
+    FOREIGN KEY (partner_party_id) REFERENCES parties(id) ON DELETE SET NULL,
+    FOREIGN KEY (freight_hk_payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    FOREIGN KEY (packing_dxb_payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    FOREIGN KEY (freight_dxb_payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    FOREIGN KEY (partner_payment_id) REFERENCES payments(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_payable_accruals (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    accrual_no              VARCHAR(50) NOT NULL UNIQUE,
+    shipment_id             INT NOT NULL,
+    shipment_item_charge_id INT NOT NULL,
+    leg                     ENUM('freight_hk', 'packing_dxb', 'freight_dxb', 'partner') NOT NULL,
+    party_id                INT NOT NULL,
+    amount                  DECIMAL(15,3) NOT NULL,
+    date                    DATE NOT NULL,
+    warehouse_id            INT NULL,
+    status                  ENUM('open', 'paid', 'cancelled') NOT NULL DEFAULT 'open',
+    payment_id              INT NULL,
+    description             VARCHAR(255) NULL,
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_charge_leg (shipment_item_charge_id, leg),
+    FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
+    FOREIGN KEY (shipment_item_charge_id) REFERENCES shipment_item_charges(id) ON DELETE CASCADE,
+    FOREIGN KEY (party_id) REFERENCES parties(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    INDEX idx_ipa_party_status (party_id, status),
+    INDEX idx_ipa_shipment (shipment_id)
 );
 
 -- ============================================================
@@ -695,6 +786,8 @@ CREATE TABLE IF NOT EXISTS mandoob_inventory_schedules (
     interval_months  TINYINT UNSIGNED NOT NULL DEFAULT 3,
     last_count_date  DATE DEFAULT NULL,
     next_due_date    DATE DEFAULT NULL,
+    is_paused        TINYINT(1) NOT NULL DEFAULT 0,
+    paused_at        DATE DEFAULT NULL,
     notes            TEXT,
     is_active        TINYINT(1) NOT NULL DEFAULT 1,
     created_by       INT DEFAULT NULL,
@@ -706,6 +799,44 @@ CREATE TABLE IF NOT EXISTS mandoob_inventory_schedules (
     UNIQUE KEY uniq_mandoob_wh_party (warehouse_id, party_id),
     INDEX idx_mandoob_wh_due (warehouse_id, next_due_date),
     INDEX idx_mandoob_wh_active (warehouse_id, is_active)
+);
+
+CREATE TABLE IF NOT EXISTS mandoob_inventory_history (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_id     INT NOT NULL,
+    warehouse_id    INT NOT NULL,
+    count_date      DATE NOT NULL,
+    next_due_after  DATE DEFAULT NULL,
+    notes           VARCHAR(500) DEFAULT NULL,
+    recorded_by     INT DEFAULT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (schedule_id) REFERENCES mandoob_inventory_schedules(id) ON DELETE CASCADE,
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
+    FOREIGN KEY (recorded_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_mandoob_hist_schedule (schedule_id, count_date DESC),
+    INDEX idx_mandoob_hist_wh (warehouse_id, count_date DESC)
+);
+
+-- ============================================================
+-- NET WORTH SNAPSHOTS (month-end; cron/networth_snapshot.php)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS net_worth_snapshots (
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    snapshot_date     DATE NOT NULL,
+    warehouse_id      INT NOT NULL DEFAULT 1,
+    total_cash        DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    total_receivable  DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    total_payable     DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    stock_value       DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    total_assets      DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    total_liabilities DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    net_worth         DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    source            ENUM('auto','manual') NOT NULL DEFAULT 'auto',
+    notes             VARCHAR(255) DEFAULT NULL,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_snapshot_date_wh (snapshot_date, warehouse_id)
 );
 
 -- ============================================================
@@ -751,7 +882,7 @@ INSERT INTO accounts (name, type, is_default, current_balance) VALUES
 
 -- Default expense categories
 INSERT INTO expense_categories (name) VALUES
-('Rent'), ('Utilities'), ('Salaries'), ('Transport'), ('Maintenance'), ('Office Supplies'), ('Other');
+('Rent'), ('Utilities'), ('Salaries'), ('Transport'), ('Maintenance'), ('Repair'), ('Office Supplies'), ('Other');
 
 -- Default settings
 INSERT INTO settings (key_name, value) VALUES

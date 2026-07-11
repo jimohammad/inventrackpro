@@ -5,45 +5,49 @@ require_once __DIR__ . '/../models/Party.php';
 
 class FieldStatementController extends BaseController {
 
+    /**
+     * Public statement endpoints trigger heavy balance/aggregate queries, so
+     * unauthenticated hits are capped per IP (shared BaseController limiter).
+     */
+    private static function rateLimited(): bool {
+        return self::ipRateLimited('field_stmt_rl');
+    }
+
+    private static function sendPublicSecurityHeaders(): void {
+        header('X-Frame-Options: SAMEORIGIN');
+        header('X-Content-Type-Options: nosniff');
+    }
+
     public function index(): void {
+        self::sendPublicSecurityHeaders();
+
+        if (self::rateLimited()) {
+            http_response_code(429);
+            $this->showError('Too many requests. Please try again in a few minutes.');
+            return;
+        }
+
         $token = trim($_GET['token'] ?? '');
         if (!$token) { $this->showError('Invalid link.'); return; }
 
-        $db = Database::getInstance();
-
-        // Find party by token
-        $party = $db->fetchOne(
-            "SELECT p.*,
-                p.opening_balance
-                + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                as net_balance
-             FROM parties p WHERE p.statement_token = ?",
-            [$token]
-        );
+        $partyModel = new Party();
+        $party = $partyModel->findByStatementToken($token);
 
         if (!$party) { $this->showError('Invalid or expired link.'); return; }
 
-        // Get transactions
-        $transactions = $db->fetchAll(
-            "SELECT 'Sale' as type, invoice_no as ref_no, date, grand_total as debit, 0 as credit, status, created_at
-             FROM sales WHERE party_id = ? AND status != 'cancelled'
-             UNION ALL
-             SELECT 'Payment', payment_no, date, 0, amount, 'paid', created_at
-             FROM payments WHERE party_id = ? AND ref_type IN ('sale','discount')
-             UNION ALL
-             SELECT 'Return', return_no, date, 0, grand_total, status, created_at
-             FROM returns WHERE party_id = ? AND type = 'sale_return' AND status = 'approved'
-             ORDER BY date ASC, created_at ASC",
-            [$party['id'], $party['id'], $party['id']]
-        );
+        $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
+        $transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', '', $statementWhId);
+
+        // Date-capped closing balance so the Balance card matches the running-balance
+        // column (net_balance from the batch union has no date cap and would include
+        // future-dated entries).
+        $closingBal = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
 
         // Get company info
-        $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
+        $company = $this->db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
         $companyName = $company['value'] ?? 'Iqbal Sons';
 
-        $companyPhone = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_phone'");
+        $companyPhone = $this->db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_phone'");
         $companyPhoneVal = $companyPhone['value'] ?? '';
 
         include __DIR__ . '/../views/public/field_statement.php';
@@ -53,6 +57,13 @@ class FieldStatementController extends BaseController {
     // AJAX: Get invoice details for public view
     public function invoiceDetail(): void {
         header('Content-Type: application/json');
+        header('X-Content-Type-Options: nosniff');
+
+        if (self::rateLimited()) {
+            http_response_code(429);
+            echo json_encode(['error' => 'Too many requests. Please try again in a few minutes.']);
+            return;
+        }
 
         $token  = trim($_GET['token'] ?? '');
         $refNo  = trim($_GET['ref'] ?? '');
@@ -61,27 +72,34 @@ class FieldStatementController extends BaseController {
 
         $db = Database::getInstance();
 
-        // Verify token belongs to a real party
-        $party = $db->fetchOne("SELECT id FROM parties WHERE statement_token = ?", [$token]);
+        // Same token verification path as index() — resolves warehouse in one shot.
+        $partyModel = new Party();
+        $party = $partyModel->findByStatementToken($token);
         if (!$party) { echo json_encode(['error' => 'Invalid token']); return; }
 
-        // Get sale with items — only if it belongs to this party
-        $sale = $db->fetchOne(
-            "SELECT s.invoice_no, s.date, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
-             FROM sales s WHERE s.invoice_no = ? AND s.party_id = ? AND s.status != 'cancelled'",
-            [$refNo, $party['id']]
-        );
+        $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
+        $saleSql = "SELECT s.invoice_no, s.date, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
+             FROM sales s WHERE s.invoice_no = ? AND s.party_id = ? AND s.status != 'cancelled'";
+        $saleParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $saleSql .= ' AND s.warehouse_id = ?';
+            $saleParams[] = $statementWhId;
+        }
+        $sale = $db->fetchOne($saleSql, $saleParams);
 
         if (!$sale) { echo json_encode(['error' => 'Invoice not found']); return; }
 
-        $items = $db->fetchAll(
-            "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
+        $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
              JOIN sales s ON s.id = si.sale_id
-             WHERE s.invoice_no = ? AND s.party_id = ?",
-            [$refNo, $party['id']]
-        );
+             WHERE s.invoice_no = ? AND s.party_id = ?";
+        $itemsParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $itemsSql .= ' AND s.warehouse_id = ?';
+            $itemsParams[] = $statementWhId;
+        }
+        $items = $db->fetchAll($itemsSql, $itemsParams);
 
         echo json_encode([
             'invoice' => $sale,

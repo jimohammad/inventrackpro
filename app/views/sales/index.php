@@ -2,7 +2,9 @@
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h1 class="page-title">Sales</h1>
-        <p class="page-subtitle mb-0"><?= !empty($filters['voided_only']) ? 'Voided invoices only (all warehouses; excluded from normal list & ledgers).' : 'Manage all sales invoices' ?></p>
+        <?php if (!empty($filters['voided_only'])): ?>
+        <p class="page-subtitle mb-0">Voided invoices only (all warehouses; excluded from normal list & ledgers).</p>
+        <?php endif; ?>
         <?php if (Auth::isAdmin() && empty($filters['voided_only'])): ?>
         <p class="mb-0 mt-1"><a href="?page=sales&view=voided" class="small fw-semibold" style="color:#64748b;">View voided invoices →</a></p>
         <?php elseif (Auth::isAdmin() && !empty($filters['voided_only'])): ?>
@@ -56,10 +58,25 @@ $bulkPrintHref = '?' . http_build_query($bulkPrintQ);
             <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-search me-1"></i>Search
             </label>
-            <input type="text" name="search" placeholder="Invoice, party, phone, code, email..."
+            <input type="text" name="search" placeholder="Invoice, phone, code, email..."
                    value="<?= htmlspecialchars($filters['search']) ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+        </div>
+
+        <div style="flex:2;min-width:180px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+                <i class="bi bi-person me-1"></i>Customer
+            </label>
+            <select name="party_id" id="salesCustomerFilter"
+                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
+                <option value="">All customers</option>
+                <?php foreach (($customers ?? []) as $c): ?>
+                <option value="<?= (int) $c['id'] ?>" <?= ((int) ($filters['party_id'] ?? 0) === (int) $c['id']) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($c['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
         </div>
 
         <div style="flex:1;min-width:130px;">
@@ -225,8 +242,25 @@ include __DIR__ . '/../partials/list_page_alerts.php';
     </div>
 </div>
 
+<style>
+#salesCustomerFilter + .select2-container { width:100% !important; }
+#salesCustomerFilter + .select2-container .select2-selection--single {
+    min-height:38px;border:1.5px solid #c7d2fe;border-radius:10px;
+}
+#salesCustomerFilter + .select2-container .select2-selection__rendered {
+    line-height:36px;padding-left:12px;font-size:0.85rem;
+}
+#salesCustomerFilter + .select2-container .select2-selection__arrow { height:36px !important; }
+</style>
 <script>
 $(document).ready(function() {
+    if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.select2) {
+        jQuery('#salesCustomerFilter').select2({
+            placeholder: 'All customers',
+            allowClear: true,
+            width: '100%'
+        });
+    }
     $('#salesTable').DataTable({
         pageLength: 25,
         order: [[2, 'desc']],

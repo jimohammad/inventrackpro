@@ -59,10 +59,27 @@ $hasBalance = $sale['balance'] > 0.001;
         That usually means the status was changed outside the ERP (e.g. direct database edit) or the log predates this feature.</p>
     <?php endif; ?>
 
+    <?php if (!empty($sale['payments'])): ?>
+    <div class="border-top pt-3 mt-3">
+        <p class="fw-bold mb-2"><i class="bi bi-cash-coin me-1"></i> Linked receipts</p>
+        <ul class="small mb-0">
+            <?php foreach ($sale['payments'] as $pay): ?>
+            <?php $payVoided = (($pay['status'] ?? 'active') === 'cancelled'); ?>
+            <li class="<?= $payVoided ? 'text-muted text-decoration-line-through' : '' ?>">
+                <?= htmlspecialchars($pay['payment_no'] ?? '') ?>
+                — <?= money((float)($pay['amount'] ?? 0)) ?>
+                — <?= htmlspecialchars($pay['date'] ?? '') ?>
+                <?php if ($payVoided): ?><span class="badge bg-secondary ms-1">voided with invoice</span><?php endif; ?>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+
     <?php if (Auth::isAdmin()): ?>
     <div class="border-top pt-3 mt-3">
         <p class="fw-bold mb-2" style="color:#92400e;">Reinstate this voided invoice</p>
-        <p class="small mb-2 text-muted">Runs in one transaction: restores stock deductions and serials for this invoice, then sets <strong>paid amount to zero</strong> and <strong>balance = <?= money($sale['grand_total']) ?></strong> (fully unpaid). Payment lines were removed when the sale was voided — add receipts in Payments only if money was collected.</p>
+        <p class="small mb-2 text-muted">Runs in one transaction: restores stock deductions and serials for this invoice, and re-activates any payment rows that were voided with this invoice (account balances updated). If the sale was voided before this feature, re-enter receipts in Payments.</p>
         <form method="POST" action="?page=sales&action=reopen" id="formReopenSale">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="id" value="<?= (int)$sale['id'] ?>">

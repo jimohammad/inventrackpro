@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../services/AccountBalanceService.php';
 
 class AccountController extends BaseController {
 
@@ -16,6 +17,20 @@ class AccountController extends BaseController {
             );
         }
         unset($accRow);
+
+        $transferDefaultFromId = defined('TRANSFER_DEFAULT_FROM_ACCOUNT_ID')
+            ? (int) TRANSFER_DEFAULT_FROM_ACCOUNT_ID : 0;
+        $transferDefaultToId = defined('TRANSFER_DEFAULT_TO_ACCOUNT_ID')
+            ? (int) TRANSFER_DEFAULT_TO_ACCOUNT_ID : 0;
+        foreach ($accounts as $accDefaultRow) {
+            $accName = trim((string) ($accDefaultRow['name'] ?? ''));
+            if ($transferDefaultFromId <= 0 && strcasecmp($accName, 'Main Cash') === 0) {
+                $transferDefaultFromId = (int) $accDefaultRow['id'];
+            }
+            if ($transferDefaultToId <= 0 && strcasecmp($accName, 'NBK Bank Account') === 0) {
+                $transferDefaultToId = (int) $accDefaultRow['id'];
+            }
+        }
 
         // Recent transfers
         $transfers = $db->fetchAll(
@@ -64,7 +79,8 @@ class AccountController extends BaseController {
         if ($selectedAccountId) {
             $selectedAccount = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$selectedAccountId]);
             if ($selectedAccount) {
-                // Payments linked to this account
+                // Payments linked to this account (same active/cancelled-ref rules as AccountBalanceService)
+                $payLedgerWhere = AccountBalanceService::sqlPaymentLedgerWhere('p');
                 $payments = $db->fetchAll(
                     "SELECT 'payment' as txn_type, p.id, p.payment_no as ref_no,
                             p.date,
@@ -74,7 +90,7 @@ class AccountController extends BaseController {
                             NULL as invoice_ref
                      FROM payments p
                      LEFT JOIN parties pa ON pa.id = p.party_id
-                     WHERE p.account_id = ? AND p.ref_type != 'discount'
+                     WHERE p.account_id = ? AND {$payLedgerWhere}
                      ORDER BY p.date DESC, p.id DESC
                      LIMIT 200",
                     [$selectedAccountId]
@@ -111,7 +127,8 @@ class AccountController extends BaseController {
                     [$selectedAccountId, $selectedAccountId, $selectedAccountId, $selectedAccountId]
                 );
 
-                // PO payments not yet in payments table (historical + any without payment record)
+                // PO payouts with no active payment row (orphan / legacy only — never double-count converted POs)
+                $poLedgerWhere = AccountBalanceService::sqlUnlinkedPoLedgerWhere();
                 $poPayments = $db->fetchAll(
                     "SELECT 'po_payment' as txn_type, po.id,
                             po.po_no as ref_no, po.date,
@@ -121,17 +138,7 @@ class AccountController extends BaseController {
                             NULL as invoice_ref
                      FROM purchase_orders po
                      JOIN parties p ON p.id = po.party_id
-                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
-                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
-                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
-                        AND pay3.party_id = po.party_id
-                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
-                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
-                     WHERE po.account_id = ? AND po.paid_kwd > 0
-                      AND po.status NOT IN ('cancelled')
-                      AND pay.id IS NULL
-                      AND pay2.id IS NULL
-                      AND pay3.id IS NULL
+                     WHERE po.account_id = ? AND {$poLedgerWhere}
                      ORDER BY po.date DESC, po.id DESC
                      LIMIT 200",
                     [$selectedAccountId]
@@ -172,17 +179,42 @@ class AccountController extends BaseController {
      * Uses accounts.opening_balance as baseline, plus payments, expenses, transfers,
      * account_balance_adjustments, and PO paid_kwd booked on orders without matching payments rows.
      */
+    public function balanceAudit(): void {
+        Auth::authorize('settings', 'edit');
+
+        $accountId = $this->inputInt('account_id', 0, 'get');
+        if ($accountId <= 0) {
+            $this->flash('error', 'Select an account first.');
+            $this->redirect('?page=accounts');
+            return;
+        }
+
+        $db     = Database::getInstance();
+        $report = AccountBalanceService::buildAuditReport($db, $accountId);
+        $acc    = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$accountId]);
+
+        $pageTitle = 'Balance audit: ' . ($acc['name'] ?? 'Account');
+        $page      = 'accounts';
+
+        ob_start();
+        include __DIR__ . '/../views/settings/account_balance_audit.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
     public function recalcBalance(): void {
         Auth::authorize('settings', 'edit');
 
         if (!$this->isPost()) {
             $this->redirect('?page=accounts');
+            return;
         }
 
         $accountId = $this->inputInt('account_id');
         if ($accountId <= 0) {
             $this->flash('error', 'Invalid account.');
             $this->redirect('?page=accounts');
+            return;
         }
 
         $db = Database::getInstance();
@@ -193,78 +225,47 @@ class AccountController extends BaseController {
                 throw new Exception('Account not found.');
             }
 
-            $opening = (float)($acc['opening_balance'] ?? 0);
-
-            $payRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(CASE WHEN payment_type='out' THEN -amount ELSE amount END),0) as net
-                 FROM payments
-                 WHERE account_id = ? AND ref_type != 'discount'",
-                [$accountId]
-            );
-            $paymentsNet = (float)($payRow['net'] ?? 0);
-
-            $expRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount),0) as total
-                 FROM expenses
-                 WHERE account_id = ?",
-                [$accountId]
-            );
-            $expensesTotal = (float)($expRow['total'] ?? 0);
-
-            $trRow = $db->fetchOne(
-                "SELECT
-                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE to_account_id = ?),0) as in_total,
-                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE from_account_id = ?),0) as out_total",
-                [$accountId, $accountId]
-            );
-            $transferNet = (float)($trRow['in_total'] ?? 0) - (float)($trRow['out_total'] ?? 0);
-
-            $adjRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
-                 FROM account_balance_adjustments
-                 WHERE account_id = ?",
-                [$accountId]
-            );
-            $adjustmentsNet = (float)($adjRow['net'] ?? 0);
-
-            // PO payouts recorded on PO only until a mirror payment exists (aligned with reconciliation & Accounts ledger)
-            $poRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
-                 FROM purchase_orders po
-                 LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
-                 LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
-                 LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
-                    AND pay3.party_id = po.party_id
-                    AND ABS(pay3.amount - po.paid_kwd) < 0.001
-                    AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
-                 WHERE po.account_id = ? AND po.paid_kwd > 0
-                  AND po.status NOT IN ('cancelled')
-                  AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
-                [$accountId]
-            );
-            $poUnlinkedOut = (float)($poRow['total'] ?? 0);
-
-            $newBalance = round($opening + $paymentsNet - $expensesTotal + $transferNet + $adjustmentsNet - $poUnlinkedOut, 3);
-            $oldBalance = (float)($acc['current_balance'] ?? 0);
+            $voided = AccountBalanceService::cleanupLedgerBeforeRecalc($db, $accountId);
+            $ledger = AccountBalanceService::computeFromLedger($db, $accountId);
+            $newBalance = $ledger['balance'];
+            $oldBalance = (float) ($acc['current_balance'] ?? 0);
 
             $db->execute("UPDATE accounts SET current_balance = ? WHERE id = ?", [$newBalance, $accountId]);
             $db->commit();
 
+            $breakdown = sprintf(
+                'opening=%s payments=%s out=%s expenses=%s transfers=%s adjustments=%s po_unlinked=%s voided=%d',
+                number_format($ledger['opening'], 3),
+                number_format($ledger['payments_net'], 3),
+                number_format($ledger['payments_out'], 3),
+                number_format($ledger['expenses'], 3),
+                number_format($ledger['transfers_net'], 3),
+                number_format($ledger['adjustments_net'], 3),
+                number_format($ledger['po_unlinked_out'], 3),
+                count($voided)
+            );
             $this->logActivity(
                 'recalc_account_balance',
                 'accounts',
                 $accountId,
-                "Recalculated {$acc['name']} from ledger: old=" . number_format($oldBalance, 3) . " new=" . number_format($newBalance, 3)
+                "Recalculated {$acc['name']}: old=" . number_format($oldBalance, 3)
+                . " new=" . number_format($newBalance, 3) . " ({$breakdown})"
             );
 
-            $this->flash(
-                'success',
-                "Recalculated {$acc['name']}. Old: " . APP_CURRENCY . " " . number_format($oldBalance, 3) .
-                " → New: " . APP_CURRENCY . " " . number_format($newBalance, 3)
-            );
+            $msg = "Recalculated {$acc['name']}. Old: " . APP_CURRENCY . ' ' . number_format($oldBalance, 3)
+                . ' → New: ' . APP_CURRENCY . ' ' . number_format($newBalance, 3)
+                . ' | opening ' . number_format($ledger['opening'], 3)
+                . ', payments net ' . number_format($ledger['payments_net'], 3)
+                . ' (out ' . number_format($ledger['payments_out'], 3) . ')'
+                . ', PO unlinked -' . number_format($ledger['po_unlinked_out'], 3);
+            if (!empty($voided)) {
+                $msg .= ' | voided duplicates: ' . implode('; ', array_slice($voided, 0, 3));
+            }
+            $this->flash('success', $msg);
         } catch (Exception $e) {
             $db->rollback();
-            $this->flash('error', 'Recalculate failed: ' . $e->getMessage());
+            error_log('recalcBalance failed for account ' . $accountId . ': ' . $e->getMessage());
+            $this->flash('error', 'Recalculate failed. Please try again or check server logs.');
         }
 
         $this->redirect('?page=accounts&account_id=' . $accountId);
@@ -487,7 +488,8 @@ class AccountController extends BaseController {
             $this->flash('success', "Transfer {$old['transfer_no']} updated.");
         } catch (Exception $e) {
             $db->rollback();
-            $this->flash('error', 'Update failed: ' . $e->getMessage());
+            error_log('updateTransfer failed for transfer ' . $id . ': ' . $e->getMessage());
+            $this->flash('error', 'Update failed. Please try again or check server logs.');
         }
 
         $this->redirect('?page=accounts' . $redirectSuffix);
@@ -587,51 +589,68 @@ class AccountController extends BaseController {
         $id = $this->inputInt('id');
         $db = Database::getInstance();
 
-        $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$id]);
-        if (!$account) {
-            $this->flash('error', 'Account not found.');
+        // Transaction + row lock so a payment/expense inserted between the
+        // dependency checks and the DELETE cannot create an orphaned reference.
+        $db->beginTransaction();
+        try {
+            $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ? FOR UPDATE", [$id]);
+            if (!$account) {
+                $db->rollback();
+                $this->flash('error', 'Account not found.');
+                $this->redirect('?page=accounts');
+                return;
+            }
+
+            // Check for linked transactions
+            $payments = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM payments WHERE account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $expenses = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM expenses WHERE account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $transfersFrom = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM account_transfers WHERE from_account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $transfersTo = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM account_transfers WHERE to_account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $adjustments = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM account_balance_adjustments WHERE account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $purchaseOrders = (int)($db->fetchOne(
+                "SELECT COUNT(*) as c FROM purchase_orders WHERE account_id = ?", [$id]
+            )['c'] ?? 0);
+
+            $total = $payments + $expenses + $transfersFrom + $transfersTo + $adjustments;
+
+            if ($total > 0 || $purchaseOrders > 0) {
+                $db->rollback();
+                $details = [];
+                if ($payments)     $details[] = "{$payments} payment(s)";
+                if ($expenses)     $details[] = "{$expenses} expense(s)";
+                if ($transfersFrom + $transfersTo > 0) $details[] = ($transfersFrom + $transfersTo) . " transfer(s)";
+                if ($adjustments)  $details[] = "{$adjustments} balance adjustment(s)";
+                if ($purchaseOrders) $details[] = "{$purchaseOrders} purchase order(s) linked to this account";
+                $this->flash('error', "Cannot delete \"{$account['name']}\" — it has " . implode(', ', $details) . " linked to it.");
+                $this->redirect('?page=accounts');
+                return;
+            }
+
+            $db->execute("DELETE FROM accounts WHERE id = ?", [$id]);
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('Account delete failed for account ' . $id . ': ' . $e->getMessage());
+            $this->flash('error', 'Delete failed. Please try again or check server logs.');
             $this->redirect('?page=accounts');
+            return;
         }
 
-        // Check for linked transactions
-        $payments = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM payments WHERE account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $expenses = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM expenses WHERE account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $transfersFrom = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM account_transfers WHERE from_account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $transfersTo = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM account_transfers WHERE to_account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $adjustments = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM account_balance_adjustments WHERE account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $purchaseOrders = (int)($db->fetchOne(
-            "SELECT COUNT(*) as c FROM purchase_orders WHERE account_id = ?", [$id]
-        )['c'] ?? 0);
-
-        $total = $payments + $expenses + $transfersFrom + $transfersTo + $adjustments;
-
-        if ($total > 0 || $purchaseOrders > 0) {
-            $details = [];
-            if ($payments)     $details[] = "{$payments} payment(s)";
-            if ($expenses)     $details[] = "{$expenses} expense(s)";
-            if ($transfersFrom + $transfersTo > 0) $details[] = ($transfersFrom + $transfersTo) . " transfer(s)";
-            if ($adjustments)  $details[] = "{$adjustments} balance adjustment(s)";
-            if ($purchaseOrders) $details[] = "{$purchaseOrders} purchase order(s) linked to this account";
-            $this->flash('error', "Cannot delete \"{$account['name']}\" — it has " . implode(', ', $details) . " linked to it.");
-            $this->redirect('?page=accounts');
-        }
-
-        $db->execute("DELETE FROM accounts WHERE id = ?", [$id]);
         $this->flash('success', "Account \"{$account['name']}\" deleted.");
         $this->redirect('?page=accounts');
     }

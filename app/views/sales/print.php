@@ -78,12 +78,12 @@ tbody tr:nth-child(even) { background:#f8f9ff; }
 }
 
 <?php else: ?>
+<?php include __DIR__ . '/../partials/thermal_print_font.css.php'; ?>
 body {
-    font-family: 'Courier New', Courier, monospace;
     font-size: 12px;
     color: #000;
     background: #fff;
-    padding: <?= $thermal ? '12px' : '20px' ?>;
+    padding: 8px 2px;
 }
 
 .no-print {
@@ -113,16 +113,16 @@ body {
 .no-print button.edit-btn  { background: #f59e0b; }
 
 .wrap {
-    max-width: <?= $thermal ? '72mm' : '480px' ?>;
+    max-width: 72mm;
     margin: 0 auto;
-    padding: <?= $thermal ? '8px 3px' : '16px 6px' ?>;
-    border: <?= $thermal ? 'none' : '1px solid #e5e7eb' ?>;
-    border-radius: <?= $thermal ? '0' : '10px' ?>;
+    padding: 8px 3px;
+    border: none;
+    border-radius: 0;
 }
 
 .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
 .company-name { font-size: 18px; font-weight: 800; color: #000; }
-.company-info { font-size: <?= $thermal ? '9px' : '10px' ?>; color: #666; margin-top: 4px; line-height: 1.6; }
+.company-info { font-size: 11px; color: #000; margin-top: 4px; line-height: 1.35; }
 
 .receipt-row {
     display: flex; justify-content: space-between;
@@ -131,8 +131,8 @@ body {
     font-size: 11.5px;
 }
 .receipt-row:last-child { border-bottom: none; }
-.receipt-row .lbl { color: #666; }
-.receipt-row .val { font-weight: 600; color: #1a1a1a; text-align: right; }
+.receipt-row .lbl { color: #000; }
+.receipt-row .val { font-weight: 400; color: #000; text-align: right; }
 
 .items-section {
     margin: 16px 0;
@@ -170,21 +170,52 @@ body {
 .item-line .col-amt  { width: 80px; text-align: right; font-weight: 700; }
 
 .items-total-qty-row {
-    padding-top: 6px;
-    margin-top: 4px;
+    padding-top: 10px;
+    margin-top: 6px;
     border-top: 1px solid #000;
+    text-align: center;
 }
-.items-total-qty-row .item-line { margin-top: 0; }
-/* Extra-specific + !important: thermal drivers often ignore numeric weights; <strong> reinforces. */
-.items-total-qty-row .item-line .col-item,
-.items-total-qty-row .item-line .col-qty {
+.items-total-qty-center {
+    font-weight: bold !important;
+    font-size: 16px !important;
+    color: #000 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1.3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.items-total-qty-box {
+    display: inline-block;
+    border: 2px solid #000;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 18px !important;
+    font-weight: bold !important;
+    color: #000 !important;
+    min-width: 40px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+/* Thermal drivers often ignore numeric font-weight — <strong> reinforces bold */
+.current-balance-row {
+    border-top: 2px solid #000;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-bottom: none;
+}
+.current-balance-row .lbl,
+.current-balance-row .val {
     font-weight: bold !important;
     font-size: 12px !important;
     color: #000 !important;
 }
-.items-total-qty-row .item-line .col-item {
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.current-balance-row .val {
+    font-size: 13px !important;
 }
 
 .totals-section { margin-top: 12px; }
@@ -211,14 +242,18 @@ body {
 }
 
 @media print {
-    body { padding: 0; background: #fff; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
+    body {
+        padding: 0;
+        background: #fff;
+        font-family: monospace;
+        font-weight: 400;
+        -webkit-font-smoothing: none;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
     .no-print { display: none !important; }
-    .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
-    <?php if ($thermal): ?>
+    .wrap { border: none; padding: 0; width: 100%; max-width: 100%; font-family: monospace; }
     @page { size: 72mm auto; margin: 2mm; }
-    <?php else: ?>
-    @page { margin: 8mm 3mm 8mm 3mm; }
-    <?php endif; ?>
 }
 <?php endif; ?>
 </style>
@@ -332,11 +367,9 @@ body {
         </div>
         <?php endforeach; ?>
         <div class="items-total-qty-row">
-            <div class="item-line">
-                <div class="col-item"><strong>Total Qty</strong></div>
-                <div class="col-qty"><strong><?= rtrim(rtrim(number_format($totalQty, 2, '.', ''), '0'), '.') ?></strong></div>
-                <div class="col-rate"></div>
-                <div class="col-amt"></div>
+            <div class="items-total-qty-center">
+                <strong>Total Qty</strong>
+                <span class="items-total-qty-box"><strong><?= rtrim(rtrim(number_format($totalQty, 2, '.', ''), '0'), '.') ?></strong></span>
             </div>
         </div>
     </div>
@@ -380,17 +413,16 @@ body {
             <span class="val">- <?= APP_CURRENCY ?> <?= number_format($paid, DECIMAL_PLACES) ?></span>
         </div>
         <?php endif; ?>
-        <div class="receipt-row" style="border-top:2px solid #000;padding-top:8px;margin-top:4px;border-bottom:none;">
-            <span class="lbl" style="font-weight:800;color:#000;font-size:12px;">Current Balance</span>
-            <span class="val" style="font-weight:800;color:#000;font-size:13px;">
-                <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
-            </span>
+        <div class="receipt-row current-balance-row">
+            <span class="lbl"><strong>Current Balance</strong></span>
+            <span class="val"><strong><?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?></strong></span>
         </div>
     </div>
 
     <div class="footer">
         <p><?= htmlspecialchars((string) ($settings['invoice_footer'] ?? 'Thank you for your business!')) ?></p>
         <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?> &nbsp;·&nbsp; <?= htmlspecialchars(Auth::name()) ?></p>
+        <p style="margin-top:8px;font-size:9px;color:#666;">This is a computer generated invoice.</p>
     </div>
 </div>
 <?php endif; ?>
@@ -427,6 +459,12 @@ window.addEventListener('load', function() {
     if (params.get('autopdf') === '1') {
         setTimeout(function() { exportPDF(); }, 600);
     }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    window.location.href = '?page=dashboard';
 });
 </script>
 </body>

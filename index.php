@@ -11,9 +11,8 @@ WebExceptionHandler::register();
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/app/helpers/Auth.php';
 require_once __DIR__ . '/app/controllers/BaseController.php';
-require_once __DIR__ . '/app/models/BaseModel.php';
 
-// Prevent browser from caching pages so changes show immediately
+// Models load on demand via spl_autoload_register below.
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
@@ -56,6 +55,13 @@ if (!Auth::isPublicPage($page)) {
 // Require warehouse selection for all pages except exempt ones
 if (!in_array($page, $warehouseExempt)) {
     Auth::requireWarehouse();
+    Auth::ensureOperationalWarehouse();
+}
+
+// GET: read flash while session is open (controller may still write form tokens, etc.)
+$erpReleaseSessionAfterGet = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') && !Auth::isPublicPage($page);
+if ($erpReleaseSessionAfterGet) {
+    $GLOBALS['erp_prefetched_flash'] = BaseController::getFlash();
 }
 
 // Redirect users without dashboard access to their default landing page
@@ -132,4 +138,9 @@ if (method_exists($controller, $action)) {
     $controller->$action();
 } else {
     $controller->index();
+}
+
+// Release session lock after GET handlers finish so session writes (form nonces) persist.
+if ($erpReleaseSessionAfterGet) {
+    Auth::releaseSession();
 }

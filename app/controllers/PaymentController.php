@@ -14,6 +14,59 @@ class PaymentController extends BaseController {
         $this->partyModel   = new Party();
     }
 
+    /** @return array<string,int> */
+    private static function paymentFormNonceBag(): array {
+        if (!isset($_SESSION['payment_form_nonces']) || !is_array($_SESSION['payment_form_nonces'])) {
+            $_SESSION['payment_form_nonces'] = [];
+        }
+        return $_SESSION['payment_form_nonces'];
+    }
+
+    /** Issue a one-time token (supports multiple open payment tabs). */
+    private function issuePaymentFormNonce(): string {
+        unset($_SESSION['payment_form_nonce']); // legacy single-nonce key
+        $nonce = bin2hex(random_bytes(16));
+        $bag   = self::paymentFormNonceBag();
+        $bag[$nonce] = time();
+        $cutoff = time() - 7200;
+        foreach ($bag as $k => $ts) {
+            if ($ts < $cutoff) {
+                unset($bag[$k]);
+            }
+        }
+        if (count($bag) > 20) {
+            asort($bag);
+            while (count($bag) > 20) {
+                unset($bag[array_key_first($bag)]);
+            }
+        }
+        $_SESSION['payment_form_nonces'] = $bag;
+        return $nonce;
+    }
+
+    /** Consume a posted token; returns false if missing, expired, or already used. */
+    private function consumePaymentFormNonce(string $postedNonce): bool {
+        if ($postedNonce === '') {
+            return false;
+        }
+        $legacy = $_SESSION['payment_form_nonce'] ?? '';
+        if ($legacy !== '' && hash_equals($legacy, $postedNonce)) {
+            unset($_SESSION['payment_form_nonce']);
+            return true;
+        }
+        $bag = self::paymentFormNonceBag();
+        if (!isset($bag[$postedNonce])) {
+            return false;
+        }
+        unset($bag[$postedNonce]);
+        $_SESSION['payment_form_nonces'] = $bag;
+        return true;
+    }
+
+    private function paymentFormReturnAction(string $paymentType = ''): string {
+        return ($paymentType === 'out') ? 'pay' : 'receive';
+    }
+
     /**
      * Derive payment_method from account.type. Cheque overrides if cheque_no provided.
      * Note: payments.payment_method enum expects bank_transfer/card, while accounts.type can be bank/other.
@@ -45,12 +98,14 @@ class PaymentController extends BaseController {
 
         $filters = [
             'search'    => $this->inputSearch('search', '', 'get'),
+            'party_id'  => $this->inputInt('party_id', 0, 'get'),
             'ref_type'  => $this->input('ref_type', '', 'get'),
             'from_date' => $dateRange['from_date'],
             'to_date'   => $dateRange['to_date'],
             'all_dates' => $dateRange['all_dates'],
         ];
 
+        $parties        = $this->partyModel->listForFilter('all');
         $listPage       = $this->paymentModel->getIndexPage($filters);
         $payments       = $listPage['items'];
         $listTruncated  = $listPage['truncated'];
@@ -98,47 +153,71 @@ class PaymentController extends BaseController {
 
         $db = Database::getInstance();
 
-        // Filter party list by mode: receive → customers/both, pay → suppliers/both
-        if ($mode === 'in') {
-            $parties = $db->fetchAll(
-                "SELECT id, name, phone, type FROM parties
-                 WHERE is_active = 1 AND (type = 'customer' OR type = 'both')
-                 ORDER BY name ASC"
-            );
-        } else {
-            $parties = $db->fetchAll(
-                "SELECT id, name, phone, type FROM parties
-                 WHERE is_active = 1 AND (type = 'supplier' OR type = 'both')
-                 ORDER BY name ASC"
-            );
-        }
+        $importPayable = $mode === 'out' && $this->input('import_payable', '', 'get') === '1';
+        $partySearchType = $mode === 'in'
+            ? 'customer'
+            : ($importPayable ? 'all' : 'payment_out');
 
         $accounts = self::getAccounts();
 
-        // Pre-fill from ref (sale invoice for IN, purchase invoice for OUT)
+        // Pre-fill from ref (sale/purchase invoice, or import shipment charge)
         $refType = $this->input('ref_type', '', 'get');
         $refId   = $this->inputInt('ref_id', 0, 'get');
         $refData = null;
+        $importPayableContext = null;
 
-        if ($refId) {
+        $shipmentRefTypes = [
+            'shipment_freight_hk',
+            'shipment_packing_dxb',
+            'shipment_freight_dxb',
+            'shipment_partner',
+            'shipment_cost',
+        ];
+
+        if ($refId > 0 && in_array($refType, $shipmentRefTypes, true)) {
+            $importPayable = true;
+            $importPayableContext = $this->loadImportPayableContext($db, $refType, $refId);
+        } elseif ($refId > 0) {
             $defaultRef = ($mode === 'in') ? 'sale' : 'purchase';
             $refType    = $refType ?: $defaultRef;
-            // Explicit mapping (avoid "table-from-input" ambiguity even though refType is constrained).
             $refTableMap = ['sale' => 'sales', 'purchase' => 'purchases'];
-            $table = $refTableMap[$refType] ?? $refTableMap[$defaultRef];
-            $refData    = $db->fetchOne(
-                "SELECT t.*, p.name as party_name FROM {$table} t
-                 JOIN parties p ON p.id = t.party_id
-                 WHERE t.id = ? AND t.warehouse_id = ?",
-                [$refId, Auth::warehouseId()]
-            );
+            if (isset($refTableMap[$refType])) {
+                $table   = $refTableMap[$refType];
+                $refData = $db->fetchOne(
+                    "SELECT t.*, p.name as party_name FROM {$table} t
+                     JOIN parties p ON p.id = t.party_id
+                     WHERE t.id = ? AND t.warehouse_id = ?",
+                    [$refId, Auth::warehouseId()]
+                );
+            }
         } else {
-            // Default ref_type matches mode so hidden field is correct on save
             $refType = ($mode === 'in') ? 'sale' : 'purchase';
         }
 
         // Optional party preselect via ?party_id=
         $preselectPartyId = $this->inputInt('party_id', 0, 'get');
+        $preselectAmount  = $this->inputFloat('amount', 0, 'get');
+        $preselectNotes   = trim($this->input('notes', '', 'get'));
+
+        $preselectParty = null;
+        if ($importPayableContext) {
+            $preselectParty = [
+                'id'    => (int) ($importPayableContext['party_id'] ?? $preselectPartyId),
+                'name'  => (string) ($importPayableContext['partner_name'] ?? ''),
+                'phone' => '',
+            ];
+        } elseif ($refData) {
+            $preselectParty = [
+                'id'    => (int) $refData['party_id'],
+                'name'  => (string) $refData['party_name'],
+                'phone' => '',
+            ];
+        } elseif ($preselectPartyId > 0) {
+            $preselectParty = $db->fetchOne(
+                "SELECT id, name, phone FROM parties WHERE id = ? AND is_active = 1",
+                [$preselectPartyId]
+            ) ?: null;
+        }
 
         $pageTitle = ($mode === 'in') ? 'Receive Payment' : 'Make Payment';
         $page      = 'payments';
@@ -148,13 +227,59 @@ class PaymentController extends BaseController {
         $nextPayNo = 'PAY-' . str_pad($nextNum, 6, '0', STR_PAD_LEFT);
 
         // One-time token per form load — CSRF alone stays valid across submits, so double-click could create duplicate PAY rows
-        $_SESSION['payment_form_nonce'] = bin2hex(random_bytes(16));
-        $paymentFormNonce               = $_SESSION['payment_form_nonce'];
+        $paymentFormNonce = $this->issuePaymentFormNonce();
 
         ob_start();
         include __DIR__ . '/../views/payments/create.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /** @return array<string, mixed>|null */
+    private function loadImportPayableContext(Database $db, string $refType, int $chargeId): ?array {
+        if ($chargeId <= 0) {
+            return null;
+        }
+
+        $legMap = [
+            'shipment_freight_hk'  => 'freight_hk',
+            'shipment_packing_dxb' => 'packing_dxb',
+            'shipment_freight_dxb' => 'freight_dxb',
+            'shipment_partner'     => 'partner',
+        ];
+        $leg = $legMap[$refType] ?? null;
+
+        $row = $db->fetchOne(
+            "SELECT sic.id as charge_id, s.shipment_no, s.received_date,
+                    po.po_no, i.name as item_name,
+                    COALESCE(ipa.party_id, sic.partner_party_id, sic.freight_hk_dxb_party_id,
+                             sic.packing_dxb_party_id, sic.freight_dxb_kwt_party_id) as party_id,
+                    COALESCE(p.name, phk.name, ppack.name, pkwt.name, pp.name) as partner_name,
+                    COALESCE(ipa.amount, 0) as amount, ipa.accrual_no, ipa.status
+             FROM shipment_item_charges sic
+             JOIN shipments s ON s.id = sic.shipment_id
+             JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+             JOIN purchase_orders po ON po.id = poi.po_id
+             JOIN items i ON i.id = sic.item_id
+             LEFT JOIN import_payable_accruals ipa ON ipa.shipment_item_charge_id = sic.id
+                 AND ipa.leg = ?
+             LEFT JOIN parties p ON p.id = ipa.party_id
+             LEFT JOIN parties phk ON phk.id = sic.freight_hk_dxb_party_id
+             LEFT JOIN parties ppack ON ppack.id = sic.packing_dxb_party_id
+             LEFT JOIN parties pkwt ON pkwt.id = sic.freight_dxb_kwt_party_id
+             LEFT JOIN parties pp ON pp.id = sic.partner_party_id
+             WHERE sic.id = ?",
+            [$leg ?? 'partner', $chargeId]
+        );
+
+        if (!$row) {
+            return null;
+        }
+
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+        $row['charge_label'] = $leg ? ImportPayableAccrualService::legLabel($leg) : 'Import payable';
+
+        return $row;
     }
 
     // AJAX: Get party balance (scoped to current warehouse)
@@ -172,8 +297,10 @@ class PaymentController extends BaseController {
     public function store(): void {
         Auth::authorize('payments', 'add');
 
+        $returnAction = $this->paymentFormReturnAction($this->input('payment_type') ?: 'in');
+
         if (!$this->isPost()) {
-            $this->redirect('?page=payments&action=create');
+            $this->redirect('?page=payments&action=' . $returnAction);
             return;
         }
 
@@ -184,27 +311,31 @@ class PaymentController extends BaseController {
             'date'       => 'required',
         ]);
 
-        if (!empty($errors)) {
+        if (!empty($errors) || $this->inputInt('party_id') <= 0) {
+            if ($this->inputInt('party_id') <= 0 && empty($errors)) {
+                $errors[] = 'Customer is required.';
+            }
             $this->flash('error', implode(' ', $errors));
-            $this->redirect('?page=payments&action=create');
+            $this->redirect('?page=payments&action=' . $returnAction);
             return;
         }
 
         // Validate positive amount
         if ($this->inputFloat('amount') <= 0) {
             $this->flash('error', 'Amount must be greater than zero.');
-            $this->redirect('?page=payments&action=create');
+            $this->redirect('?page=payments&action=' . $returnAction);
             return;
         }
 
         $postedNonce = isset($_POST['payment_form_nonce']) ? trim((string) $_POST['payment_form_nonce']) : '';
-        $sessNonce   = $_SESSION['payment_form_nonce'] ?? '';
-        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
-            $this->flash('warning', 'This payment was already submitted or the form expired. Check the list—if the payment is already there, do not submit again.');
-            $this->redirect('?page=payments');
+        if (!$this->consumePaymentFormNonce($postedNonce)) {
+            $this->flash(
+                'warning',
+                'This payment form expired or was already used. Check Payments list first — if it is not there, open Receive Payment again and retry.'
+            );
+            $this->redirect('?page=payments&action=' . $returnAction);
             return;
         }
-        unset($_SESSION['payment_form_nonce']);
 
         // Derive payment_method from account.type unless cheque_no provided
         $accountId = $this->inputInt('account_id');
@@ -248,13 +379,18 @@ class PaymentController extends BaseController {
         }
 
         if ($id) {
+            require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+            LandedCostPaymentLinker::linkItemChargePayment(
+                Database::getInstance(),
+                (string) ($this->input('ref_type') ?: 'sale'),
+                $this->inputInt('ref_id'),
+                (int) $id
+            );
             $this->logActivity('create_payment', 'payments', (int)$id);
+            self::clearDashboardCache(Auth::warehouseId());
             $printMode = (string)($this->input('print_mode') ?? '');
             if ($printMode === '1') {
-                $tpl = Auth::printTemplate();
-                if ($tpl === 'thermal') {
-                    $this->redirect("?page=payments&action=print&id={$id}&autoprint=1&thermal=1");
-                }
+                // Payment voucher PDF/print is always the colorful A5 layout (thermal is print_mode 2 only).
                 $this->redirect("?page=payments&action=print&id={$id}&autoprint=1");
             }
             if ($printMode === '2') {
@@ -264,6 +400,17 @@ class PaymentController extends BaseController {
         } else {
             $err = trim($this->paymentModel->getLastError());
             $this->flash('error', $err !== '' ? ('Failed to save payment: ' . $err) : 'Failed to save payment.');
+            $retryQs = '';
+            $partyId = $this->inputInt('party_id');
+            if ($partyId > 0) {
+                $retryQs .= '&party_id=' . $partyId;
+            }
+            $retryAmount = $this->inputFloat('amount');
+            if ($retryAmount > 0) {
+                $retryQs .= '&amount=' . urlencode(number_format($retryAmount, 3, '.', ''));
+            }
+            $this->redirect('?page=payments&action=' . $returnAction . $retryQs);
+            return;
         }
 
         $this->redirect('?page=payments');
@@ -408,7 +555,7 @@ class PaymentController extends BaseController {
                 if ($payment['ref_type'] === 'sale') {
                     $sale = $db->fetchOne("SELECT grand_total FROM sales WHERE id = ? AND warehouse_id = ?", [$payment['ref_id'], $whId]);
                     if ($sale) {
-                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$payment['ref_id']])['tot'] ?? 0);
+                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'sale' AND ref_id = ? AND status = 'active'", [$payment['ref_id']])['tot'] ?? 0);
                         $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$payment['ref_id']])['tot'] ?? 0);
                         
                         $newBalance = max(0, (float)$sale['grand_total'] - $totalPaid - $returnsTot);
@@ -422,7 +569,7 @@ class PaymentController extends BaseController {
                 } elseif ($payment['ref_type'] === 'purchase') {
                     $purch = $db->fetchOne("SELECT grand_total FROM purchases WHERE id = ? AND warehouse_id = ?", [$payment['ref_id'], $whId]);
                     if ($purch) {
-                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$payment['ref_id']])['tot'] ?? 0);
+                        $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'purchase' AND ref_id = ? AND status = 'active'", [$payment['ref_id']])['tot'] ?? 0);
                         $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'purchase_return' AND status = 'approved'", [$payment['ref_id']])['tot'] ?? 0);
                         
                         $newBalance = max(0, (float)$purch['grand_total'] - $totalPaid - $returnsTot);
@@ -447,6 +594,7 @@ class PaymentController extends BaseController {
                 $logMsg .= " — Party changed from {$payment['party_name']} to " . ($newParty['name'] ?? 'Unknown');
             }
             $this->logActivity('edit_payment', 'payments', $id, $logMsg);
+            self::clearDashboardCache((int) ($payment['warehouse_id'] ?? 0));
             $this->flash('success', "Payment {$payment['payment_no']} updated.");
 
         } catch (\Exception $e) {
@@ -498,6 +646,7 @@ class PaymentController extends BaseController {
         $ok = $this->paymentModel->deleteWithReversal($id);
         if ($ok) {
             $this->logActivity('delete_payment', 'payments', $id, 'Deleted ' . ($payment['payment_no'] ?? ''));
+            self::clearDashboardCache((int) ($payment['warehouse_id'] ?? 0));
             $this->flash('success', 'Payment ' . ($payment['payment_no'] ?? '') . ' deleted; balances reversed.');
         } else {
             $err = trim($this->paymentModel->getLastError());

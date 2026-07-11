@@ -15,8 +15,13 @@ class ListPage {
     /** Maximum inclusive span for statement date ranges. */
     public const MAX_REPORT_DAYS = 366;
 
-    public static function defaultFromDate(): string {
-        return date('Y-m-01');
+    public static function defaultFromDate(int $months = 1): string {
+        $months = max(1, $months);
+        if ($months === 1) {
+            return date('Y-m-01');
+        }
+        $start = new DateTimeImmutable('first day of this month');
+        return $start->modify('-' . ($months - 1) . ' months')->format('Y-m-d');
     }
 
     public static function defaultToDate(): string {
@@ -26,13 +31,15 @@ class ListPage {
     /**
      * Resolve from/to dates for sales, payments, purchases list pages.
      *
-     * - First visit (no from_date / to_date in query): current calendar month through today.
+     * - First visit (no from_date / to_date in query): current calendar month(s) through today.
      * - all_dates=1: no date filter (still capped at MAX_ROWS).
      * - Filter form with both dates empty: treated as all_dates.
      *
+     * @param int $defaultMonths Number of calendar months to include (1 = current month only).
      * @return array{from_date:string,to_date:string,all_dates:bool,dates_defaulted:bool}
      */
-    public static function resolveDateFiltersFromGet(): array {
+    public static function resolveDateFiltersFromGet(int $defaultMonths = 1): array {
+        $defaultMonths = max(1, $defaultMonths);
         $get      = $_GET;
         $allDates = isset($get['all_dates']) && (string) $get['all_dates'] === '1';
 
@@ -50,7 +57,7 @@ class ListPage {
 
         if (!$fromExplicit && !$toExplicit) {
             return [
-                'from_date'       => self::defaultFromDate(),
+                'from_date'       => self::defaultFromDate($defaultMonths),
                 'to_date'         => self::defaultToDate(),
                 'all_dates'       => false,
                 'dates_defaulted' => true,
@@ -73,7 +80,7 @@ class ListPage {
             $to = self::defaultToDate();
         }
         if ($from === '') {
-            $from = self::defaultFromDate();
+            $from = self::defaultFromDate($defaultMonths);
         }
 
         return [

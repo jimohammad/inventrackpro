@@ -30,7 +30,6 @@ class ExpenseController extends BaseController {
         $lastMonthEnd    = date('Y-m-t', strtotime('last month'));
         $expenseThisMonth = $this->expenseModel->sumAmountBetween($thisMonthStart, $thisMonthEnd);
         $expenseLastMonth = $this->expenseModel->sumAmountBetween($lastMonthStart, $lastMonthEnd);
-        $db         = Database::getInstance();
         $accounts   = self::getAccounts();
         $pageTitle  = 'Expenses';
         $page       = 'expenses';
@@ -66,26 +65,46 @@ class ExpenseController extends BaseController {
             $this->redirect('?page=expenses&new=1');
         }
 
-        $saved = 0;
-        foreach ($rows as $row) {
-            $amount = (float)($row['amount'] ?? 0);
-            if ($amount <= 0) continue;
+        // Single transaction for the whole batch: either every row (and its account
+        // deduction) is saved, or none are. Previously each row committed on its own,
+        // so a mid-batch failure left partial deductions applied.
+        $db       = Database::getInstance();
+        $saved    = 0;
+        $savedIds = [];
+        $db->beginTransaction();
+        try {
+            foreach ($rows as $row) {
+                $amount = (float)($row['amount'] ?? 0);
+                if ($amount <= 0) continue;
 
-            $id = $this->expenseModel->create([
-                'category_id' => (int)($row['category_id'] ?? 0) ?: null,
-                'account_id'  => $accountId,
-                'amount'      => $amount,
-                'date'        => $date,
-                'description' => trim($row['description'] ?? ''),
-            ]);
+                $id = $this->expenseModel->createInTransaction([
+                    'category_id' => (int)($row['category_id'] ?? 0) ?: null,
+                    'account_id'  => $accountId,
+                    'amount'      => $amount,
+                    'date'        => $date,
+                    'description' => trim($row['description'] ?? ''),
+                ]);
 
-            if ($id) {
-                $this->logActivity('create_expense', 'expenses', (int)$id);
-                $saved++;
+                if ($id) {
+                    $savedIds[] = (int)$id;
+                    $saved++;
+                }
             }
+            $db->commit();
+        } catch (\Exception $e) {
+            $db->rollBack();
+            error_log('Expense batch store failed: ' . $e->getMessage());
+            $this->flash('error', 'Save failed — no expenses were recorded. Please try again.');
+            $this->redirect('?page=expenses');
+            return;
+        }
+
+        foreach ($savedIds as $sid) {
+            $this->logActivity('create_expense', 'expenses', $sid);
         }
 
         if ($saved > 0) {
+            self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', "{$saved} expense(s) recorded successfully.");
         } else {
             $this->flash('error', 'No expenses saved. Check amounts.');
@@ -103,9 +122,14 @@ class ExpenseController extends BaseController {
         }
 
         $id = $this->inputInt('id');
-        $this->expenseModel->delete($id);
-        $this->logActivity('delete_expense', 'expenses', $id);
-        $this->flash('success', 'Expense deleted.');
+        $result = $this->expenseModel->delete($id);
+        if (!$result) {
+            $this->flash('warning', 'Expense not found or already deleted.');
+        } else {
+            $this->logActivity('delete_expense', 'expenses', $id);
+            self::clearDashboardCache(Auth::warehouseId());
+            $this->flash('success', 'Expense deleted.');
+        }
         $this->redirect('?page=expenses');
     }
 
@@ -120,9 +144,9 @@ class ExpenseController extends BaseController {
              FROM expenses e
              LEFT JOIN expense_categories ec ON ec.id = e.category_id
              LEFT JOIN accounts a ON a.id = e.account_id
-             WHERE e.id = ?", [$id]
+             WHERE e.id = ? AND e.warehouse_id = ?", [$id, Auth::warehouseId()]
         );
-        if (!$expense) { $this->flash('error', 'Expense not found.'); $this->redirect('?page=expenses'); }
+        if (!$expense) { $this->flash('error', 'Expense not found.'); $this->redirect('?page=expenses'); return; }
 
         $categories = $this->expenseModel->getCategories();
         $accounts   = self::getAccounts();
@@ -142,16 +166,27 @@ class ExpenseController extends BaseController {
         $id = $this->inputInt('id');
         $db = Database::getInstance();
 
+        // Zero/negative amounts would inflate the account balance in the diff math below.
+        $newAmount = $this->inputFloat('amount');
+        if ($newAmount <= 0) {
+            $this->flash('error', 'Amount must be greater than zero.');
+            $this->redirect('?page=expenses&action=edit&id=' . $id);
+            return;
+        }
+
         $db->beginTransaction();
         try {
-            $old = $db->fetchOne("SELECT * FROM expenses WHERE id = ? FOR UPDATE", [$id]);
+            $old = $db->fetchOne(
+                "SELECT * FROM expenses WHERE id = ? AND warehouse_id = ? FOR UPDATE",
+                [$id, Auth::warehouseId()]
+            );
             if (!$old) { 
                 $db->rollback();
                 $this->flash('error', 'Expense not found.'); 
                 $this->redirect('?page=expenses'); 
+                return;
             }
 
-            $newAmount    = $this->inputFloat('amount');
             $oldAmount    = (float)$old['amount'];
             $newAccountId = $this->inputInt('account_id') ?: (int)$old['account_id'];
             $oldAccountId = (int)$old['account_id'];
@@ -189,10 +224,12 @@ class ExpenseController extends BaseController {
 
             $db->commit();
             $this->logActivity('edit_expense', 'expenses', $id, "Edited {$old['expense_no']}");
+            self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', "Expense {$old['expense_no']} updated.");
         } catch (\Exception $e) {
             $db->rollBack();
-            $this->flash('error', 'Failed: ' . $e->getMessage());
+            error_log("Expense update failed (id={$id}): " . $e->getMessage());
+            $this->flash('error', 'Failed to update expense. Please try again or check server logs.');
         }
 
         $this->redirect('?page=expenses');

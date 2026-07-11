@@ -13,8 +13,7 @@
                 <i class="bi bi-search me-1"></i>Search Items
             </label>
             <input type="text" id="stockSearch" placeholder="Search items by name..."
-                   style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
-                   onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                   style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;">
         </div>
 
         <div style="flex:1;min-width:160px;">
@@ -98,7 +97,10 @@ function applyStockFilter() {
     });
 }
 
-document.getElementById('stockSearch')?.addEventListener('input', applyStockFilter);
+const stockSearchEl = document.getElementById('stockSearch');
+stockSearchEl?.addEventListener('input', applyStockFilter);
+stockSearchEl?.addEventListener('focus', function () { this.style.borderColor = '#6366f1'; });
+stockSearchEl?.addEventListener('blur', function () { this.style.borderColor = '#c7d2fe'; });
 document.getElementById('stockInOnly')?.addEventListener('change', applyStockFilter);
 applyStockFilter();
 </script>

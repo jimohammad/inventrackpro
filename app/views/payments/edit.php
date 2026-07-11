@@ -141,4 +141,28 @@ function selectEditParty(id, name) {
 document.getElementById('editPartySearch').addEventListener('blur', () => {
     setTimeout(() => document.getElementById('editPartyDrop').style.display = 'none', 200);
 });
+
+document.getElementById('editPartySearch').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const drop = document.getElementById('editPartyDrop');
+        const first = drop.querySelector('div[style*="cursor:pointer"]');
+        if (drop.style.display !== 'none' && first) {
+            first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        }
+    }
+});
+
+document.getElementById('editPayForm').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    if (e.target && e.target.tagName === 'TEXTAREA') return;
+    if (e.target && e.target.tagName === 'BUTTON') return;
+    if (e.target && e.target.tagName === 'INPUT' &&
+        !['submit', 'hidden', 'button'].includes((e.target.type || 'text').toLowerCase())) {
+        e.preventDefault();
+    }
+    if (e.target && e.target.tagName === 'SELECT') {
+        e.preventDefault();
+    }
+}, true);
 </script>

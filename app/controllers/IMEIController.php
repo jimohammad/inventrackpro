@@ -21,10 +21,13 @@ class IMEIController extends BaseController {
         }
         Auth::authorize('imei', 'view');
 
+        // Default to the session branch; other branches only when explicitly requested.
         $filters = [
             'search'       => $this->input('search', '', 'get'),
             'status'       => $this->input('status', '', 'get'),
-            'warehouse_id' => $this->inputInt('warehouse_id', 0, 'get'),
+            'warehouse_id' => isset($_GET['warehouse_id'])
+                ? $this->inputInt('warehouse_id', 0, 'get')
+                : Auth::warehouseId(),
         ];
 
         $imeis      = $this->imeiModel->getAll($filters);
@@ -51,32 +54,13 @@ class IMEIController extends BaseController {
         $warrantyMonths = 13;
 
         if ($imei !== '') {
-            // Basic rate limit to slow brute force scanning.
-            $ip = self::clientIp();
-            $cacheDir = sys_get_temp_dir() . '/imei_track_rl';
-            if (!is_dir($cacheDir)) {
-                @mkdir($cacheDir, 0700, true);
-            }
-            // Best-effort cleanup to prevent unbounded growth (delete old files).
-            foreach (@scandir($cacheDir) ?: [] as $f) {
-                if ($f === '.' || $f === '..') continue;
-                $p = $cacheDir . '/' . $f;
-                if (@is_file($p) && @filemtime($p) && @filemtime($p) < time() - 86400) {
-                    @unlink($p);
-                }
-            }
-            $rlFile = $cacheDir . '/' . md5($ip);
-            $now = time();
-            $hits = file_exists($rlFile) ? (array) @json_decode((string) file_get_contents($rlFile), true) : [];
-            $hits = array_filter($hits, static fn($t) => $t > $now - 300);
-            if (count($hits) >= 60) {
+            // Basic rate limit to slow brute force scanning (atomic, REMOTE_ADDR-keyed).
+            if (self::ipRateLimited('imei_track_rl')) {
                 http_response_code(429);
                 $error = 'Too many lookups. Please try again in a few minutes.';
                 include __DIR__ . '/../views/public/imei_track.php';
                 return;
             }
-            $hits[] = $now;
-            @file_put_contents($rlFile, json_encode(array_values($hits)));
 
             if (!preg_match('/^[A-Z0-9\\/\\-]{6,20}$/', $imei)) {
                 $error = 'Please enter a valid IMEI / serial number.';
@@ -198,43 +182,55 @@ class IMEIController extends BaseController {
             return;
         }
 
-        // Check if IMEI already exists
-        $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id, sale_id FROM imei_records WHERE imei = ?", [$imei]);
-        if ($existing) {
-            if ($existing['status'] === 'in_stock') {
-                // Already in stock — real duplicate, block it
-                $existingItem = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
-                echo json_encode(['error' => "Already in stock — {$existingItem['name']}"]);
-                return;
-            }
-
-            // Reject re-stock if this IMEI is still linked to an active sale line.
-            if (($existing['status'] ?? '') === 'sold') {
-                $hasLiveSaleLink = $db->fetchOne(
-                    "SELECT 1 AS ok
-                     FROM sale_item_imei sii
-                     JOIN sale_items si ON si.id = sii.sale_item_id
-                     JOIN sales s ON s.id = si.sale_id
-                     WHERE sii.imei_id = ? AND s.status != 'cancelled'
-                     LIMIT 1",
-                    [(int) $existing['id']]
-                );
-                if ($hasLiveSaleLink) {
-                    echo json_encode(['error' => 'Cannot re-stock: this IMEI is linked to an active sale. Use a return/cancellation flow instead.']);
+        // Check-then-insert must be atomic: lock any existing row so two concurrent
+        // scans of the same IMEI cannot both pass the duplicate check.
+        try {
+            $db->beginTransaction();
+            $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id, sale_id FROM imei_records WHERE imei = ? FOR UPDATE", [$imei]);
+            if ($existing) {
+                if ($existing['status'] === 'in_stock') {
+                    // Already in stock — real duplicate, block it
+                    $db->rollback();
+                    $existingItem = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
+                    echo json_encode(['error' => "Already in stock — {$existingItem['name']}"]);
                     return;
                 }
-            }
 
-            // Previously sold or transferred — re-stock it
-            $db->execute(
-                "UPDATE imei_records SET item_id = ?, warehouse_id = ?, status = 'in_stock', notes = 'Re-stocked via bulk scan', updated_at = NOW() WHERE id = ?",
-                [$itemId, $whId, $existing['id']]
-            );
-        } else {
-            $db->insert(
-                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at) VALUES (?, ?, ?, 'in_stock', 'Bulk scan registration', NOW())",
-                [$imei, $itemId, $whId]
-            );
+                // Reject re-stock if this IMEI is still linked to an active sale line.
+                if (($existing['status'] ?? '') === 'sold') {
+                    $hasLiveSaleLink = $db->fetchOne(
+                        "SELECT 1 AS ok
+                         FROM sale_item_imei sii
+                         JOIN sale_items si ON si.id = sii.sale_item_id
+                         JOIN sales s ON s.id = si.sale_id
+                         WHERE sii.imei_id = ? AND s.status != 'cancelled'
+                         LIMIT 1",
+                        [(int) $existing['id']]
+                    );
+                    if ($hasLiveSaleLink) {
+                        $db->rollback();
+                        echo json_encode(['error' => 'Cannot re-stock: this IMEI is linked to an active sale. Use a return/cancellation flow instead.']);
+                        return;
+                    }
+                }
+
+                // Previously sold or transferred — re-stock it
+                $db->execute(
+                    "UPDATE imei_records SET item_id = ?, warehouse_id = ?, status = 'in_stock', notes = 'Re-stocked via bulk scan', updated_at = NOW() WHERE id = ?",
+                    [$itemId, $whId, $existing['id']]
+                );
+            } else {
+                $db->insert(
+                    "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at) VALUES (?, ?, ?, 'in_stock', 'Bulk scan registration', NOW())",
+                    [$imei, $itemId, $whId]
+                );
+            }
+            $db->commit();
+        } catch (Exception $ex) {
+            $db->rollback();
+            error_log('saveImei failed: ' . $ex->getMessage());
+            echo json_encode(['error' => 'Could not save IMEI. Please retry.']);
+            return;
         }
 
         // Get updated count
@@ -256,8 +252,9 @@ class IMEIController extends BaseController {
         $db = Database::getInstance();
 
         $purchase = $db->fetchOne(
-            "SELECT p.*, pa.name as party_name FROM purchases p LEFT JOIN parties pa ON pa.id = p.party_id WHERE p.id = ?",
-            [$purchaseId]
+            "SELECT p.*, pa.name as party_name FROM purchases p LEFT JOIN parties pa ON pa.id = p.party_id
+             WHERE p.id = ? AND p.warehouse_id = ?",
+            [$purchaseId, Auth::warehouseId()]
         );
         if (!$purchase) { $this->flash('error', 'Purchase not found.'); $this->redirect('?page=purchases'); return; }
 
@@ -299,20 +296,34 @@ class IMEIController extends BaseController {
 
         $db = Database::getInstance();
 
-        $existing = $db->fetchOne("SELECT id, status, item_id FROM imei_records WHERE imei = ?", [$imei]);
-        if ($existing) {
-            $itemName = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
-            echo json_encode(['error' => "IMEI already exists — {$itemName['name']} ({$existing['status']})"]);
+        // Purchase must belong to the session branch — blocks cross-warehouse IMEI creation.
+        $purchase = $db->fetchOne(
+            "SELECT warehouse_id FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$purchaseId, Auth::warehouseId()]
+        );
+        if (!$purchase) { echo json_encode(['error' => 'Purchase not found in this branch']); return; }
+        $whId = (int) $purchase['warehouse_id'];
+
+        try {
+            $db->beginTransaction();
+            $existing = $db->fetchOne("SELECT id, status, item_id FROM imei_records WHERE imei = ? FOR UPDATE", [$imei]);
+            if ($existing) {
+                $db->rollback();
+                $itemName = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
+                echo json_encode(['error' => "IMEI already exists — {$itemName['name']} ({$existing['status']})"]);
+                return;
+            }
+            $db->insert(
+                "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at) VALUES (?, ?, ?, ?, 'in_stock', NOW())",
+                [$imei, $itemId, $whId, $purchaseId]
+            );
+            $db->commit();
+        } catch (Exception $ex) {
+            $db->rollback();
+            error_log('savePurchaseImei failed: ' . $ex->getMessage());
+            echo json_encode(['error' => 'Could not save IMEI. Please retry.']);
             return;
         }
-
-        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
-        $whId = $purchase['warehouse_id'] ?? Auth::warehouseId();
-
-        $db->insert(
-            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at) VALUES (?, ?, ?, ?, 'in_stock', NOW())",
-            [$imei, $itemId, $whId, $purchaseId]
-        );
 
         $count = $db->fetchOne(
             "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id = ? AND item_id = ?",
@@ -331,7 +342,7 @@ class IMEIController extends BaseController {
 
         if (!$this->isPost()) { echo json_encode(['error' => 'POST required']); return; }
 
-        $raw        = $this->input('imeis');
+        $raw        = $this->inputImeiBulk('imeis');
         $itemId     = $this->inputInt('item_id');
         $purchaseId = $this->inputInt('purchase_id');
 
@@ -346,9 +357,13 @@ class IMEIController extends BaseController {
         if (!$itemRow) { echo json_encode(['error' => 'Item not found']); return; }
         $minLen = (stripos($itemRow['name'], 'h40') !== false) ? 13 : 15;
 
-        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
-        if (!$purchase) { echo json_encode(['error' => 'Purchase not found']); return; }
-        $whId = $purchase['warehouse_id'] ?? Auth::warehouseId();
+        // Purchase must belong to the session branch — blocks cross-warehouse IMEI creation.
+        $purchase = $db->fetchOne(
+            "SELECT warehouse_id FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$purchaseId, Auth::warehouseId()]
+        );
+        if (!$purchase) { echo json_encode(['error' => 'Purchase not found in this branch']); return; }
+        $whId = (int) $purchase['warehouse_id'];
 
         // Parse — split on newlines, commas, semicolons; strip non-digits per token
         $lines = preg_split('/[\r\n,;]+/', $raw);
@@ -431,18 +446,22 @@ class IMEIController extends BaseController {
         return ($sum % 10 === 0);
     }
 
+    /** Sales scan bar — imei view or sales add permission. */
+    private function authorizeSaleImeiLookup(): void {
+        if (!Auth::can('imei', 'view') && !Auth::can('sales', 'add')) {
+            Auth::authorize('imei', 'view');
+        }
+    }
+
     /**
-     * AJAX: lookup IMEI — returns item info if found (for scan-first sales)
+     * Resolve one IMEI for the scan-first sales flow (shared by single + bulk lookup).
+     *
+     * @return array<string, mixed>
      */
-    public function lookupImei(): void {
-        header('Content-Type: application/json');
+    private function resolveSaleLookupImei(string $imei): array {
+        $db  = Database::getInstance();
+        $whId = Auth::warehouseId();
 
-        $imei = strtoupper(trim($this->input('imei', '', 'get')));
-        if (!$imei) { echo json_encode(['found' => false]); return; }
-
-        $db = Database::getInstance();
-
-        // Prefer sellable rows first (current warehouse in_stock/returned, then other warehouses).
         $row = $db->fetchOne(
             "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
                     i.name as item_name, i.sale_price, i.sku, i.has_imei
@@ -458,21 +477,20 @@ class IMEIController extends BaseController {
                 END,
                 ir.id DESC
              LIMIT 1",
-            [$imei, Auth::warehouseId(), Auth::warehouseId()]
+            [$imei, $whId, $whId]
         );
 
         if (!$row) {
-            echo json_encode([
+            return [
                 'found'    => false,
                 'accepted' => true,
                 'imei'     => $imei,
                 'message'  => 'IMEI not registered — select item',
-            ]);
-            return;
+            ];
         }
+
         if ($row['status'] === 'sold') {
-            // Reuse sale validator auto-heal logic for stale sold rows (returned but status not released).
-            $this->imeiModel->validateList([$imei], (int)$row['item_id'], Auth::warehouseId());
+            $this->imeiModel->validateList([$imei], (int) $row['item_id'], $whId);
 
             $row = $db->fetchOne(
                 "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
@@ -489,38 +507,102 @@ class IMEIController extends BaseController {
                     END,
                     ir.id DESC
                  LIMIT 1",
-                [$imei, Auth::warehouseId(), Auth::warehouseId()]
+                [$imei, $whId, $whId]
             );
             if (!$row) {
-                echo json_encode(['found' => false, 'message' => 'IMEI not found after refresh.']);
-                return;
+                return ['found' => false, 'message' => 'IMEI not found after refresh.'];
             }
             if ($row['status'] === 'sold') {
-                echo json_encode(['found' => false, 'message' => "Already sold ({$row['item_name']})."]);
-                return;
+                return ['found' => false, 'message' => "Already sold ({$row['item_name']})."];
             }
         }
-        if (!in_array($row['status'], ['in_stock', 'returned'])) {
-            echo json_encode(['found' => false, 'message' => "Not available — status: {$row['status']}"]);
-            return;
+
+        if (!in_array($row['status'], ['in_stock', 'returned'], true)) {
+            return ['found' => false, 'message' => "Not available — status: {$row['status']}"];
         }
 
-        echo json_encode([
+        return [
             'found'      => true,
             'imei'       => $row['imei'],
-            'item_id'    => (int)$row['item_id'],
+            'item_id'    => (int) $row['item_id'],
             'item_name'  => $row['item_name'],
             'sale_price' => $row['sale_price'],
             'sku'        => $row['sku'],
-            'has_imei'   => (int)$row['has_imei'],
-        ]);
+            'has_imei'   => (int) $row['has_imei'],
+        ];
+    }
+
+    /**
+     * AJAX: lookup IMEI — returns item info if found (for scan-first sales)
+     */
+    public function lookupImei(): void {
+        $this->authorizeSaleImeiLookup();
+        header('Content-Type: application/json');
+
+        $imei = strtoupper(trim($this->input('imei', '', 'get')));
+        if ($imei === '') {
+            echo json_encode(['found' => false]);
+            return;
+        }
+
+        echo json_encode($this->resolveSaleLookupImei($imei));
+    }
+
+    /**
+     * AJAX: bulk IMEI lookup for paste-import (max 50 per request).
+     */
+    public function lookupImeiBulk(): void {
+        $this->authorizeSaleImeiLookup();
+        header('Content-Type: application/json');
+
+        $imeis = $this->parseBulkImeiInput();
+        if ($imeis === []) {
+            echo json_encode(['results' => (object) []]);
+            return;
+        }
+
+        $results = [];
+        foreach ($imeis as $imei) {
+            $results[$imei] = $this->resolveSaleLookupImei($imei);
+        }
+
+        echo json_encode(['results' => $results]);
+    }
+
+    /** @return list<string> */
+    private function parseBulkImeiInput(): array {
+        $rawList = [];
+
+        $getRaw = trim((string) $this->input('imeis', '', 'get'));
+        if ($getRaw !== '') {
+            $rawList = preg_split('/[\s,;]+/', strtoupper($getRaw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        } elseif ($this->isPost()) {
+            $body = json_decode((string) file_get_contents('php://input'), true);
+            if (is_array($body['imeis'] ?? null)) {
+                foreach ($body['imeis'] as $part) {
+                    $part = strtoupper(trim((string) $part));
+                    if ($part !== '') {
+                        $rawList[] = $part;
+                    }
+                }
+            }
+        }
+
+        $unique = [];
+        foreach ($rawList as $imei) {
+            $unique[$imei] = true;
+        }
+
+        return array_slice(array_keys($unique), 0, 50);
     }
 
     /**
      * IMEI Lifecycle — full timeline for any IMEI
      */
     public function lifecycle(): void {
-        // Visible to all logged-in users — no permission required
+        // Visible to all logged-in users, but cost/supplier details below are
+        // masked unless the user can view purchases.
+        $canSeeCost = Auth::can('purchases', 'view');
 
         $imei   = trim($this->input('imei', '', 'get'));
         $record = null;
@@ -531,7 +613,7 @@ class IMEIController extends BaseController {
 
             // Find the IMEI record
             $record = $db->fetchOne(
-                "SELECT ir.*, i.name as item_name, i.sku, i.sale_price, i.purchase_price, i.has_imei,
+                "SELECT ir.*, i.name as item_name, i.sku, i.sale_price, i.has_imei,
                         w.name as warehouse_name
                  FROM imei_records ir
                  JOIN items i ON i.id = ir.item_id
@@ -544,6 +626,10 @@ class IMEIController extends BaseController {
                 $id = $record['id'];
                 $itemId = $record['item_id'];
 
+                // desc strings are rendered as raw HTML in the view (they carry <br>),
+                // so every DB-sourced value must be escaped at assembly time.
+                $e = static fn($v) => htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8');
+
                 // 1. Registration / Purchase
                 if ($record['purchase_id']) {
                     $purch = $db->fetchOne(
@@ -555,13 +641,17 @@ class IMEIController extends BaseController {
                         [$itemId, $record['purchase_id']]
                     );
                     if ($purch) {
+                        $purchDesc = "Invoice: {$e($purch['invoice_no'])}";
+                        if ($canSeeCost) {
+                            $purchDesc .= "<br>Supplier: {$e($purch['supplier_name'])}<br>Cost: " . APP_CURRENCY . " " . number_format($purch['unit_price'] ?? 0, DECIMAL_PLACES);
+                        }
                         $timeline[] = [
                             'date'  => $purch['date'],
                             'icon'  => 'bi-cart-plus',
                             'color' => '#3b82f6',
                             'title' => 'Purchased',
-                            'desc'  => "Invoice: {$purch['invoice_no']}<br>Supplier: {$purch['supplier_name']}<br>Cost: " . APP_CURRENCY . " " . number_format($purch['unit_price'] ?? 0, DECIMAL_PLACES),
-                            'link'  => "?page=purchases&action=detail&id={$record['purchase_id']}",
+                            'desc'  => $purchDesc,
+                            'link'  => $canSeeCost ? "?page=purchases&action=detail&id={$record['purchase_id']}" : null,
                         ];
                     }
                 }
@@ -572,7 +662,7 @@ class IMEIController extends BaseController {
                     'icon'  => 'bi-upc-scan',
                     'color' => '#6366f1',
                     'title' => 'Registered in System',
-                    'desc'  => "Warehouse: {$record['warehouse_name']}" . ($record['notes'] ? "<br>Note: {$record['notes']}" : ""),
+                    'desc'  => "Warehouse: {$e($record['warehouse_name'])}" . ($record['notes'] ? "<br>Note: {$e($record['notes'])}" : ""),
                     'link'  => null,
                 ];
 
@@ -599,7 +689,7 @@ class IMEIController extends BaseController {
                         'icon'  => 'bi-receipt',
                         'color' => $color,
                         'title' => $title,
-                        'desc'  => "Invoice: {$sl['invoice_no']}<br>Customer: " . ($sl['customer_name'] ?? '—') .
+                        'desc'  => "Invoice: {$e($sl['invoice_no'])}<br>Customer: " . $e($sl['customer_name'] ?? '—') .
                                    "<br>Price: " . APP_CURRENCY . " " . number_format($sl['unit_price'] ?? 0, DECIMAL_PLACES),
                         'link'  => "?page=sales&action=detail&id={$sl['sale_id']}",
                     ];
@@ -628,8 +718,8 @@ class IMEIController extends BaseController {
                             'icon'  => 'bi-exclamation-triangle',
                             'color' => '#dc2626',
                             'title' => 'Stale sale link (data fix needed)',
-                            'desc'  => "imei_records.sale_id still points to <strong>{$orphanInv}</strong> ({$orphanCust}) but the line was removed."
-                                       . " Lifecycle ignores it. Run database/heal_orphan_imei_sale_id.sql to clean status and sale_id.",
+                            'desc'  => "imei_records.sale_id still points to <strong>{$e($orphanInv)}</strong> ({$e($orphanCust)}) but the line was removed."
+                                       . " Lifecycle ignores it. Clear stale sale_id on this IMEI (set sale_id = NULL, status = 'in_stock') or fix via IMEI audit.",
                             'link'  => null,
                         ];
                     }
@@ -653,7 +743,7 @@ class IMEIController extends BaseController {
                         'icon'  => 'bi-arrow-return-left',
                         'color' => '#f59e0b',
                         'title' => $type,
-                        'desc'  => "Return: {$ret['return_no']}<br>Party: {$ret['party_name']}",
+                        'desc'  => "Return: {$e($ret['return_no'])}<br>Party: {$e($ret['party_name'])}",
                         'link'  => null,
                     ];
                 }
@@ -678,7 +768,7 @@ class IMEIController extends BaseController {
                         'icon'  => 'bi-shield-check',
                         'color' => '#dc2626',
                         'title' => "Warranty — {$role}",
-                        'desc'  => "Ref: {$wr['replacement_no']}<br>Customer: {$wr['customer_name']}<br>Fault: {$wr['fault_description']}",
+                        'desc'  => "Ref: {$e($wr['replacement_no'])}<br>Customer: {$e($wr['customer_name'])}<br>Fault: {$e($wr['fault_description'])}",
                         'link'  => null,
                     ];
                 }
@@ -843,13 +933,34 @@ class IMEIController extends BaseController {
 
         try {
             $db->beginTransaction();
-            // Child tables reference imei_records without ON DELETE CASCADE
-            $db->execute(
-                "DELETE rii FROM return_item_imei rii
-                 INNER JOIN imei_records ir ON ir.id = rii.imei_id
-                 WHERE {$scope}",
+
+            // IMEIs with sale/return history must NOT be hard-deleted — that would
+            // destroy the sale_item_imei / return_item_imei audit trail. Mark them
+            // 'transferred' instead so stock counts realign but history survives.
+            $histRow = $db->fetchOne(
+                "SELECT COUNT(*) as c FROM imei_records ir
+                 WHERE {$scope}
+                   AND (EXISTS (SELECT 1 FROM return_item_imei rii WHERE rii.imei_id = ir.id)
+                     OR EXISTS (SELECT 1 FROM sale_item_imei sii WHERE sii.imei_id = ir.id))",
                 $params
             );
+            $preserved = (int)($histRow['c'] ?? 0);
+            if ($preserved > 0) {
+                $note = 'Removed from stock via IMEI clear on ' . date('Y-m-d H:i') . ' (history preserved)';
+                $db->execute(
+                    "UPDATE imei_records ir
+                     SET ir.status = 'transferred',
+                         ir.notes = CONCAT_WS(' | ', ir.notes, ?),
+                         ir.updated_at = NOW()
+                     WHERE {$scope}
+                       AND (EXISTS (SELECT 1 FROM return_item_imei rii WHERE rii.imei_id = ir.id)
+                         OR EXISTS (SELECT 1 FROM sale_item_imei sii WHERE sii.imei_id = ir.id))",
+                    array_merge([$note], $params)
+                );
+            }
+
+            // Remaining in-scope records have no sale/return history. Their join rows
+            // (purchase/transfer) reference imei_records without ON DELETE CASCADE.
             $db->execute(
                 "DELETE sti FROM stock_transfer_imei sti
                  INNER JOIN imei_records ir ON ir.id = sti.imei_id
@@ -863,23 +974,20 @@ class IMEIController extends BaseController {
                 $params
             );
             $db->execute(
-                "DELETE sii FROM sale_item_imei sii
-                 INNER JOIN imei_records ir ON ir.id = sii.imei_id
-                 WHERE {$scope}",
-                $params
-            );
-            $db->execute(
                 "DELETE FROM imei_records
                  WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
                 $params
             );
             $db->commit();
+            $deleted = $count - $preserved;
             $this->logActivity('clear_imeis', 'imei_records', $itemId,
-                "Cleared {$count} in_stock/returned IMEIs (and dependent join rows) for item #{$itemId} in warehouse #{$whId}");
-            echo json_encode(['ok' => true, 'deleted' => $count, 'msg' => "Deleted {$count} IMEI(s)."]);
+                "Cleared {$count} in_stock/returned IMEIs for item #{$itemId} in warehouse #{$whId}: {$deleted} deleted, {$preserved} marked transferred (sale/return history preserved)");
+            $msg = "Removed {$count} IMEI(s) from stock" . ($preserved > 0 ? " ({$preserved} kept for audit history)" : '') . '.';
+            echo json_encode(['ok' => true, 'deleted' => $count, 'msg' => $msg]);
         } catch (Exception $e) {
             $db->rollback();
-            echo json_encode(['ok' => false, 'msg' => 'Failed: ' . $e->getMessage()]);
+            error_log('clearItemImeis failed: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Failed to clear IMEIs. Please retry.']);
         }
     }
 
@@ -939,7 +1047,9 @@ class IMEIController extends BaseController {
 
         $itemId       = $this->inputInt('item_id');
         $whId         = Auth::warehouseId();
-        $scannedRaw   = $this->input('scanned_imeis');
+        // Bulk scan lists easily exceed the default 1000-char input cap; a silent
+        // truncation here would wrongly mark real stock as 'transferred'.
+        $scannedRaw   = $this->inputImeiBulk('scanned_imeis');
         $scanned      = array_values(array_filter(array_map('trim', explode("\n", $scannedRaw))));
 
         $db = Database::getInstance();

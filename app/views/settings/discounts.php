@@ -72,7 +72,7 @@
     <div class="disc-card" id="discountForm" style="display:<?= $openNewDiscount ? 'block' : 'none' ?>;">
         <div class="disc-card-head">
             <span class="disc-card-title"><i class="bi bi-tag me-2" style="color:#6366f1;"></i>Give Discount</span>
-            <span class="disc-card-sub">Quick formula: per piece × qty = total</span>
+            <span class="disc-card-sub">Per piece × qty fills total — you can edit total directly</span>
         </div>
         <div class="disc-form-wrap">
             <form method="POST" action="?page=discounts&action=store" id="discountCreateForm">
@@ -103,7 +103,7 @@
                     </div>
                     <div class="col-md-1">
                         <label class="disc-label">Per Piece</label>
-                        <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:700;">
+                        <input type="number" id="discPerPiece" class="form-control form-control-sm" step="0.001" min="0" placeholder="0.000" style="font-weight:700;">
                     </div>
                     <div class="col-md-1">
                         <label class="disc-label">Qty</label>
@@ -113,7 +113,7 @@
                         <label class="disc-label">Total <span class="text-danger">*</span></label>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text" style="font-weight:800;"><?= APP_CURRENCY ?></span>
-                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required readonly placeholder="0.000" style="font-weight:800;color:#059669;background:#f8fafc;">
+                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:800;color:#059669;" title="Auto-filled from per piece × qty, or enter manually">
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -157,7 +157,7 @@
                 <tbody>
                     <?php foreach ($discounts as $d): ?>
                     <tr>
-                        <td class="disc-no"><?= $d['discount_no'] ?></td>
+                        <td class="disc-no"><?= htmlspecialchars($d['discount_no']) ?></td>
                         <td><?= date('d M Y', strtotime($d['date'])) ?></td>
                         <td style="font-weight:600;"><?= htmlspecialchars($d['party_name']) ?></td>
                         <td class="disc-muted">
@@ -171,7 +171,7 @@
                                 <a href="?page=discounts&action=edit&id=<?= $d['id'] ?>" class="btn disc-edit pin-protect" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
-                                <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" target="_blank" rel="noopener noreferrer" class="btn disc-print" title="Print">
+                                <a href="?page=discounts&action=print&id=<?= $d['id'] ?>" class="btn disc-print" title="Print">
                                     <i class="bi bi-printer"></i>
                                 </a>
                                 <form method="POST" action="?page=discounts&action=delete" style="display:inline;" class="discount-delete-form" data-amount="<?= number_format($d['amount'], DECIMAL_PLACES) ?>">
@@ -205,11 +205,25 @@ if (window.jQuery) {
     });
 }
 
-function calcDiscTotal() {
-    var perPiece = parseFloat(document.getElementById('discPerPiece').value) || 0;
-    var qty = parseInt(document.getElementById('discQty').value) || 1;
+var discTotalManual = false;
+
+function calcDiscTotal(force) {
+    if (discTotalManual && !force) {
+        return;
+    }
+    var perPieceEl = document.getElementById('discPerPiece');
+    var qtyEl = document.getElementById('discQty');
+    var totalEl = document.getElementById('discTotalAmt');
+    if (!perPieceEl || !qtyEl || !totalEl) {
+        return;
+    }
+    var perPiece = parseFloat(perPieceEl.value) || 0;
+    var qty = parseInt(qtyEl.value, 10) || 1;
+    if (perPiece <= 0) {
+        return;
+    }
     var total = perPiece * qty;
-    document.getElementById('discTotalAmt').value = total > 0 ? total.toFixed(3) : '';
+    totalEl.value = total > 0 ? total.toFixed(3) : '';
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -224,36 +238,37 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     if (cancelBtn) {
-        cancelBtn.addEventListener('click', function() { formWrap.style.display = 'none'; });
+        cancelBtn.addEventListener('click', function() {
+            formWrap.style.display = 'none';
+            discTotalManual = false;
+        });
+    }
+    function onFormulaInput() {
+        calcDiscTotal(false);
     }
     if (perPiece) {
-        perPiece.addEventListener('input', calcDiscTotal);
-        perPiece.addEventListener('change', calcDiscTotal);
-        perPiece.addEventListener('keyup', calcDiscTotal);
+        perPiece.addEventListener('input', onFormulaInput);
+        perPiece.addEventListener('change', onFormulaInput);
     }
     if (qty) {
-        qty.addEventListener('input', calcDiscTotal);
-        qty.addEventListener('change', calcDiscTotal);
-        qty.addEventListener('keyup', calcDiscTotal);
+        qty.addEventListener('input', onFormulaInput);
+        qty.addEventListener('change', onFormulaInput);
     }
-    if (perPiece && qty) {
-        calcDiscTotal();
+    if (totalInput) {
+        totalInput.addEventListener('input', function() {
+            discTotalManual = true;
+            totalInput.setCustomValidity('');
+        });
     }
     if (discountCreateForm) {
         discountCreateForm.addEventListener('submit', function() {
-            calcDiscTotal();
             if (totalInput) {
                 if (!totalInput.value || parseFloat(totalInput.value) <= 0) {
-                    totalInput.setCustomValidity('Total must be greater than zero (Per Piece x Qty).');
+                    totalInput.setCustomValidity('Total must be greater than zero.');
                 } else {
                     totalInput.setCustomValidity('');
                 }
             }
-        });
-    }
-    if (totalInput) {
-        totalInput.addEventListener('input', function() {
-            totalInput.setCustomValidity('');
         });
     }
 

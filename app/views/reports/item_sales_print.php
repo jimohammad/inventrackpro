@@ -1,56 +1,44 @@
+<?php
+$companyName = $settings['company_name'] ?? PDF_COMPANY_NAME;
+$periodLabel = date('d M Y', strtotime($fromDate)) . ' — ' . date('d M Y', strtotime($toDate));
+$lineCount   = count($rows);
+$money = function (float $v): string {
+    return APP_CURRENCY . ' ' . number_format($v, DECIMAL_PLACES);
+};
+$qty      = (float) ($summary['qty'] ?? 0);
+$revenue  = (float) ($summary['revenue'] ?? 0);
+$invoices = (int) ($summary['invoices'] ?? 0);
+$avgPrice = (float) ($summary['avg_price'] ?? 0);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Item Sales — <?= htmlspecialchars($item['name']) ?></title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Segoe UI',Arial,sans-serif; font-size:12px; color:#1e293b; background:#fff; }
-        .page { padding:28px 32px; max-width:820px; margin:0 auto; }
-
-        .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:14px; border-bottom:2px solid #1e3a5f; }
-        .company-name { font-size:19px; font-weight:800; color:#1e3a5f; }
-        .company-sub  { font-size:10px; color:#64748b; margin-top:2px; }
-        .doc-title { font-size:16px; font-weight:700; color:#1e3a5f; text-align:right; }
-        .doc-sub   { font-size:10px; color:#64748b; text-align:right; margin-top:3px; }
-
+        <?php include __DIR__ . '/partials/print_teal_base.css.php'; ?>
         .item-box {
-            background:#f8faff; border:1px solid #e0e7ff; border-radius:8px;
-            padding:12px 16px; margin-bottom:16px;
-            display:flex; justify-content:space-between; align-items:center;
+            background: #ecfeff;
+            border: 1px solid #a5f3fc;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
         }
-        .item-name { font-size:14px; font-weight:700; color:#1e3a5f; }
-        .item-meta  { font-size:10px; color:#64748b; margin-top:3px; }
-        .period     { font-size:11px; color:#64748b; text-align:right; }
-
-        .summary-row { display:flex; gap:10px; margin-bottom:16px; }
-        .sbox { flex:1; border:1px solid #e0e7ff; border-radius:7px; padding:9px 12px; text-align:center; }
-        .sbox-label { font-size:9px; color:#64748b; text-transform:uppercase; font-weight:600; }
-        .sbox-value { font-size:13px; font-weight:700; color:#1e3a5f; margin-top:3px; }
-
-        .section-title { font-size:11px; font-weight:700; color:#1e3a5f; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #e0e7ff; }
-
-        table { width:100%; border-collapse:collapse; margin-bottom:18px; }
-        thead tr { background:#1e3a5f; }
-        thead th { color:#fff; padding:7px 10px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
-        tbody tr:nth-child(even) { background:#f8faff; }
-        tbody td { padding:6px 10px; border-bottom:1px solid #f0f3f8; font-size:11px; }
-        tfoot tr { background:#eef2ff; border-top:2px solid #c7d2fe; }
-        tfoot td { padding:7px 10px; font-weight:700; font-size:11px; }
-
-        .text-right  { text-align:right; }
-        .text-center { text-align:center; }
-        .green { color:#059669; font-weight:700; }
-        .purple { color:#6366f1; font-weight:700; }
-
-        .two-col { display:flex; gap:16px; margin-bottom:16px; }
-        .two-col > div { flex:1; }
-
-        .footer { margin-top:20px; padding-top:12px; border-top:1px solid #e0e7ff; display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; }
-
-        @media print {
-            body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-        }
+        .item-name { font-size: 14px; font-weight: 800; color: #0e7490; }
+        .item-meta { font-size: 11px; color: #64748b; margin-top: 3px; }
+        .item-period { font-size: 11px; color: #0f766e; text-align: right; white-space: nowrap; }
+        .item-period strong { color: #0e7490; display: block; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+        .sbox-rev { color: #047857; }
+        .amt { font-weight: 700; color: #047857; }
+        .qty { font-weight: 700; color: #0e7490; }
+        .pct { color: #94a3b8; font-size: 9px; }
+        .detail-wrap { margin-bottom: 8px; }
+        table.detail tbody td.rev { color: #047857; }
+        table.detail tfoot td.rev { color: #047857; text-align: right; }
     </style>
 </head>
 <body>
@@ -58,15 +46,12 @@
 
     <div class="header">
         <div>
-            <div class="company-name"><?= htmlspecialchars($settings['company_name'] ?? APP_NAME) ?></div>
-            <div class="company-sub"><?= htmlspecialchars($settings['company_address'] ?? '') ?></div>
-            <?php if (!empty($settings['company_phone'])): ?>
-            <div class="company-sub">Tel: <?= htmlspecialchars($settings['company_phone']) ?></div>
-            <?php endif; ?>
+            <div class="company-name"><?= htmlspecialchars((string) $companyName) ?></div>
+            <div class="company-sub">Item Sales Report</div>
         </div>
         <div>
             <div class="doc-title">Item Sales Report</div>
-            <div class="doc-sub">Printed: <?= date('d M Y, h:i A') ?></div>
+            <div class="doc-meta"><?= $lineCount ?> line<?= $lineCount === 1 ? '' : 's' ?> · <?= date('d M Y, h:i A') ?></div>
         </div>
     </div>
 
@@ -74,113 +59,141 @@
         <div>
             <div class="item-name"><?= htmlspecialchars($item['name']) ?></div>
             <div class="item-meta">
-                <?php if ($item['sku']): ?>SKU: <?= htmlspecialchars((string) $item['sku']) ?> &nbsp;|&nbsp;<?php endif; ?>
-                Sale Price: <?= APP_CURRENCY ?> <?= number_format($item['sale_price'], DECIMAL_PLACES) ?>
+                <?php if (!empty($item['sku'])): ?>SKU: <?= htmlspecialchars((string) $item['sku']) ?> · <?php endif; ?>
+                Sale Price: <?= $money((float) $item['sale_price']) ?>
             </div>
         </div>
-        <div class="period">
-            <strong>Period:</strong><br>
-            <?= date('d M Y', strtotime($fromDate)) ?> — <?= date('d M Y', strtotime($toDate)) ?>
+        <div class="item-period">
+            <strong>Period</strong>
+            <?= htmlspecialchars($periodLabel) ?>
         </div>
     </div>
+
+    <?php if (empty($rows)): ?>
+    <div class="empty">No sales found for this item in the selected period.</div>
+    <?php else: ?>
 
     <div class="summary-row">
         <div class="sbox">
-            <div class="sbox-label">Total Qty Sold</div>
-            <div class="sbox-value purple"><?= number_format($summary['qty']) ?> units</div>
+            <div class="sbox-label">Qty Sold</div>
+            <div class="sbox-value"><?= number_format($qty) ?></div>
         </div>
         <div class="sbox">
-            <div class="sbox-label">Total Revenue</div>
-            <div class="sbox-value green"><?= APP_CURRENCY ?> <?= number_format($summary['revenue'], DECIMAL_PLACES) ?></div>
+            <div class="sbox-label">Revenue</div>
+            <div class="sbox-value sbox-rev"><?= $money($revenue) ?></div>
         </div>
         <div class="sbox">
-            <div class="sbox-label">No. of Invoices</div>
-            <div class="sbox-value"><?= $summary['invoices'] ?></div>
+            <div class="sbox-label">Invoices</div>
+            <div class="sbox-value"><?= $invoices ?></div>
         </div>
         <div class="sbox">
-            <div class="sbox-label">Avg Selling Price</div>
-            <div class="sbox-value"><?= APP_CURRENCY ?> <?= $summary['qty'] > 0 ? number_format($summary['revenue'] / $summary['qty'], DECIMAL_PLACES) : '0.000' ?></div>
+            <div class="sbox-label">Avg Price</div>
+            <div class="sbox-value"><?= $money($avgPrice) ?></div>
         </div>
     </div>
 
-    <!-- Party Summary -->
-    <div class="section-title">Sales by Party</div>
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Party Name</th>
-                <th class="text-center">Qty</th>
-                <th class="text-right">Amount</th>
-                <th class="text-right">Share %</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($partyBreakdown as $i => $pb):
-            $share = $summary['revenue'] > 0 ? ($pb['total'] / $summary['revenue'] * 100) : 0;
-        ?>
-        <tr>
-            <td><?= $i + 1 ?></td>
-            <td style="font-weight:600;"><?= htmlspecialchars($pb['name']) ?></td>
-            <td class="text-center purple"><?= $pb['qty'] ?></td>
-            <td class="text-right green"><?= APP_CURRENCY ?> <?= number_format($pb['total'], DECIMAL_PLACES) ?></td>
-            <td class="text-right" style="color:#64748b;"><?= number_format($share, 1) ?>%</td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-        <tfoot>
-            <tr>
-                <td colspan="2">Total</td>
-                <td class="text-center purple"><?= $summary['qty'] ?></td>
-                <td class="text-right green"><?= APP_CURRENCY ?> <?= number_format($summary['revenue'], DECIMAL_PLACES) ?></td>
-                <td class="text-right">100%</td>
-            </tr>
-        </tfoot>
-    </table>
+    <?php if (!empty($partyBreakdown) || !empty($monthlyBreakdown)): ?>
+    <div class="summary-grid">
+        <?php if (!empty($partyBreakdown)): ?>
+        <div class="summary-panel">
+            <h3>Sales by Party</h3>
+            <table class="mini-table">
+                <thead>
+                    <tr><th>#</th><th>Party</th><th class="num">Qty</th><th class="num">Amt</th><th class="num">%</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($partyBreakdown as $i => $pb):
+                    $share = $revenue > 0 ? ($pb['total'] / $revenue * 100) : 0;
+                ?>
+                <tr>
+                    <td><?= $i + 1 ?></td>
+                    <td class="party"><strong><?= htmlspecialchars($pb['name']) ?></strong></td>
+                    <td class="num qty"><?= (int) $pb['qty'] ?></td>
+                    <td class="num amt"><?= number_format((float) $pb['total'], DECIMAL_PLACES) ?></td>
+                    <td class="num pct"><?= number_format($share, 1) ?>%</td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($monthlyBreakdown)): ?>
+        <div class="summary-panel">
+            <h3>Monthly Trend</h3>
+            <table class="mini-table">
+                <thead>
+                    <tr><th>Month</th><th class="num">Qty</th><th class="num">Revenue</th><th class="num">%</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($monthlyBreakdown as $mb):
+                    $share = $revenue > 0 ? ($mb['total'] / $revenue * 100) : 0;
+                ?>
+                <tr>
+                    <td><?= date('M Y', strtotime($mb['month'] . '-01')) ?></td>
+                    <td class="num qty"><?= (int) $mb['qty'] ?></td>
+                    <td class="num amt"><?= number_format((float) $mb['total'], DECIMAL_PLACES) ?></td>
+                    <td class="num pct"><?= number_format($share, 1) ?>%</td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
-    <!-- All Transactions -->
-    <div class="section-title">All Transactions</div>
-    <table>
-        <thead>
+    <div class="detail-wrap">
+        <div class="detail-bar">All Transactions — <?= $lineCount ?></div>
+        <table class="detail">
+            <thead>
+                <tr>
+                    <th style="width:44px;">Date</th>
+                    <th style="width:68px;">Invoice</th>
+                    <th>Party</th>
+                    <th style="width:52px;">Warehouse</th>
+                    <th class="num" style="width:28px;">Qty</th>
+                    <th class="num" style="width:52px;">Unit</th>
+                    <th class="num" style="width:44px;">Disc</th>
+                    <th class="num" style="width:52px;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($rows as $r): ?>
             <tr>
-                <th>Date</th>
-                <th>Invoice</th>
-                <th>Party</th>
-                <th class="text-center">Qty</th>
-                <th class="text-right">Unit Price</th>
-                <th class="text-right">Discount</th>
-                <th class="text-right">Total</th>
+                <td><?= date('d/m/y', strtotime($r['date'])) ?></td>
+                <td class="inv"><?= htmlspecialchars((string) $r['invoice_no']) ?></td>
+                <td class="party"><strong><?= htmlspecialchars($r['party_name']) ?></strong></td>
+                <td><?= htmlspecialchars($r['warehouse_name'] ?? '—') ?></td>
+                <td class="num" style="color:#0e7490;"><?= (int) $r['quantity'] ?></td>
+                <td class="num"><?= number_format((float) $r['unit_price'], DECIMAL_PLACES) ?></td>
+                <td class="num" style="color:#64748b;"><?= (float) $r['discount'] > 0 ? number_format((float) $r['discount'], DECIMAL_PLACES) : '—' ?></td>
+                <td class="num rev"><?= number_format((float) $r['total'], DECIMAL_PLACES) ?></td>
             </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($rows as $r): ?>
-        <tr>
-            <td><?= date('d M Y', strtotime($r['date'])) ?></td>
-            <td style="font-weight:600;color:#6366f1;"><?= htmlspecialchars($r['invoice_no']) ?></td>
-            <td><?= htmlspecialchars($r['party_name']) ?></td>
-            <td class="text-center purple"><?= $r['quantity'] ?></td>
-            <td class="text-right"><?= APP_CURRENCY ?> <?= number_format($r['unit_price'], DECIMAL_PLACES) ?></td>
-            <td class="text-right" style="color:#64748b;"><?= $r['discount'] > 0 ? APP_CURRENCY . ' ' . number_format($r['discount'], DECIMAL_PLACES) : '—' ?></td>
-            <td class="text-right green"><?= APP_CURRENCY ?> <?= number_format($r['total'], DECIMAL_PLACES) ?></td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-        <tfoot>
-            <tr>
-                <td colspan="3">Total</td>
-                <td class="text-center purple"><?= $summary['qty'] ?></td>
-                <td colspan="2"></td>
-                <td class="text-right green"><?= APP_CURRENCY ?> <?= number_format($summary['revenue'], DECIMAL_PLACES) ?></td>
-            </tr>
-        </tfoot>
-    </table>
+            <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4" style="text-align:right;">Total</td>
+                    <td class="num" style="color:#0e7490;"><?= (int) $qty ?></td>
+                    <td colspan="2"></td>
+                    <td class="num rev"><?= number_format($revenue, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <?php endif; ?>
 
     <div class="footer">
-        <span><?= APP_NAME ?> &mdash; Item Sales Report</span>
+        <span><?= htmlspecialchars(APP_NAME) ?> — Item Sales Report</span>
         <span><?= date('d M Y') ?></span>
     </div>
 </div>
 
-<script>window.onload = function() { setTimeout(function() { window.print(); }, 400); };</script>
+<script>
+window.addEventListener('load', function () {
+    setTimeout(function () { window.print(); }, 400);
+});
+</script>
 </body>
 </html>

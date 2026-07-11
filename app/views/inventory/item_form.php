@@ -49,16 +49,31 @@
                         <i class="bi bi-tag-fill" style="color:#10b981;font-size:0.9rem;"></i>
                     </div>
                     <span style="font-weight:600;color:var(--text-main);">Pricing</span>
+                    <small class="text-muted ms-1">Real cost auto-updates from latest purchase</small>
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label fw-500">Purchase Price (KWD)</label>
+                            <label class="form-label fw-500">Real Cost (KWD)</label>
                             <div class="input-group">
                                 <span class="input-group-text" style="background:rgba(16,185,129,0.1);border-color:var(--border-color);color:#10b981;font-weight:600;"><?= APP_CURRENCY ?></span>
                                 <input type="number" name="purchase_price" class="form-control" step="0.001" min="0"
                                     value="<?= number_format((float)($item['purchase_price'] ?? 0), DECIMAL_PLACES, '.', '') ?>">
                             </div>
+                            <small class="text-muted">Includes freight + partner profit when purchase went through Import Logistics. Auto-updated on each purchase; you can override manually.</small>
+                            <?php if (!empty($latestCost)): ?>
+                            <div class="small" style="margin-top:8px;padding:8px 10px;background:rgba(16,185,129,0.06);border-radius:8px;border:1px solid rgba(16,185,129,0.15);">
+                                <strong>Latest purchase:</strong>
+                                <a href="?page=purchases&action=detail&id=<?= (int) $latestCost['purchase_id'] ?>" class="text-decoration-none">
+                                    <?= htmlspecialchars($latestCost['invoice_no']) ?>
+                                </a>
+                                · <?= htmlspecialchars($latestCost['date']) ?>
+                                · <?= APP_CURRENCY ?> <?= number_format($latestCost['unit_price'], DECIMAL_PLACES) ?>/pc
+                                <?php if ((float) ($latestCost['landed_cost'] ?? 0) > 0): ?>
+                                <span class="text-success">(incl. logistics)</span>
+                                <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-500">Purchase Price (AED) <small class="text-muted fw-normal">— reference</small></label>

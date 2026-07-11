@@ -30,6 +30,13 @@ class WarehouseController extends BaseController {
             );
         }
 
+        // Single operational branch (e.g. Main only — Fahaheel is legal-only): skip picker
+        if (count($warehouses) === 1) {
+            $only = $warehouses[0];
+            Auth::setWarehouse((int) $only['id'], (string) $only['name']);
+            $this->redirect('?page=dashboard');
+        }
+
         include __DIR__ . '/../views/warehouse_select.php';
     }
 

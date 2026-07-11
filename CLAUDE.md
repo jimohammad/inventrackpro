@@ -23,6 +23,7 @@ Custom PHP/MySQL ERP for Iqbal Sons (multi-warehouse mobile and electronics busi
 5. Style and refactoring preferences
 
 ## Context Navigation
+- **Business rules** (balances, PO/import, warehouse, ref_type): read `docs/domain/README.md` first.
 - Architecture/discovery questions: run `/graphify query "your question"` first.
 - Start navigation from `graphify-out/wiki/index.md`.
 - Read `graphify-out/GRAPH_REPORT.md` before architecture answers.
@@ -49,6 +50,11 @@ python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; 
 - API endpoints use API key auth, CORS, and rate limiting (globals: `$db`, `$method`, `$keyPermissions`)
 - Server-rendered HTML with CDN assets; global JS behavior in `assets/js/app.js`
 - No automated test suite - validate with syntax checks and endpoint smoke tests
+
+## Warehouse isolation (Main vs Fahaheel)
+- Branches are **fully independent** — never mix `warehouse_id` in UI, balances, or reports.
+- Scope all operational queries to `Auth::warehouseId()`; see `.cursor/rules/warehouse-isolation.mdc`.
+- Only **Stock Transfers** intentionally cross branches.
 
 ## Non-Negotiable Patterns
 - Party balance queries must use directional `CASE WHEN payment_type` logic.

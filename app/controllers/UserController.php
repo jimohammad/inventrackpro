@@ -188,7 +188,8 @@ class UserController extends BaseController {
             'mandoob_inventory', 'settings',
             'rpt_daybook', 'rpt_sales', 'rpt_profit', 'rpt_stock', 'rpt_payments', 'rpt_party', 'rpt_item_sales',
             'rpt_customer_purchases', 'rpt_reconciliation', 'rpt_account_stmt', 'rpt_expenses', 'rpt_sales_returns',
-            'rpt_supplier_stmt', 'rpt_balance_sheet', 'rpt_customer_imei',
+            'rpt_supplier_stmt', 'rpt_purchase_orders', 'rpt_balance_sheet', 'rpt_customer_imei', 'rpt_purchase_imei',
+            'rpt_partner_profit',
         ];
 
         foreach ($modules as $mod) {

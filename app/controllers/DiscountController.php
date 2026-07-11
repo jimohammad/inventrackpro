@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../models/Party.php';
 
 class DiscountController extends BaseController {
 
@@ -61,12 +62,25 @@ class DiscountController extends BaseController {
 
         $db = Database::getInstance();
 
-        $last = $db->fetchOne("SELECT discount_no FROM customer_discounts ORDER BY id DESC LIMIT 1");
-        $num  = $last ? (int) substr($last['discount_no'], 5) : 0;
-        $discountNo = 'DISC-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
+        $party = $db->fetchOne(
+            "SELECT id FROM parties WHERE id = ? AND is_active = 1 AND type IN ('customer','both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->flash('error', 'Invalid customer.');
+            $this->redirect('?page=discounts');
+            return;
+        }
 
+        $discountNo = '';
         $db->beginTransaction();
         try {
+            // Sequence read locked inside the transaction — same pattern as payment_no below —
+            // so concurrent saves cannot produce duplicate discount numbers.
+            $last = $db->fetchOne("SELECT discount_no FROM customer_discounts ORDER BY id DESC LIMIT 1 FOR UPDATE");
+            $num  = $last ? (int) substr($last['discount_no'], 5) : 0;
+            $discountNo = 'DISC-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
+
             $db->insert(
                 "INSERT INTO customer_discounts (discount_no, party_id, item_id, amount, reason, date, created_by)
                  VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -98,10 +112,12 @@ class DiscountController extends BaseController {
             }
 
             $db->commit();
+            self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', "Discount {$discountNo} — " . APP_CURRENCY . " " . number_format($amount, DECIMAL_PLACES) . " applied.");
         } catch (\Exception $e) {
             $db->rollBack();
-            $this->flash('error', 'Failed: ' . $e->getMessage());
+            error_log('Discount store failed: ' . $e->getMessage());
+            $this->flash('error', 'Failed to save discount. Please try again or check server logs.');
         }
 
         $this->redirect('?page=discounts');
@@ -125,8 +141,20 @@ class DiscountController extends BaseController {
             // Safe delete: prefer linked payment_id; otherwise lock and delete only ref_type='discount'
             $payId = (int)($disc['payment_id'] ?? 0);
             if ($payId > 0) {
-                $db->fetchOne("SELECT id FROM payments WHERE id = ? FOR UPDATE", [$payId]);
-                $db->execute("DELETE FROM payments WHERE id = ? AND ref_type = 'discount' LIMIT 1", [$payId]);
+                // Branch-scoped + verified lock: never touch another warehouse's payment,
+                // and fail loudly if the linked row is missing or its ref_type changed.
+                $pay = $db->fetchOne(
+                    "SELECT id FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? FOR UPDATE",
+                    [$payId, Auth::warehouseId()]
+                );
+                if (!$pay || empty($pay['id'])) {
+                    throw new \Exception(
+                        'Cannot reverse this discount: linked payment row #' . $payId . ' not found in this branch. '
+                        . 'Locate the PAY-* row in Payments (ref_type=discount) and remove it manually, '
+                        . 'or contact support to relink it.'
+                    );
+                }
+                $db->execute("DELETE FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? LIMIT 1", [$payId, Auth::warehouseId()]);
             } else {
                 // M4 fix: legacy rows (no payment_id link) — if the fuzzy lookup misses,
                 // the customer_discounts row would be deleted while the payment lingers,
@@ -156,10 +184,17 @@ class DiscountController extends BaseController {
             $this->logActivity('delete_discount', 'customer_discounts', $id,
                 'Reversed ' . ($disc['discount_no'] ?? '#' . $id));
             $db->commit();
+            self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', 'Discount reversed and removed.');
         } catch (\Exception $e) {
             $db->rollBack();
-            $this->flash('error', 'Failed to delete: ' . $e->getMessage());
+            if (str_starts_with($e->getMessage(), 'Cannot reverse this discount')) {
+                // Deliberate operator-guidance message — safe to show as-is.
+                $this->flash('error', $e->getMessage());
+            } else {
+                error_log('Discount delete failed for #' . $id . ': ' . $e->getMessage());
+                $this->flash('error', 'Failed to delete discount. Please try again or check server logs.');
+            }
         }
 
         $this->redirect('?page=discounts');
@@ -212,11 +247,23 @@ class DiscountController extends BaseController {
             $this->redirect('?page=discounts&action=edit&id=' . $id);
         }
 
-        $db   = Database::getInstance();
+        $db = Database::getInstance();
+
+        $party = $db->fetchOne(
+            "SELECT id FROM parties WHERE id = ? AND is_active = 1 AND type IN ('customer','both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->flash('error', 'Invalid customer.');
+            $this->redirect('?page=discounts&action=edit&id=' . $id);
+            return;
+        }
+
         $disc = $db->fetchOne("SELECT * FROM customer_discounts WHERE id = ?", [$id]);
         if (!$disc) {
             $this->flash('error', 'Discount not found.');
             $this->redirect('?page=discounts');
+            return;
         }
 
         $db->beginTransaction();
@@ -231,9 +278,21 @@ class DiscountController extends BaseController {
             $note = 'Discount ' . $disc['discount_no'] . ($reason ? ' — ' . $reason : '');
             $payId = (int)($disc['payment_id'] ?? 0);
             if ($payId > 0) {
+                // Lock and verify the linked payment (branch-scoped) before updating,
+                // so a concurrent delete cannot leave the discount pointing at nothing.
+                $pay = $db->fetchOne(
+                    "SELECT id FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? FOR UPDATE",
+                    [$payId, Auth::warehouseId()]
+                );
+                if (!$pay || empty($pay['id'])) {
+                    throw new \Exception(
+                        'Cannot update this discount: linked payment row #' . $payId . ' not found in this branch. '
+                        . 'It may have been deleted. Please reload and try again, or contact support to relink it.'
+                    );
+                }
                 $db->execute(
-                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=? WHERE id=? AND ref_type='discount' LIMIT 1",
-                    [$partyId, $amount, $date, $note, $payId]
+                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=? WHERE id=? AND ref_type='discount' AND warehouse_id=? LIMIT 1",
+                    [$partyId, $amount, $date, $note, $payId, Auth::warehouseId()]
                 );
             } else {
                 $db->execute(
@@ -244,10 +303,17 @@ class DiscountController extends BaseController {
             }
 
             $db->commit();
+            self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', "Discount {$disc['discount_no']} updated.");
         } catch (\Exception $e) {
             $db->rollBack();
-            $this->flash('error', 'Failed to update: ' . $e->getMessage());
+            if (str_starts_with($e->getMessage(), 'Cannot update this discount')) {
+                // Deliberate operator-guidance message — safe to show as-is.
+                $this->flash('error', $e->getMessage());
+            } else {
+                error_log('Discount update failed for #' . $id . ': ' . $e->getMessage());
+                $this->flash('error', 'Failed to update discount. Please try again or check server logs.');
+            }
         }
 
         $this->redirect('?page=discounts');
@@ -266,19 +332,15 @@ class DiscountController extends BaseController {
              LEFT JOIN users u ON u.id = d.created_by
              WHERE d.id = ?", [$id]
         );
-        if (!$discount) { die('Discount not found'); }
+        if (!$discount) {
+            $this->flash('error', 'Discount not found.');
+            $this->redirect('?page=discounts');
+            return;
+        }
 
-        // Get customer remaining balance
-        $balRow = $db->fetchOne(
-            "SELECT p.opening_balance
-                + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                as net_balance
-             FROM parties p WHERE p.id = ?",
-            [$discount['party_id']]
-        );
-        $remainingBalance = max(0, (float)($balRow['net_balance'] ?? 0));
+        // Get customer remaining balance (Party model unified net)
+        $partyModel       = new Party();
+        $remainingBalance = max(0, $partyModel->currentNetBalance((int) $discount['party_id']));
 
         $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
         $companyName = $company['value'] ?? 'Iqbal Sons';

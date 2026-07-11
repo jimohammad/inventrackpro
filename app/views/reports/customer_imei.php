@@ -3,10 +3,30 @@
         <h1 class="page-title">Customer IMEI Report</h1>
         <p class="page-subtitle">IMEI list sold to a customer, grouped by invoice & item</p>
     </div>
-    <?php if (!empty($records)): ?>
-    <button onclick="window.print()" class="btn btn-outline-primary btn-sm no-print">
-        <i class="bi bi-printer me-1"></i> Print
-    </button>
+    <?php if (!empty($records)):
+        $imeiPrintQs = 'party_id=' . (int) $partyId
+            . '&from_date=' . urlencode((string) $fromDate)
+            . '&to_date=' . urlencode((string) $toDate);
+        if (!empty($itemId)) {
+            $imeiPrintQs .= '&item_id=' . (int) $itemId;
+        }
+        if (!empty($invoiceNo)) {
+            $imeiPrintQs .= '&invoice_no=' . urlencode((string) $invoiceNo);
+        }
+        $imeiPrintUrl  = '?page=reports&action=customerImeiPrint&' . $imeiPrintQs;
+        $imeiExportUrl = '?page=reports&action=customerImeiExport&' . $imeiPrintQs;
+    ?>
+    <div class="d-flex gap-2">
+        <a href="<?= htmlspecialchars($imeiExportUrl) ?>" class="btn btn-success btn-sm">
+            <i class="bi bi-file-earmark-excel me-1"></i> Excel
+        </a>
+        <a href="<?= htmlspecialchars($imeiPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+        </a>
+        <a href="<?= htmlspecialchars($imeiPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-printer me-1"></i> Print
+        </a>
+    </div>
     <?php endif; ?>
 </div>
 
@@ -16,13 +36,25 @@
         <form method="GET" class="row g-2 align-items-end">
             <input type="hidden" name="page" value="reports">
             <input type="hidden" name="action" value="customerImei">
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-3">
                 <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Customer</label>
                 <select name="party_id" class="form-select form-select-sm" required>
                     <option value="">-- Select Customer --</option>
                     <?php foreach ($customers as $c): ?>
                     <option value="<?= $c['id'] ?>" <?= $partyId == $c['id'] ? 'selected' : '' ?>>
                         <?= htmlspecialchars($c['name']) ?> <?= $c['phone'] ? "({$c['phone']})" : '' ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Item</label>
+                <select name="item_id" class="form-select form-select-sm">
+                    <option value="">-- All Items --</option>
+                    <?php foreach ($items as $it): ?>
+                    <option value="<?= $it['id'] ?>" <?= $itemId == $it['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($it['name']) ?>
+                        <?php if ($it['sku']): ?>(<?= htmlspecialchars((string) $it['sku']) ?>)<?php endif; ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -35,7 +67,13 @@
                 <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">To Date</label>
                 <input type="date" name="to_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $toDate) ?>">
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-12 col-md-2">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Invoice No</label>
+                <input type="text" name="invoice_no" class="form-control form-control-sm"
+                       value="<?= htmlspecialchars((string) ($invoiceNo ?? '')) ?>"
+                       placeholder="e.g. SAL-000209">
+            </div>
+            <div class="col-12 col-md-2">
                 <div class="d-flex gap-1">
                     <button type="submit" class="btn btn-primary btn-sm w-100">Generate</button>
                     <a href="?page=reports&action=customerImei" class="btn btn-outline-secondary btn-sm">Clear</a>
@@ -78,19 +116,12 @@
     $totalInvoices = count($grouped);
 ?>
 
-<!-- Print Header -->
-<div class="print-header">
-    <h2 style="margin:0;font-size:16px;font-weight:700;"><?= PDF_COMPANY_NAME ?></h2>
-    <p style="margin:2px 0 0;font-size:11px;color:#666;"><?= PDF_COMPANY_PHONE ?></p>
-    <p style="margin:8px 0 4px;font-size:13px;font-weight:700;color:#333;">Customer IMEI Report</p>
-</div>
-
 <!-- Customer Info -->
 <div class="card mb-3 customer-info-card">
     <div class="card-body py-2">
         <table style="width:100%;font-size:0.85rem;">
             <tr>
-                <td><strong><?= htmlspecialchars($party['party_name']) ?></strong>
+                <td>Customer Name: <strong><?= htmlspecialchars($party['party_name']) ?></strong>
                     <?php if ($party['party_code']): ?>
                     <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--primary);font-size:0.7rem;margin-left:4px;"><?= $party['party_code'] ?></span>
                     <?php endif; ?>
@@ -98,6 +129,23 @@
                 <td><?= htmlspecialchars((string) ($party['party_phone'] ?? '')) ?></td>
                 <td>
                     <?= $fromDate ? date('d M Y', strtotime($fromDate)) : 'All time' ?><?= $toDate ? ' — ' . date('d M Y', strtotime($toDate)) : '' ?>
+                    <?php if (!empty($itemId)): ?>
+                    <?php
+                        $selectedItem = null;
+                        foreach ($items as $it) {
+                            if ((int) $it['id'] === (int) $itemId) {
+                                $selectedItem = $it;
+                                break;
+                            }
+                        }
+                    ?>
+                    <?php if ($selectedItem): ?>
+                    <span class="badge ms-1" style="background:rgba(16,185,129,0.15);color:#059669;font-size:0.7rem;"><?= htmlspecialchars($selectedItem['name']) ?></span>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($invoiceNo)): ?>
+                    <span class="badge ms-1" style="background:rgba(99,102,241,0.15);color:var(--primary);font-size:0.7rem;"><?= htmlspecialchars($invoiceNo) ?></span>
+                    <?php endif; ?>
                 </td>
                 <td class="text-end">
                     <strong><?= $totalImei ?></strong> IMEI<?= $totalImei > 1 ? 's' : '' ?> /
@@ -116,7 +164,7 @@
     <div class="card-header inv-header" style="background:rgba(99,102,241,0.08);border-bottom:2px solid rgba(99,102,241,0.2);padding:8px 14px;">
         <div class="d-flex justify-content-between align-items-center">
             <a href="?page=sales&action=detail&id=<?= $inv['sale_id'] ?>" style="color:var(--primary);font-weight:700;text-decoration:none;font-size:0.9rem;" class="inv-link">
-                <?= htmlspecialchars($inv['invoice_no']) ?>
+                Invoice Number: <?= htmlspecialchars($inv['invoice_no']) ?>
             </a>
             <div class="d-flex align-items-center gap-2">
                 <span class="date-badge" style="background:#e0f2fe;color:#0369a1;padding:3px 10px;border-radius:5px;font-size:0.75rem;font-weight:600;">
@@ -168,58 +216,8 @@
 <div class="card">
     <div class="card-body text-center py-5">
         <i class="bi bi-inbox" style="font-size:2.5rem;color:#cbd5e1;"></i>
-        <p class="mt-3 text-muted">No IMEI records found for this customer in the selected period.</p>
+        <p class="mt-3 text-muted">No IMEI records found for this customer with the selected filters.</p>
     </div>
 </div>
 <?php endif; ?>
 
-<style>
-.print-header { display: none; }
-
-@media print {
-    .sidebar, .topbar, .no-print { display: none !important; }
-    .main-content { margin: 0 !important; padding: 0 !important; }
-    .print-header { display: block !important; text-align: center; margin-bottom: 10px; }
-    .page-title { font-size: 13px !important; margin: 0 !important; }
-    .page-subtitle { display: none; }
-
-    * { color: #000 !important; }
-
-    .card, .invoice-group, .summary-card {
-        box-shadow: none !important;
-        border: 1px solid #999 !important;
-        break-inside: avoid;
-    }
-    .card-header, .inv-header {
-        background: #fff !important;
-        border-bottom: 1px solid #999 !important;
-        padding: 4px 10px !important;
-    }
-    .item-header {
-        background: #fff !important;
-        border-bottom: 1px solid #ccc !important;
-        padding: 3px 10px !important;
-        font-size: 11px !important;
-    }
-    .customer-info-card .card-body,
-    .summary-card .card-body {
-        background: #fff !important;
-    }
-    .th-blue, .th-blue-card {
-        background: #fff !important;
-        color: #000 !important;
-    }
-    .badge, .date-badge, .count-badge {
-        background: #fff !important;
-        color: #000 !important;
-        border: 1px solid #999 !important;
-        padding: 1px 6px !important;
-        font-size: 9px !important;
-    }
-    table { font-size: 10px !important; border-collapse: collapse !important; }
-    td, th { padding: 2px 8px !important; border-bottom: 1px solid #ddd !important; }
-    .table { margin: 0 !important; }
-    .invoice-group { margin-bottom: 8px !important; }
-    .mb-4, .mb-3 { margin-bottom: 6px !important; }
-}
-</style>

@@ -8,17 +8,27 @@
  * This keeps secrets out of the public_html folder and git repo
  */
 
-// ── Load .env file ─────────────────────────────────────────
-$envPaths = [
-    __DIR__ . '/../.env.local',        // local dev override (gitignored, never on server)
-    __DIR__ . '/../../.env',           // one level above public_html (recommended)
-    __DIR__ . '/../.env',              // root of public_html (fallback)
-    '/home/u793102776/.env',           // absolute Hostinger path
-];
+// ── Load .env file (once per request) ───────────────────────
+static $envBootstrapped = false;
+if (!$envBootstrapped) {
+    $envBootstrapped = true;
 
-$envLoaded = false;
-foreach ($envPaths as $envFile) {
-    if (file_exists($envFile) && is_readable($envFile)) {
+    $envPaths = [];
+    $hostingerEnv = '/home/u793102776/.env';
+    if (is_readable($hostingerEnv)) {
+        $envPaths[] = $hostingerEnv;
+    }
+    $envPaths = array_merge($envPaths, [
+        __DIR__ . '/../.env.local',        // local dev override (gitignored, never on server)
+        __DIR__ . '/../../.env',           // one level above public_html (recommended)
+        __DIR__ . '/../.env',              // root of public_html (fallback)
+    ]);
+
+    $envLoaded = false;
+    foreach ($envPaths as $envFile) {
+        if (!is_readable($envFile)) {
+            continue;
+        }
         $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         foreach ($lines as $line) {
             $line = trim($line);
@@ -36,14 +46,14 @@ foreach ($envPaths as $envFile) {
         $envLoaded = true;
         break;
     }
-}
 
-if (!$envLoaded) {
-    error_log("CRITICAL: .env file not found. Checked: " . implode(', ', $envPaths));
-    die(json_encode([
-        'success' => false,
-        'message' => 'Server configuration error. Please contact the administrator.'
-    ]));
+    if (!$envLoaded) {
+        error_log("CRITICAL: .env file not found. Checked: " . implode(', ', $envPaths));
+        die(json_encode([
+            'success' => false,
+            'message' => 'Server configuration error. Please contact the administrator.'
+        ]));
+    }
 }
 
 define('DB_HOST',    $_ENV['DB_HOST']    ?? 'localhost');

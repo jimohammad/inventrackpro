@@ -66,11 +66,12 @@
 <!-- Transactions Table -->
 <div class="card" style="border-radius:12px;">
     <div class="card-header" style="font-weight:700;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;">
-        <span><i class="bi bi-journal-text me-2" style="color:#0d9488;"></i>Transactions (<?= count($transactions) ?>)</span>
+        <span><i class="bi bi-journal-text me-2" style="color:#0d9488;"></i>Transactions — <?= count($transactions) ?></span>
+        <?php $daybookPrintUrl = '?page=reports&action=daybookPrint&date=' . urlencode((string) $date); ?>
         <div class="d-flex gap-2">
-            <button onclick="exportReportCSV('daybookTable','Day_Book')" class="btn btn-sm btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-            <button onclick="exportReportPDF()" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-            <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</button>
+            <button type="button" class="btn btn-sm btn-success js-export-report-csv" data-table-id="daybookTable" data-title="Day_Book"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+            <a href="<?= htmlspecialchars($daybookPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+            <a href="<?= htmlspecialchars($daybookPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
         </div>
     </div>
     <div class="card-body p-0">
@@ -132,7 +133,7 @@
                             <?= $t['ref_no'] ?>
                         </a>
                     </td>
-                    <td><?= htmlspecialchars($t['party_name'] ?? '—') ?></td>
+                    <td><?php if (!empty($t['party_name'])): ?><strong><?= htmlspecialchars($t['party_name']) ?></strong><?php else: ?>—<?php endif; ?></td>
                     <td style="font-size:0.82rem;color:var(--text-muted);"><?= htmlspecialchars($t['created_by'] ?? '—') ?></td>
                     <td class="text-end" style="font-weight:700;color:<?= $tc['color'] ?>;">
                         <?= $money($t['amount']) ?>
@@ -164,10 +165,3 @@ $(document).ready(function() {
 });
 </script>
 
-<style>
-@media print {
-    .sidebar, .topbar, .btn, form, .dataTables_filter, .dataTables_info, .dataTables_paginate, .dataTables_length { display: none !important; }
-    .main-content { margin-left: 0 !important; padding: 0 !important; }
-    .card { border: 1px solid #ccc !important; box-shadow: none !important; }
-}
-</style>

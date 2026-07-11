@@ -1,7 +1,7 @@
 <!-- Edit Expense -->
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=expenses" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
-    <h1 class="page-title mb-0">Edit: <?= $expense['expense_no'] ?></h1>
+    <h1 class="page-title mb-0">Edit: <?= htmlspecialchars($expense['expense_no']) ?></h1>
 </div>
 
 <div class="card" style="border-radius:12px;max-width:600px;">
@@ -34,7 +34,7 @@
                 <div class="col-md-6">
                     <label class="form-label" style="font-weight:600;font-size:0.82rem;">Date <span class="text-danger">*</span></label>
                     <input type="date" name="date" class="form-control form-control-sm" required
-                           value="<?= $expense['date'] ?>">
+                           value="<?= htmlspecialchars($expense['date'] ?? '') ?>">
                 </div>
 
                 <div class="col-md-6">

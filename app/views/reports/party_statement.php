@@ -119,6 +119,8 @@
                     <a href="?page=purchases&action=detail&id=<?= $t['id'] ?>" style="color:#f59e0b;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
                     <?php elseif ($t['txn_type'] === 'return'): ?>
                     <span style="color:#dc2626;font-weight:600;"><?= $t['ref_no'] ?></span>
+                    <?php elseif ($t['txn_type'] === 'discount'): ?>
+                    <span style="color:#8b5cf6;font-weight:600;"><?= $t['ref_no'] ?></span>
                     <?php else: ?>
                     <span style="color:#10b981;font-weight:600;"><?= $t['ref_no'] ?></span>
                     <?php endif; ?>

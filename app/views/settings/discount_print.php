@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discount — <?= $discount['discount_no'] ?></title>
+    <title>Discount — <?= htmlspecialchars($discount['discount_no']) ?></title>
     <?php $a5 = isset($_GET['a5']); ?>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
@@ -233,7 +233,7 @@ function exportPDF() {
     var el = document.querySelector('.wrap');
     var opt = {
         margin:      [8, 10, 8, 10],
-        filename:    '<?= $discount['discount_no'] ?>.pdf',
+        filename:    <?= json_encode($discount['discount_no'] . '.pdf') ?>,
         image:       { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF:       { unit: 'mm', format: '<?= $a5 ? 'a5' : 'a4' ?>', orientation: 'portrait' }

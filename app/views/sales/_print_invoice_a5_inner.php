@@ -104,4 +104,5 @@
     <div class="inv-footer">
         <p><?= htmlspecialchars($settings['invoice_footer'] ?? 'Thank you for your business!') ?></p>
         <p style="margin-top:3px;font-size:7.5px;">Printed <?= date('d M Y, h:i A') ?> &nbsp;·&nbsp; <?= htmlspecialchars(Auth::name()) ?></p>
+        <p style="margin-top:4px;font-size:7px;color:#666;">This is a computer generated invoice.</p>
     </div>

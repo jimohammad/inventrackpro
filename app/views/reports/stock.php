@@ -2,33 +2,14 @@
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=reports" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0">Stock Valuation</h1>
+    <span class="badge bg-light text-dark border"><?= htmlspecialchars($warehouse['name'] ?? Auth::warehouseName()) ?></span>
+    <?php $stockPrintUrl = '?page=reports&action=stockPrint'; ?>
     <div class="ms-auto d-flex gap-2">
-        <button onclick="exportReportCSV('stockRptTable','Stock_Valuation')" class="btn btn-sm btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</button>
+        <button type="button" class="btn btn-sm btn-success js-export-report-csv" data-table-id="stockRptTable" data-title="Stock_Valuation"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($stockPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($stockPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
 </div>
-
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="GET" class="row g-2 align-items-center">
-            <input type="hidden" name="page" value="reports">
-            <input type="hidden" name="action" value="stock">
-            <div class="col-6 col-md-3">
-                <select name="warehouse_id" class="form-select form-select-sm">
-                    <option value="">All Warehouses</option>
-                    <?php foreach ($warehouses as $w): ?>
-                    <option value="<?= $w['id'] ?>" <?= $warehouseId == $w['id'] ? 'selected' : '' ?>><?= htmlspecialchars($w['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-4 col-md-2">
-                <button type="submit" class="btn btn-primary btn-sm w-100">Generate</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 
 <div class="card">
     <div class="card-body p-0">
@@ -68,6 +49,16 @@
                 </tr>
                 <?php endforeach; ?>
             </tbody>
+            <?php if (!empty($data)): ?>
+            <tfoot>
+                <tr style="background:rgba(14,116,144,0.06);font-weight:700;">
+                    <td colspan="4" class="text-end">Total Stock Value</td>
+                    <td colspan="3"></td>
+                    <td class="text-end" style="color:#0e7490;"><?= APP_CURRENCY ?> <?= number_format($totalValue, DECIMAL_PLACES) ?></td>
+                    <td></td>
+                </tr>
+            </tfoot>
+            <?php endif; ?>
         </table>
     </div>
 </div>

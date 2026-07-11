@@ -19,6 +19,9 @@ class AuthController extends BaseController {
         }
 
         $error = '';
+        if (($_GET['reason'] ?? '') === 'new_day') {
+            $error = 'Your session ended because the date changed. Please sign in again.';
+        }
         $db    = Database::getInstance();
         $ip    = self::clientIp();
 

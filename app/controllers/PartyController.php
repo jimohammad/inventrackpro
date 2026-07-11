@@ -13,7 +13,7 @@ class PartyController extends BaseController {
 
     // Helper: get permission module for a party type
     private function partyModule(string $type): string {
-        return $type === 'supplier' ? 'suppliers' : 'customers';
+        return in_array($type, ['supplier', 'freight_forwarder'], true) ? 'suppliers' : 'customers';
     }
 
     // Helper: can user access parties at all?
@@ -35,7 +35,21 @@ class PartyController extends BaseController {
             $type = 'supplier';
         }
 
-        $parties   = $this->partyModel->getByType($type);
+        $balanceFilter = $this->input('balance', 'due', 'get');
+        if (!in_array($balanceFilter, ['all', 'due', 'clear'], true)) {
+            $balanceFilter = 'due';
+        }
+
+        $allParties = $this->partyModel->getByType($type);
+        if ($balanceFilter === 'all') {
+            $parties = $allParties;
+        } else {
+            $parties = array_values(array_filter($allParties, static function (array $p) use ($balanceFilter): bool {
+                $hasBalance = abs((float) ($p['balance_due'] ?? 0)) > 0.001;
+                return $balanceFilter === 'due' ? $hasBalance : !$hasBalance;
+            }));
+        }
+
         $pageTitle = 'Party Master';
         $page      = 'parties';
 
@@ -87,7 +101,11 @@ class PartyController extends BaseController {
             'notes'           => $this->input('notes'),
         ]);
 
-        if ($id) { $this->flash('success', 'Party added.'); } else { $this->flash('error', 'Failed.'); }
+        if ($id) {
+            Party::clearFilterListCache();
+            self::clearDashboardCache(Auth::warehouseId());
+            $this->flash('success', 'Party added.');
+        } else { $this->flash('error', 'Failed.'); }
         $this->redirect('?page=parties');
     }
 
@@ -135,6 +153,9 @@ class PartyController extends BaseController {
             'is_active'       => $this->inputInt('is_active'),
         ]);
 
+        Party::clearFilterListCache();
+        self::clearDashboardCache(Auth::warehouseId());
+
         $this->flash('success', 'Party updated.');
         $this->redirect('?page=parties');
     }
@@ -144,42 +165,62 @@ class PartyController extends BaseController {
         $party = $this->partyModel->findWithBalance($id);
         if (!$party) { $this->flash('error', 'Party not found.'); $this->redirect('?page=parties'); }
 
-        // Check view permission based on party type
+        if (!$this->partyModel->isVisibleInCurrentWarehouse($id)) {
+            $this->flash('error', 'This party is not linked to the current branch.');
+            $this->redirect('?page=parties');
+        }
+
         Auth::authorize($this->partyModule($party['type']), 'view');
 
-        $db               = Database::getInstance();
+        $whId = (int) Auth::warehouseId();
+        $db   = Database::getInstance();
+
         $linkedSalesCount = (int) ($db->fetchOne(
-            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND status != 'cancelled'",
-            [$id]
+            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled'",
+            [$id, $whId]
         )['c'] ?? 0);
 
         $cancelledSalesCount = (int) ($db->fetchOne(
-            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND status = 'cancelled'",
-            [$id]
+            "SELECT COUNT(*) AS c FROM sales WHERE party_id = ? AND warehouse_id = ? AND status = 'cancelled'",
+            [$id, $whId]
         )['c'] ?? 0);
 
         $cancelledSalesList = [];
         if ($cancelledSalesCount > 0) {
             $cancelledSalesList = $db->fetchAll(
                 "SELECT id, invoice_no, date, grand_total FROM sales
-                 WHERE party_id = ? AND status = 'cancelled'
+                 WHERE party_id = ? AND warehouse_id = ? AND status = 'cancelled'
                  ORDER BY date ASC, id ASC",
-                [$id]
+                [$id, $whId]
             );
         }
 
         $ledger         = $this->partyModel->getLedger($id);
         $ledgerMismatch = $linkedSalesCount > 0 && empty($ledger);
+        $ledgerOpeningBal = $this->partyModel->scopedOpeningBalance($party, $whId);
 
-        $ledgerHasSale = false;
-        foreach ($ledger as $row) {
-            if (($row['type'] ?? '') === 'sale') {
-                $ledgerHasSale = true;
-                break;
-            }
+        // Sale-return mismatch: customer/both only — suppliers with purchases/payments must not trigger this.
+        $isCustomerSide = in_array($party['type'] ?? '', ['customer', 'both'], true);
+        $saleReturnCount = 0;
+        $returnPartyMismatchCount = 0;
+        if ($isCustomerSide) {
+            $saleReturnCount = (int) ($db->fetchOne(
+                "SELECT COUNT(*) AS c FROM `returns`
+                 WHERE party_id = ? AND warehouse_id = ? AND type = 'sale_return' AND status = 'approved'",
+                [$id, $whId]
+            )['c'] ?? 0);
+            $returnPartyMismatchCount = (int) ($db->fetchOne(
+                "SELECT COUNT(*) AS c FROM `returns` r
+                 INNER JOIN sales s ON s.id = r.ref_id
+                 WHERE r.party_id = ? AND r.warehouse_id = ? AND r.type = 'sale_return' AND r.status = 'approved'
+                 AND s.party_id != r.party_id",
+                [$id, $whId]
+            )['c'] ?? 0);
         }
-        // Only flag “wrong party” if there is no sale history at all (not explained by voided invoices).
-        $ledgerReturnWrongParty = $linkedSalesCount === 0 && $cancelledSalesCount === 0 && !$ledgerHasSale && !empty($ledger);
+        $ledgerReturnWrongParty = $isCustomerSide && (
+            $returnPartyMismatchCount > 0
+            || ($saleReturnCount > 0 && $linkedSalesCount === 0)
+        );
 
         $pageTitle = $party['name'];
         $page      = 'parties';

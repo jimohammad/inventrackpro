@@ -9,13 +9,33 @@ require_once __DIR__ . '/../../config/database.php';
  */
 class Auth {
 
+    /** Set when check() clears a session because the calendar day changed (APP_TIMEZONE). */
+    private static bool $sessionExpiredNewDay = false;
+
+    /** Calendar date (Y-m-d) used to invalidate sessions after midnight. */
+    private static function sessionDateToday(): string {
+        return date('Y-m-d');
+    }
+
+    /** True when session was opened on the current calendar day. */
+    private static function isSessionDateCurrent(): bool {
+        $stored = (string) ($_SESSION['session_date'] ?? '');
+        return $stored !== '' && $stored === self::sessionDateToday();
+    }
+
+    public static function sessionExpiredForNewDay(): bool {
+        return self::$sessionExpiredNewDay;
+    }
+
     // Start a secure session
     public static function startSession(): void {
         if (session_status() === PHP_SESSION_NONE) {
-            // Ensure our custom session directory exists
-            $sessDir = '/tmp/inventrackpro_sessions';
+            $sessDir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'inventrackpro_sessions';
             if (!is_dir($sessDir)) {
-                mkdir($sessDir, 0700, true);
+                @mkdir($sessDir, 0700, true);
+            }
+            if (is_dir($sessDir) && is_writable($sessDir)) {
+                session_save_path($sessDir);
             }
 
             session_name(SESSION_NAME);
@@ -56,6 +76,7 @@ class Auth {
         $_SESSION['user_name']  = $user['name'];
         $_SESSION['user_role']  = $user['role'];
         $_SESSION['logged_in']  = true;
+        $_SESSION['session_date'] = self::sessionDateToday();
 
         // Load permissions into session (select only required columns)
         $perms = $db->fetchAll(
@@ -88,10 +109,18 @@ class Auth {
         session_destroy();
     }
 
-    // Check if user is logged in
+    // Check if user is logged in (sessions expire when the calendar day changes)
     public static function check(): bool {
         self::startSession();
-        return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+        if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+            return false;
+        }
+        if (!self::isSessionDateCurrent()) {
+            self::$sessionExpiredNewDay = true;
+            self::logout();
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -107,7 +136,8 @@ class Auth {
     public static function required(): void {
         if (!self::check()) {
             $redirect = urlencode($_SERVER['REQUEST_URI'] ?? '');
-            header('Location: ' . APP_URL . '/index.php?page=login&redirect=' . $redirect);
+            $reason   = self::$sessionExpiredNewDay ? '&reason=new_day' : '';
+            header('Location: ' . APP_URL . '/index.php?page=login&redirect=' . $redirect . $reason);
             exit;
         }
     }
@@ -122,21 +152,9 @@ class Auth {
         return $_SESSION['user_name'] ?? 'Unknown';
     }
 
-    /** Login email (session); backfills from DB once if missing on legacy sessions. */
+    /** Login email (session only — no DB on page loads). */
     public static function email(): string {
-        if (!empty($_SESSION['user_email'])) {
-            return (string) $_SESSION['user_email'];
-        }
-        $id = self::id();
-        if ($id === null) {
-            return '';
-        }
-        $row = Database::getInstance()->fetchOne('SELECT email FROM users WHERE id = ?', [$id]);
-        $em  = (string) ($row['email'] ?? '');
-        if ($em !== '') {
-            $_SESSION['user_email'] = $em;
-        }
-        return $em;
+        return (string) ($_SESSION['user_email'] ?? '');
     }
 
     /**
@@ -148,7 +166,8 @@ class Auth {
             $tpl = (string) $_SESSION['print_template'];
             return in_array($tpl, ['a5', 'thermal'], true) ? $tpl : 'a5';
         }
-        if (strcasecmp(self::email(), 'jimohammad@gmail.com') === 0) {
+        $em = (string) ($_SESSION['user_email'] ?? '');
+        if (strcasecmp($em, 'jimohammad@gmail.com') === 0) {
             return 'thermal';
         }
         return 'a5';
@@ -188,6 +207,9 @@ class Auth {
 
     // CSRF Token
     public static function csrfToken(): string {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            self::startSession();
+        }
         if (empty($_SESSION['csrf_token'])) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
@@ -227,11 +249,18 @@ class Auth {
     public static function setWarehouse($id, $name) {
         $_SESSION['warehouse_id']   = $id;
         $_SESSION['warehouse_name'] = $name;
+        $_SESSION['warehouse_is_active'] = 1;
+        $_SESSION['warehouse_verified_at'] = time();
     }
 
     // Clear warehouse from session (force re-select)
     public static function clearWarehouse() {
-        unset($_SESSION['warehouse_id'], $_SESSION['warehouse_name']);
+        unset(
+            $_SESSION['warehouse_id'],
+            $_SESSION['warehouse_name'],
+            $_SESSION['warehouse_is_active'],
+            $_SESSION['warehouse_verified_at']
+        );
     }
 
     // Redirect to warehouse selector if no warehouse chosen
@@ -239,6 +268,43 @@ class Auth {
         if (empty($_SESSION['warehouse_id'])) {
             header('Location: ' . APP_URL . '/?page=warehouse');
             exit;
+        }
+    }
+
+    /**
+     * Logged-in branch must be operational (is_active = 1).
+     * Re-validates at most once per hour; warehouse pick already checks is_active.
+     */
+    public static function ensureOperationalWarehouse(): void {
+        $id = self::warehouseId();
+        if (!$id) {
+            return;
+        }
+
+        $verifiedAt = (int) ($_SESSION['warehouse_verified_at'] ?? 0);
+        if (!empty($_SESSION['warehouse_is_active']) && $verifiedAt > 0 && (time() - $verifiedAt) < 86400) {
+            return;
+        }
+
+        $db = Database::getInstance();
+        $wh = $db->fetchOne(
+            'SELECT id, name, is_active FROM warehouses WHERE id = ?',
+            [$id]
+        );
+        if (!$wh || !(int) ($wh['is_active'] ?? 0)) {
+            self::clearWarehouse();
+            header('Location: ' . APP_URL . '/?page=warehouse');
+            exit;
+        }
+
+        $_SESSION['warehouse_is_active'] = 1;
+        $_SESSION['warehouse_verified_at'] = time();
+    }
+
+    /** Release session lock early so parallel tabs/AJAX are not serialized. */
+    public static function releaseSession(): void {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
         }
     }
 }

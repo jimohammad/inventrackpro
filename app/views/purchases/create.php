@@ -8,9 +8,12 @@
 .customer-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
 .customer-search-wrap{position:relative;flex:1;min-width:300px;max-width:560px;}
 .customer-search-wrap .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;}
-.customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #e0e7ff;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
+.customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #94a3b8;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
 .customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
+.customer-search-wrap.inv-field{max-width:220px;flex:0 0 auto;}
+.customer-search-wrap.inv-field-narrow{max-width:180px;flex:0 0 auto;}
+.customer-search-wrap.inv-field-auto{margin-left:auto;}
 .inv-meta{display:flex;gap:20px;align-items:center;margin-left:auto;flex-wrap:wrap;}
 .inv-meta-item{display:flex;flex-direction:column;align-items:flex-end;font-size:0.75rem;}
 .inv-meta-item .label{color:#94a3b8;margin-bottom:2px;font-weight:500;}
@@ -56,11 +59,18 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .btn-save-sale:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(59,130,246,0.5);}
 .btn-print-sale{padding:8px 22px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#059669,#047857);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(5,150,105,0.35);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
 .btn-print-sale:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(5,150,105,0.45);}
-.autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:300px;overflow-y:auto;margin-top:4px;}
-.autocomplete-box.item-dropdown{position:fixed;margin-top:0;min-width:380px;width:auto;right:auto;}
-.autocomplete-item{padding:9px 14px;cursor:pointer;font-size:0.83rem;border-bottom:1px solid #f8fafc;color:#1e293b;transition:background 0.1s;}
+.autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;margin-top:4px;min-width:100%;}
+.autocomplete-box.item-dropdown{position:fixed;left:auto;right:auto;margin-top:0;min-width:380px;width:auto;max-width:90vw;}
+.autocomplete-item{padding:10px 14px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f1f5f9;color:#1e293b;transition:background 0.1s;line-height:1.35;display:flow-root;}
+.autocomplete-item strong{display:block;font-weight:700;color:#1e293b;}
+.autocomplete-item small{color:#94a3b8;font-size:0.78rem;}
+.customer-search-wrap .autocomplete-item{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.customer-search-wrap .autocomplete-item strong{flex:1;min-width:0;}
+.customer-search-wrap .autocomplete-item small{flex-shrink:0;white-space:nowrap;}
 .autocomplete-item:last-child{border-bottom:none;}
 .autocomplete-item:hover{background:#f8faff;}
+.autocomplete-item.active,.autocomplete-item.active:hover{background:#eff6ff;outline:none;position:relative;}
+.autocomplete-item.active::before,.autocomplete-item.active:hover::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#6366f1;border-radius:2px 0 0 2px;}
 /* IMEI Modal */
 .imei-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
 .imei-modal-overlay.show{display:flex;}
@@ -116,17 +126,17 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
             <div class="autocomplete-box" id="supplierDrop" style="display:none;"></div>
             <input type="hidden" name="party_id" id="supplierIdInput" required>
         </div>
-        <div class="customer-search-wrap" style="max-width:220px;">
+        <div class="customer-search-wrap inv-field">
             <i class="bi bi-file-earmark-text search-icon" style="color:#f59e0b;"></i>
-            <input type="text" name="supplier_invoice_no" placeholder="Supplier Ref No" style="padding-left:36px;">
+            <input type="text" id="supplierRefInput" name="supplier_invoice_no" placeholder="Supplier Ref No" style="padding-left:36px;">
         </div>
 
-        <div class="customer-search-wrap" style="max-width:180px;margin-left:auto;">
+        <div class="customer-search-wrap inv-field inv-field-narrow inv-field-auto">
             <i class="bi bi-hash search-icon" style="color:#6366f1;"></i>
             <input type="text" value="<?= $nextInv ?>" readonly
                 style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#6366f1;font-weight:700;letter-spacing:0.5px;cursor:default;">
         </div>
-        <div class="customer-search-wrap" style="max-width:180px;">
+        <div class="customer-search-wrap inv-field inv-field-narrow">
             <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
             <input type="date" name="date" value="<?= date('Y-m-d') ?>" style="padding-left:36px;">
         </div>
@@ -136,9 +146,16 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
     <div class="items-card">
         <div class="items-card-header">
             <span><i class="bi bi-grid-3x3-gap-fill"></i> Items</span>
-            <span style="font-size:0.75rem;color:#94a3b8;font-weight:400;">
-                <span id="purQtyBadge" style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:20px;font-weight:700;">0 items</span>
-            </span>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <label id="purScanLaterWrap" style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;font-size:0.78rem;font-weight:600;color:#64748b;margin:0;">
+                    <input type="checkbox" name="scan_imei_later" id="purScanLaterChk" value="1"
+                           style="width:16px;height:16px;accent-color:#6366f1;cursor:pointer;">
+                    <span><i class="bi bi-clock-history" style="color:#6366f1;"></i> Scan IMEIs later</span>
+                </label>
+                <span style="font-size:0.75rem;color:#94a3b8;font-weight:400;">
+                    <span id="purQtyBadge" style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:20px;font-weight:700;">0 items</span>
+                </span>
+            </div>
         </div>
         <div style="overflow-x:auto;">
             <table class="items-tbl" id="purItemsTable">
@@ -230,7 +247,13 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
             <i class="bi bi-check-lg"></i> Save
         </button>
         <button type="submit" class="btn-print-sale" onclick="document.getElementById('purPrintMode').value='1'">
-            <i class="bi bi-printer"></i> Print & Save
+            <i class="bi bi-printer"></i> Save &amp; Print A4
+        </button>
+        <button type="submit" class="btn-print-sale" id="btnPurSaveThermal"
+            style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 2px 8px rgba(124,58,237,.4);"
+            title="After scanning: Ctrl+S / Cmd+S or F12 — save and open thermal print"
+            onclick="document.getElementById('purPrintMode').value='2'">
+            <i class="bi bi-receipt"></i> Save &amp; Thermal
         </button>
     </div>
 
@@ -264,7 +287,9 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
         <div id="purImeiMsg" class="imei-msg"></div>
         <div id="purImeiTagList" style="flex:1;overflow-y:auto;min-height:60px;max-height:260px;padding:4px 2px;"></div>
         <div class="imei-modal-footer">
-            <button type="button" class="btn-close-modal" onclick="closePurImeiModal()">Cancel</button>
+            <button type="button" class="btn-close-modal" id="purImeiSkipBtn" onclick="skipPurImeiModal()">
+                <i class="bi bi-clock-history me-1"></i> Scan later
+            </button>
             <button type="button" class="btn-save-modal" onclick="savePurImeiModal()">
                 <i class="bi bi-check-lg me-1"></i> Done
             </button>
@@ -280,7 +305,30 @@ let purCurrentImeiRow = null;
 let purActiveImeis    = [];
 let purCurrentItemName= '';
 
-document.addEventListener('DOMContentLoaded', () => { addPurRow(); addPurRow(); });
+document.addEventListener('DOMContentLoaded', () => {
+    addPurRow(); addPurRow();
+    document.getElementById('supplierSearch').focus();
+    const scanLaterChk = document.getElementById('purScanLaterChk');
+    if (scanLaterChk) {
+        scanLaterChk.addEventListener('change', updatePurScanLaterUi);
+        updatePurScanLaterUi();
+    }
+});
+
+function purScanLaterEnabled() {
+    return !!document.getElementById('purScanLaterChk')?.checked;
+}
+
+function updatePurScanLaterUi() {
+    const on = purScanLaterEnabled();
+    const wrap = document.getElementById('purScanLaterWrap');
+    if (wrap) {
+        wrap.style.color = on ? '#4338ca' : '#64748b';
+        wrap.style.background = on ? 'rgba(99,102,241,0.08)' : 'transparent';
+        wrap.style.padding = on ? '4px 10px' : '0';
+        wrap.style.borderRadius = on ? '8px' : '0';
+    }
+}
 
 function addPurRow() {
     purRowCount++;
@@ -303,7 +351,7 @@ function addPurRow() {
                 <i class="bi bi-upc-scan"></i>
             </button>
         </td>
-        <td class="col-qty"><input type="number" name="items[${purRowCount}][quantity]" id="purQty_${rid}" value="1" min="1" style="text-align:center;" oninput="calcPurRow('${rid}')"></td>
+        <td class="col-qty"><input type="number" name="items[${purRowCount}][quantity]" id="purQty_${rid}" value="" min="1" placeholder="1" style="text-align:center;" oninput="calcPurRow('${rid}')"></td>
         <td class="col-price"><input type="number" name="items[${purRowCount}][unit_price]" id="purPrice_${rid}" value="" step="0.001" placeholder="0.000" style="text-align:right;" oninput="calcPurRow('${rid}')"></td>
         <td class="col-amt" id="purAmt_${rid}" style="text-align:right;padding-right:8px;color:#6366f1;">0.000</td>
         <td class="col-act">
@@ -321,6 +369,32 @@ function removePurRow(rid) {
 
 const purItemStore = {};
 let purSearchTimers = {};
+const purItemHighlightIdx = {};
+
+function updatePurItemHighlight(rid) {
+    const drop = document.getElementById('purDrop_' + rid);
+    if (!drop) return;
+    const hi = purItemHighlightIdx[rid] ?? -1;
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === hi);
+    });
+    const active = drop.querySelector('.autocomplete-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function bindPurItemDropdown(rid, drop) {
+    purItemHighlightIdx[rid] = -1;
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectPurItem(this.dataset.rid, purItemStore[this.dataset.rid][parseInt(this.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            purItemHighlightIdx[rid] = parseInt(this.dataset.idx, 10);
+            updatePurItemHighlight(rid);
+        });
+    });
+}
 
 function positionDropdown(input, drop) {
     const rect = input.getBoundingClientRect();
@@ -333,7 +407,7 @@ function searchPurItem(input, rid) {
     clearTimeout(purSearchTimers[rid]);
     const q = input.value.trim();
     const drop = document.getElementById('purDrop_' + rid);
-    if (q.length < 1) { drop.style.display = 'none'; return; }
+    if (q.length < 1) { drop.style.display = 'none'; purItemHighlightIdx[rid] = -1; return; }
     purSearchTimers[rid] = setTimeout(() => {
         fetch(`?page=sales&action=searchItems&q=${encodeURIComponent(q)}&warehouse_id=${purWarehouse}`)
             .then(r => r.json())
@@ -346,12 +420,7 @@ function searchPurItem(input, rid) {
                         <br><small style="color:#94a3b8;">Cost: ${parseFloat(it.purchase_price||0).toFixed(3)}${it.has_imei ? ' · <span style="color:#6366f1;font-weight:600;">IMEI</span>' : ''}</small>
                     </div>
                 `).join('');
-                drop.querySelectorAll('.autocomplete-item').forEach(el => {
-                    el.addEventListener('mousedown', function(e) {
-                        e.preventDefault();
-                        selectPurItem(this.dataset.rid, purItemStore[this.dataset.rid][parseInt(this.dataset.idx)]);
-                    });
-                });
+                bindPurItemDropdown(rid, drop);
                 positionDropdown(input, drop);
                 drop.style.display = 'block';
             });
@@ -364,10 +433,15 @@ function selectPurItem(rid, item) {
     document.getElementById('purHasImei_' + rid).value = item.has_imei;
     document.getElementById('purPrice_'   + rid).value = parseFloat(item.purchase_price || 0).toFixed(3);
     document.getElementById('purDrop_'    + rid).style.display = 'none';
+    purItemHighlightIdx[rid] = -1;
+    const qtyEl = document.getElementById('purQty_' + rid);
+    if (qtyEl && !qtyEl.value) qtyEl.value = 1;
     if (!window.purRowItemNameMap) window.purRowItemNameMap = {};
     window.purRowItemNameMap[rid] = (item.name || '').toLowerCase();
     calcPurRow(rid);
-    setTimeout(() => openPurImeiModal(rid, item.name), 120);
+    if (!purScanLaterEnabled() && parseInt(item.has_imei, 10)) {
+        setTimeout(() => openPurImeiModal(rid, item.name), 120);
+    }
     const rows = document.querySelectorAll('#purItemsBody tr');
     if (rows[rows.length - 1]?.id === rid) addPurRow();
 }
@@ -379,9 +453,47 @@ function getPurImeiRule(row) {
 }
 
 document.addEventListener('click', e => {
-    if (!e.target.closest('.col-item')) document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
-    if (!e.target.closest('.customer-search-wrap')) document.getElementById('supplierDrop').style.display = 'none';
+    if (!e.target.closest('.col-item')) {
+        document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
+        Object.keys(purItemHighlightIdx).forEach(rid => { purItemHighlightIdx[rid] = -1; });
+    }
+    if (!e.target.closest('.customer-search-wrap')) {
+        document.getElementById('supplierDrop').style.display = 'none';
+        supplierHighlightIdx = -1;
+    }
 });
+document.getElementById('purItemsBody').addEventListener('keydown', function(e) {
+    if (!e.target.classList.contains('pur-item-search')) return;
+    const rid = e.target.dataset.row;
+    const drop = document.getElementById('purDrop_' + rid);
+    const visible = drop && drop.style.display !== 'none';
+    const items = purItemStore[rid] || [];
+
+    if (e.key === 'ArrowDown') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        const cur = purItemHighlightIdx[rid] ?? -1;
+        purItemHighlightIdx[rid] = cur < items.length - 1 ? cur + 1 : 0;
+        updatePurItemHighlight(rid);
+    } else if (e.key === 'ArrowUp') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        const cur = purItemHighlightIdx[rid] ?? -1;
+        purItemHighlightIdx[rid] = cur > 0 ? cur - 1 : items.length - 1;
+        updatePurItemHighlight(rid);
+    } else if (e.key === 'Enter') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const cur = purItemHighlightIdx[rid] ?? -1;
+        selectPurItem(rid, items[cur >= 0 ? cur : 0]);
+    } else if (e.key === 'Escape') {
+        if (!visible) return;
+        e.preventDefault();
+        drop.style.display = 'none';
+        purItemHighlightIdx[rid] = -1;
+    }
+}, true);
 window.addEventListener('scroll', () => {
     document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
 }, true);
@@ -389,41 +501,123 @@ window.addEventListener('scroll', () => {
 // Supplier search
 const supplierStore = {};
 let supTimer;
+let supplierHighlightIdx = -1;
+
+function updateSupplierHighlight() {
+    const drop = document.getElementById('supplierDrop');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === supplierHighlightIdx);
+    });
+    const active = drop.querySelector('.autocomplete-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function renderSupplierDropdown(parties) {
+    const drop = document.getElementById('supplierDrop');
+    if (!parties.length) { drop.style.display = 'none'; supplierHighlightIdx = -1; return; }
+    supplierStore['results'] = parties;
+    supplierHighlightIdx = -1;
+    drop.innerHTML = parties.map((p, idx) => `
+        <div class="autocomplete-item" data-idx="${idx}">
+            <strong>${p.name}</strong>
+            <small>${p.phone || ''}</small>
+        </div>
+    `).join('');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectSupplier(supplierStore['results'][parseInt(this.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            supplierHighlightIdx = parseInt(this.dataset.idx, 10);
+            updateSupplierHighlight();
+        });
+    });
+    drop.style.display = 'block';
+}
+
 document.getElementById('supplierSearch').addEventListener('input', function() {
     this.classList.remove('selected');
     document.getElementById('supplierIdInput').value = '';
     clearTimeout(supTimer);
     const q = this.value.trim();
-    const drop = document.getElementById('supplierDrop');
-    if (q.length < 1) { drop.style.display = 'none'; return; }
+    if (q.length < 1) {
+        document.getElementById('supplierDrop').style.display = 'none';
+        supplierHighlightIdx = -1;
+        return;
+    }
     supTimer = setTimeout(() => {
         fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}&type=supplier`)
             .then(r => r.json())
-            .then(parties => {
-                if (!parties.length) { drop.style.display = 'none'; return; }
-                supplierStore['results'] = parties;
-                drop.innerHTML = parties.map((p, idx) => `
-                    <div class="autocomplete-item" data-idx="${idx}">
-                        <strong>${p.name}</strong>
-                        <small class="float-end" style="color:#94a3b8;">${p.phone || ''}</small>
-                    </div>
-                `).join('');
-                drop.querySelectorAll('.autocomplete-item').forEach(el => {
-                    el.addEventListener('mousedown', function(e) {
-                        e.preventDefault();
-                        selectSupplier(supplierStore['results'][parseInt(this.dataset.idx)]);
-                    });
-                });
-                drop.style.display = 'block';
-            });
+            .then(parties => renderSupplierDropdown(parties));
     }, 250);
 });
+
+document.getElementById('supplierSearch').addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && !e.shiftKey && document.getElementById('supplierIdInput').value) {
+        e.preventDefault();
+        focusFirstPurItem();
+        return;
+    }
+
+    const drop = document.getElementById('supplierDrop');
+    const visible = drop.style.display !== 'none';
+    const parties = supplierStore['results'] || [];
+    if (!visible || !parties.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        supplierHighlightIdx = supplierHighlightIdx < parties.length - 1 ? supplierHighlightIdx + 1 : 0;
+        updateSupplierHighlight();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        supplierHighlightIdx = supplierHighlightIdx > 0 ? supplierHighlightIdx - 1 : parties.length - 1;
+        updateSupplierHighlight();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = supplierHighlightIdx >= 0 ? supplierHighlightIdx : 0;
+        selectSupplier(parties[idx]);
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        drop.style.display = 'none';
+        supplierHighlightIdx = -1;
+    }
+}, true);
+
+document.getElementById('supplierRefInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        focusFirstPurItem();
+    }
+});
+
+function focusFirstPurItem() {
+    let target = null;
+    document.querySelectorAll('#purItemsBody tr').forEach(tr => {
+        const rid = tr.dataset.rowId;
+        if (!rid || target) return;
+        if (!document.getElementById('purItemId_' + rid)?.value) {
+            target = tr.querySelector('.pur-item-search');
+        }
+    });
+    if (!target) {
+        target = document.querySelector('#purItemsBody .pur-item-search');
+    }
+    if (!target) return;
+    requestAnimationFrame(() => {
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'nearest' });
+    });
+}
 
 function selectSupplier(p) {
     const el = document.getElementById('supplierSearch');
     el.value = p.name; el.classList.add('selected');
     document.getElementById('supplierIdInput').value = p.id;
     document.getElementById('supplierDrop').style.display = 'none';
+    supplierHighlightIdx = -1;
+    setTimeout(focusFirstPurItem, 0);
 }
 
 function calcPurRow(rid) {
@@ -499,6 +693,26 @@ function openPurImeiModal(rid, itemName) {
 
 function closePurImeiModal() { document.getElementById('purImeiModal').classList.remove('show'); }
 
+function skipPurImeiModal() {
+    if (purCurrentImeiRow) {
+        purActiveImeis = [];
+        purImeiData[purCurrentImeiRow] = [];
+        const imeiField = document.getElementById('purImei_' + purCurrentImeiRow);
+        if (imeiField) imeiField.value = '';
+        const btn = document.getElementById('purImeiBtn_' + purCurrentImeiRow);
+        if (btn) {
+            btn.classList.remove('has-imei');
+            btn.innerHTML = '<i class="bi bi-upc-scan"></i>';
+        }
+    }
+    const scanLaterChk = document.getElementById('purScanLaterChk');
+    if (scanLaterChk) {
+        scanLaterChk.checked = true;
+        updatePurScanLaterUi();
+    }
+    closePurImeiModal();
+}
+
 function getAllPurImeis(excludeRow) {
     const all = [];
     Object.keys(purImeiData).forEach(r => { if (r !== excludeRow) all.push(...purImeiData[r]); });
@@ -542,7 +756,7 @@ function removePurImei(idx) { purActiveImeis.splice(idx, 1); renderPurImeiTags()
 function savePurImeiModal() {
     if (!purCurrentImeiRow) return;
     const qty = parseInt(document.getElementById('purQty_' + purCurrentImeiRow)?.value) || 0;
-    if (qty > 0 && purActiveImeis.length !== qty) {
+    if (!purScanLaterEnabled() && qty > 0 && purActiveImeis.length !== qty) {
         if (!confirm(`${purActiveImeis.length} IMEI(s) entered but quantity is ${qty}. Quantity will update. Continue?`)) return;
     }
     purImeiData[purCurrentImeiRow] = [...purActiveImeis];
@@ -556,6 +770,29 @@ function savePurImeiModal() {
     if (qtyField && purActiveImeis.length > 0) { qtyField.value = purActiveImeis.length; calcPurRow(purCurrentImeiRow); }
     closePurImeiModal();
 }
+
+document.getElementById('purForm').addEventListener('keydown', function(e) {
+    var thermalKeys = ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) || e.key === 'F12';
+    if (thermalKeys) {
+        var modal = document.getElementById('purImeiModal');
+        if (modal && modal.classList.contains('show')) return;
+        e.preventDefault();
+        var pm = document.getElementById('purPrintMode');
+        if (pm) pm.value = '2';
+        if (typeof this.requestSubmit === 'function') {
+            this.requestSubmit();
+        } else {
+            var tb = document.getElementById('btnPurSaveThermal');
+            if (tb) tb.click();
+        }
+        return;
+    }
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
+        !['submit', 'hidden', 'button'].includes(e.target.type) &&
+        e.target.id !== 'purImeiScanInput') {
+        e.preventDefault();
+    }
+}, true);
 
 document.getElementById('purForm').addEventListener('submit', e => {
     if (!document.getElementById('supplierIdInput').value) { e.preventDefault(); alert('Please select a supplier.'); return; }

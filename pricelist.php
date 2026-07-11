@@ -36,9 +36,12 @@ if (isset($_GET['check_prices'])) {
     exit;
 }
 
+// Items created within the last 7 days show a "New Arrival" badge
+$newArrivalCutoff = date('Y-m-d H:i:s', strtotime('-7 days'));
+
 // Get all active items with stock and category
 $items = $db->fetchAll(
-    "SELECT i.id, i.name, i.sku, i.brand, i.model, i.sale_price, i.has_imei, i.unit,
+    "SELECT i.id, i.name, i.sku, i.brand, i.model, i.sale_price, i.has_imei, i.unit, i.created_at,
             c.name as category_name, c.id as category_id,
             COALESCE(SUM(s.quantity), 0) as stock
      FROM items i
@@ -279,7 +282,27 @@ body {
     transform: translateX(2px);
 }
 .pl-item-info { flex: 1; min-width: 0; }
-.pl-item-name { font-size: 0.88rem; font-weight: 700; color: #1e293b; margin-bottom: 1px; }
+.pl-item-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 1px;
+}
+.pl-item-name { font-size: 0.88rem; font-weight: 700; color: #1e293b; }
+.pl-new-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #fff;
+    flex-shrink: 0;
+    line-height: 1.4;
+}
 .pl-item-meta { font-size: 0.72rem; color: #94a3b8; }
 .pl-item-price {
     font-size: 1rem;
@@ -386,10 +409,17 @@ body {
             <span class="pl-section-name"><?= htmlspecialchars($cat) ?></span>
             <span class="pl-section-badge"><?= count($catItems) ?></span>
         </div>
-        <?php foreach ($catItems as $item): ?>
+        <?php foreach ($catItems as $item):
+            $isNewArrival = !empty($item['created_at']) && $item['created_at'] >= $newArrivalCutoff;
+        ?>
         <div class="pl-item" data-name="<?= htmlspecialchars(strtolower($item['name'] . ' ' . ($item['brand'] ?? '') . ' ' . ($item['model'] ?? '') . ' ' . ($item['sku'] ?? ''))) ?>">
             <div class="pl-item-info">
-                <div class="pl-item-name"><?= htmlspecialchars($item['name']) ?></div>
+                <div class="pl-item-name-row">
+                    <div class="pl-item-name"><?= htmlspecialchars($item['name']) ?></div>
+                    <?php if ($isNewArrival): ?>
+                    <span class="pl-new-badge">New Arrival</span>
+                    <?php endif; ?>
+                </div>
                 <?php if ($item['brand'] || $item['sku']): ?>
                 <div class="pl-item-meta">
                     <?= htmlspecialchars(trim(($item['brand'] ?? '') . ($item['sku'] ? ' · ' . $item['sku'] : ''))) ?>

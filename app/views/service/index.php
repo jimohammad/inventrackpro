@@ -100,21 +100,49 @@ $stages = ServiceController::stages();
 
 .sv-delivery-modal {
     position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
-    background:rgba(15,23,42,.45);padding:16px;
+    background:rgba(15,23,42,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);padding:16px;
 }
-.sv-delivery-modal.is-open { display:flex; }
+.sv-delivery-modal.is-open { display:flex;animation:svFade .18s ease; }
+@keyframes svFade { from { opacity:0; } to { opacity:1; } }
 .sv-delivery-dialog {
-    width:100%;max-width:380px;background:var(--bg-card);border:1px solid var(--border-color);
-    border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);overflow:hidden;
+    width:100%;max-width:420px;background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.32);overflow:hidden;position:relative;
+    animation:svPop .22s cubic-bezier(.34,1.56,.64,1);
 }
-.sv-delivery-head { padding:16px 18px 8px;font-weight:700;font-size:.95rem; }
-.sv-delivery-body { padding:0 18px 16px; }
-.sv-delivery-body label { display:block;font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px; }
-.sv-delivery-body input[type=date] {
-    width:100%;padding:10px 12px;border:1.5px solid var(--border-color);border-radius:10px;
-    font-size:.9rem;background:var(--bg-main);color:var(--text-main);
+@keyframes svPop { from { opacity:0;transform:translateY(12px) scale(.96); } to { opacity:1;transform:none; } }
+.sv-delivery-close {
+    position:absolute;top:14px;right:14px;width:30px;height:30px;border:none;border-radius:8px;
+    background:transparent;color:var(--text-muted);font-size:1.35rem;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;
 }
-.sv-delivery-foot { display:flex;gap:8px;justify-content:flex-end;padding:12px 18px 16px;border-top:1px solid var(--border-color); }
+.sv-delivery-close:hover { background:rgba(148,163,184,.18);color:var(--text-main); }
+.sv-delivery-head { display:flex;align-items:center;gap:14px;padding:22px 22px 16px; }
+.sv-delivery-icon {
+    flex:0 0 auto;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    font-size:1.4rem;background:rgba(124,58,237,.14);color:#7c3aed;
+}
+.sv-delivery-title { font-weight:800;font-size:1.05rem;color:var(--text-main);line-height:1.2; }
+.sv-delivery-sub { font-size:.8rem;color:var(--text-muted);margin-top:2px; }
+.sv-delivery-body { padding:4px 22px 20px;display:flex;flex-direction:column;gap:16px; }
+.sv-field label { display:block;font-size:.72rem;font-weight:700;letter-spacing:.03em;color:var(--text-muted);text-transform:uppercase;margin-bottom:7px; }
+.sv-field input {
+    width:100%;padding:12px 14px;border:1.5px solid var(--border-color);border-radius:11px;
+    font-size:.95rem;background:var(--bg-main);color:var(--text-main);transition:border-color .15s,box-shadow .15s;
+}
+.sv-field input:focus {
+    outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.18);
+}
+.sv-field-hint { display:block;font-size:.72rem;color:var(--text-muted);margin-top:6px; }
+.sv-delivery-foot { display:flex;gap:10px;justify-content:flex-end;padding:16px 22px 20px;border-top:1px solid var(--border-color); }
+.sv-delivery-foot .btn { padding:9px 18px;border-radius:10px;font-weight:600;font-size:.9rem; }
+.sv-delivery-foot .sv-btn-primary {
+    background:#7c3aed;border:1px solid #7c3aed;color:#fff;
+}
+.sv-delivery-foot .sv-btn-primary:hover { background:#6d28d9;border-color:#6d28d9; }
+.sv-delivery-foot .sv-btn-ghost {
+    background:transparent;border:1px solid var(--border-color);color:var(--text-main);
+}
+.sv-delivery-foot .sv-btn-ghost:hover { background:rgba(148,163,184,.14); }
 </style>
 
 <div class="sv-head">
@@ -234,7 +262,7 @@ $stages = ServiceController::stages();
                     <td><span class="sv-badge" style="background:<?= $st['color'] ?>15;color:<?= $st['color'] ?>;"><i class="bi <?= $st['icon'] ?>"></i> <?= $st['label'] ?></span></td>
                     <td>
                         <?php if (Auth::can('service', 'edit')): ?>
-                        <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>" data-delivered-date="<?= htmlspecialchars($r['delivered_date'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                        <div class="sv-status-edit" data-service-id="<?= (int)$r['id'] ?>" data-status="<?= htmlspecialchars($r['status']) ?>" data-delivered-date="<?= htmlspecialchars($r['delivered_date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" data-replacement-imei="<?= htmlspecialchars($r['replacement_imei'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <span class="sv-status-dot" aria-hidden="true"></span>
                             <select class="sv-status-select" aria-label="Change status">
                                 <?php foreach (ServiceController::allowedStatuses() as $s): ?>
@@ -256,7 +284,7 @@ $stages = ServiceController::stages();
                             <?= $trackUrl === '' ? 'disabled' : '' ?>>
                             <i class="bi bi-link-45deg"></i>
                         </button>
-                        <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $r['id'] ?>&amp;autoprint=1" class="sv-act view" style="background:rgba(5,150,105,.12);color:#059669;" target="_blank" rel="noopener noreferrer" title="Thermal customer receipt"><i class="bi bi-receipt-cutoff"></i></a>
+                        <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $r['id'] ?>&amp;autoprint=1" class="sv-act view" style="background:rgba(5,150,105,.12);color:#059669;" title="Thermal customer receipt"><i class="bi bi-receipt-cutoff"></i></a>
                         <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
                         <?php if (Auth::can('service', 'edit')): ?>
                         <a href="?page=service&action=edit&id=<?= $r['id'] ?>" class="sv-act edit pin-protect" title="Edit"><i class="bi bi-pencil"></i></a>
@@ -278,15 +306,29 @@ $stages = ServiceController::stages();
 </div>
 
 <div id="svDeliveryModal" class="sv-delivery-modal" role="dialog" aria-modal="true" aria-labelledby="svDeliveryModalTitle">
-    <div class="sv-delivery-dialog">
-        <div class="sv-delivery-head" id="svDeliveryModalTitle">Delivery date</div>
+    <div class="sv-delivery-dialog" role="document">
+        <button type="button" class="sv-delivery-close" id="svDeliveryClose" aria-label="Close">&times;</button>
+        <div class="sv-delivery-head">
+            <span class="sv-delivery-icon" id="svDeliveryIcon"><i class="bi bi-truck"></i></span>
+            <div>
+                <div class="sv-delivery-title" id="svDeliveryModalTitle">Delivery date</div>
+                <div class="sv-delivery-sub" id="svDeliverySub">Confirm the handover details</div>
+            </div>
+        </div>
         <div class="sv-delivery-body">
-            <label for="svDeliveryDateInput">When was the device delivered to the customer?</label>
-            <input type="date" id="svDeliveryDateInput" max="<?= date('Y-m-d') ?>">
+            <div class="sv-field">
+                <label for="svDeliveryDateInput">Delivery date</label>
+                <input type="date" id="svDeliveryDateInput" max="<?= date('Y-m-d') ?>">
+            </div>
+            <div class="sv-field" id="svReplacementImeiRow" style="display:none;">
+                <label for="svReplacementImeiInput">New device IMEI</label>
+                <input type="text" id="svReplacementImeiInput" inputmode="numeric" autocomplete="off" maxlength="18" placeholder="Enter IMEI of the replacement device">
+                <span class="sv-field-hint">10–18 digits of the new device handed to the customer.</span>
+            </div>
         </div>
         <div class="sv-delivery-foot">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="svDeliveryCancel">Cancel</button>
-            <button type="button" class="btn btn-sm btn-primary" id="svDeliveryConfirm">Save status</button>
+            <button type="button" class="btn btn-sm sv-btn-ghost" id="svDeliveryCancel">Cancel</button>
+            <button type="button" class="btn btn-sm sv-btn-primary" id="svDeliveryConfirm">Save status</button>
         </div>
     </div>
 </div>
@@ -387,6 +429,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var deliveryDateInput = document.getElementById('svDeliveryDateInput');
     var deliveryCancelBtn = document.getElementById('svDeliveryCancel');
     var deliveryConfirmBtn = document.getElementById('svDeliveryConfirm');
+    var deliveryTitle = document.getElementById('svDeliveryModalTitle');
+    var deliverySub = document.getElementById('svDeliverySub');
+    var deliveryIcon = document.getElementById('svDeliveryIcon');
+    var deliveryCloseBtn = document.getElementById('svDeliveryClose');
+    var replacementImeiRow = document.getElementById('svReplacementImeiRow');
+    var replacementImeiInput = document.getElementById('svReplacementImeiInput');
     var pendingDelivery = null;
 
     function closeDeliveryModal() {
@@ -396,24 +444,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function openDeliveryModal(wrap, select, status) {
         if (!deliveryModal || !deliveryDateInput) {
-            submitStatusUpdate(wrap, select, status, '');
+            submitStatusUpdate(wrap, select, status, '', '');
             return;
         }
         pendingDelivery = { wrap: wrap, select: select, status: status, prev: wrap.getAttribute('data-status') };
         var existing = wrap.getAttribute('data-delivered-date') || '';
         deliveryDateInput.value = existing || new Date().toISOString().slice(0, 10);
+
+        var needsImei = (status === 'Replaced & Delivered');
+        if (replacementImeiRow) replacementImeiRow.style.display = needsImei ? 'block' : 'none';
+        if (replacementImeiInput) replacementImeiInput.value = needsImei ? (wrap.getAttribute('data-replacement-imei') || '') : '';
+        if (deliveryTitle) deliveryTitle.textContent = needsImei ? 'Replacement delivery' : 'Delivery date';
+        if (deliverySub) deliverySub.textContent = needsImei ? 'Record the new device handed to the customer.' : 'Confirm the handover details.';
+        if (deliveryIcon) deliveryIcon.innerHTML = needsImei ? '<i class="bi bi-phone"></i>' : '<i class="bi bi-truck"></i>';
+
         deliveryModal.classList.add('is-open');
-        deliveryDateInput.focus();
+        if (needsImei && replacementImeiInput && !replacementImeiInput.value) {
+            replacementImeiInput.focus();
+        } else {
+            deliveryDateInput.focus();
+        }
+    }
+
+    function cancelDeliveryModal() {
+        if (pendingDelivery) {
+            pendingDelivery.select.value = pendingDelivery.prev;
+            applyStatusTheme(pendingDelivery.wrap, pendingDelivery.prev);
+        }
+        closeDeliveryModal();
     }
 
     if (deliveryCancelBtn) {
-        deliveryCancelBtn.addEventListener('click', function() {
-            if (pendingDelivery) {
-                pendingDelivery.select.value = pendingDelivery.prev;
-                applyStatusTheme(pendingDelivery.wrap, pendingDelivery.prev);
-            }
-            closeDeliveryModal();
-        });
+        deliveryCancelBtn.addEventListener('click', cancelDeliveryModal);
+    }
+    if (deliveryCloseBtn) {
+        deliveryCloseBtn.addEventListener('click', cancelDeliveryModal);
     }
 
     if (deliveryConfirmBtn) {
@@ -424,25 +489,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Please choose a delivery date.');
                 return;
             }
+            var imeiVal = '';
+            if (pendingDelivery.status === 'Replaced & Delivered') {
+                imeiVal = replacementImeiInput ? replacementImeiInput.value.replace(/\s+/g, '') : '';
+                if (!imeiVal) {
+                    alert('Please enter the IMEI of the new device.');
+                    if (replacementImeiInput) replacementImeiInput.focus();
+                    return;
+                }
+                if (!/^[0-9]{10,18}$/.test(imeiVal)) {
+                    alert('New device IMEI must be 10-18 digits.');
+                    if (replacementImeiInput) replacementImeiInput.focus();
+                    return;
+                }
+            }
             var ctx = pendingDelivery;
             closeDeliveryModal();
-            submitStatusUpdate(ctx.wrap, ctx.select, ctx.status, dateVal);
+            submitStatusUpdate(ctx.wrap, ctx.select, ctx.status, dateVal, imeiVal);
         });
     }
 
     if (deliveryModal) {
         deliveryModal.addEventListener('click', function(e) {
-            if (e.target === deliveryModal) {
-                if (pendingDelivery) {
-                    pendingDelivery.select.value = pendingDelivery.prev;
-                    applyStatusTheme(pendingDelivery.wrap, pendingDelivery.prev);
-                }
-                closeDeliveryModal();
-            }
+            if (e.target === deliveryModal) cancelDeliveryModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && deliveryModal.classList.contains('is-open')) cancelDeliveryModal();
         });
     }
 
-    function submitStatusUpdate(wrap, select, status, deliveredDate) {
+    function submitStatusUpdate(wrap, select, status, deliveredDate, replacementImei) {
         var id = wrap.getAttribute('data-service-id');
         var saving = wrap.querySelector('.sv-status-saving');
         if (!id) return;
@@ -457,6 +533,7 @@ document.addEventListener('DOMContentLoaded', function() {
         body.set('id', id);
         body.set('status', status);
         if (deliveredDate) body.set('delivered_date', deliveredDate);
+        if (replacementImei) body.set('replacement_imei', replacementImei);
 
         fetch('?page=service&action=updateStatus', {
             method: 'POST',
@@ -473,6 +550,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 wrap.setAttribute('data-delivered-date', res.delivered_date);
             } else {
                 wrap.removeAttribute('data-delivered-date');
+            }
+            if (res.replacement_imei) {
+                wrap.setAttribute('data-replacement-imei', res.replacement_imei);
             }
             updateDeliveredCell(id, res.delivered_date || '');
             var tr = wrap.closest('tr');
@@ -507,7 +587,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 openDeliveryModal(wrap, select, status);
                 return;
             }
-            submitStatusUpdate(wrap, select, status, '');
+            submitStatusUpdate(wrap, select, status, '', '');
         });
     });
 });

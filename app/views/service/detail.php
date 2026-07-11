@@ -1,8 +1,10 @@
 <?php
+require_once __DIR__ . '/../../helpers/ServiceLockPattern.php';
 $stages = ServiceController::stages();
 $currentStage = (int)$record['device_stage'];
 $curr = APP_CURRENCY;
 $trackUrl = app_service_track_url((string) $record['tracking_token']);
+$lockPatternSvg = ServiceLockPattern::toSvg($record['lock_pattern'] ?? null, 120);
 ?>
 <style>
 .sd-page { max-width:800px;margin:0 auto; }
@@ -63,7 +65,7 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
         <h1><?= htmlspecialchars($record['service_no']) ?></h1>
         <span class="sd-badge" style="background:<?= ServiceController::statusColor($record['status']) ?>;"><?= $record['status'] ?></span>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" target="_blank" rel="noopener noreferrer" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
+            <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $record['id'] ?>&amp;autoprint=1" class="sd-btn sd-btn-custom" style="text-decoration:none;font-size:.78rem;padding:6px 12px;" title="Opens narrow receipt; print dialog for thermal printer">
                 <i class="bi bi-receipt-cutoff"></i> Thermal receipt
             </a>
             <span style="font-size:.8rem;color:var(--text-muted);">
@@ -178,6 +180,18 @@ $trackUrl = app_service_track_url((string) $record['tracking_token']);
         <div class="sd-sep"><span><i class="bi bi-phone"></i> Device & Fault</span></div>
         <div class="sd-rows">
             <div class="sd-row"><span class="sd-row-label">IMEI</span><span class="sd-row-value" style="font-family:monospace;"><a href="?page=imei&action=lifecycle&imei=<?= urlencode($record['imei']) ?>"><?= htmlspecialchars($record['imei']) ?></a></span></div>
+            <?php if (!empty($record['screen_pin'])): ?>
+            <div class="sd-row">
+                <span class="sd-row-label">Screen PIN</span>
+                <span class="sd-row-value" style="font-family:monospace;font-size:1rem;"><?= htmlspecialchars((string) $record['screen_pin']) ?></span>
+            </div>
+            <?php endif; ?>
+            <?php if ($lockPatternSvg !== ''): ?>
+            <div class="sd-row" style="align-items:center;">
+                <span class="sd-row-label">Lock pattern</span>
+                <span class="sd-row-value" style="color:var(--primary);"><?= $lockPatternSvg ?></span>
+            </div>
+            <?php endif; ?>
             <?php if ($record['device_brand'] || $record['device_model']): ?>
             <div class="sd-row"><span class="sd-row-label">Device</span><span class="sd-row-value"><?= htmlspecialchars(trim($record['device_brand'] . ' ' . $record['device_model'])) ?></span></div>
             <?php endif; ?>

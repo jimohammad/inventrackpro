@@ -17,7 +17,8 @@
 .pf-card:hover { box-shadow:0 14px 30px rgba(15,23,42,.08); border-color:#d9dff0; }
 .pf-card::before { content:'';position:absolute;left:0;top:0;width:4px;height:100%;background:var(--card-accent,var(--primary)); }
 .pf-card.c-party    { --card-accent: linear-gradient(180deg,#8b5cf6,#6366f1); }
-.pf-card.c-party    { background:linear-gradient(135deg,#fff,#fafaff); }
+.pf-card.c-party    { background:linear-gradient(135deg,#fff,#fafaff);overflow:visible; }
+.pf-card.c-party.is-open { position:relative;z-index:60; }
 .pf-card.c-account  { --card-accent: linear-gradient(180deg,#10b981,#059669); }
 .pf-card.c-account  { background:linear-gradient(135deg,#fff,#f7fdfa); }
 .pf-card.c-notes    { --card-accent: linear-gradient(180deg,#f59e0b,#d97706); }
@@ -39,20 +40,36 @@
 .pf-meta input[type=date] { width:auto;padding:6px 10px;border:1.5px solid #a5b4fc;border-radius:7px;font-size:.82rem;font-weight:600;background:#fff;color:#1e293b;outline:none; }
 .pf-meta input[type=date]:focus { border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15); }
 
-/* Party search */
+/* Party search — AJAX autocomplete */
 .pf-party-wrap { position:relative; }
-.pf-party-wrap .select2-container { width:100% !important; }
-.pf-party-wrap .select2-selection--single {
-    height:48px !important; border-radius:11px !important;
-    border:1.5px solid #dbe2ee !important;
-    background:var(--bg-main) !important;
+.pf-party-input {
+    width:100%;height:48px;padding:0 14px 0 40px;border:1.5px solid #dbe2ee;border-radius:11px;
+    font-size:.95rem;font-weight:600;background:var(--bg-main);color:var(--text-main);outline:none;
+    box-sizing:border-box;transition:border-color .15s, box-shadow .15s, background-color .15s;
 }
-.pf-party-wrap .select2-selection__rendered { line-height:44px !important; padding-left:14px !important; font-size:.92rem !important; font-weight:600 !important; color:var(--text-main) !important; }
-.pf-party-wrap .select2-selection__placeholder { color:var(--text-muted) !important; font-weight:400 !important; }
-.pf-party-wrap .select2-container--default.select2-container--focus .select2-selection--single {
-    border-color: var(--primary) !important;
-    box-shadow: 0 0 0 3px rgba(99,102,241,.12) !important;
+.pf-party-input:focus { border-color:var(--primary);box-shadow:0 0 0 3px rgba(99,102,241,.12);background:#fff; }
+.pf-party-input.selected { border-color:#8b5cf6;background:linear-gradient(135deg,#fafaff,#f5f3ff); }
+.pf-party-wrap .pf-party-icon {
+    position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#8b5cf6;font-size:1.05rem;pointer-events:none;
 }
+.pf-party-drop {
+    display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:200;
+    background:#fff;border:1.5px solid #e0e7ff;border-radius:11px;
+    box-shadow:0 10px 28px rgba(15,23,42,.12);max-height:240px;overflow-y:auto;
+}
+.pf-party-item {
+    padding:10px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:.88rem;transition:background .1s;
+}
+.pf-party-item:last-child { border-bottom:none; }
+.pf-party-item.active, .pf-party-item:hover { background:linear-gradient(135deg,#f5f3ff,#eef2ff); }
+.pf-party-item strong {
+    display:block;font-weight:700;color:#1e293b;
+    white-space:normal;word-break:break-word;line-height:1.35;
+}
+.pf-party-item .pf-party-meta { font-size:.76rem;color:#64748b;margin-top:2px;word-break:break-word; }
+.pf-party-item .pf-party-due { color:#c2410c;font-weight:600; }
+.pf-party-item .pf-party-credit { color:#1d4ed8;font-weight:600; }
+.pf-party-item .pf-party-clear { color:#15803d;font-weight:600; }
 
 /* Balance card */
 .pf-bal { display:none;margin-top:10px;border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between; }
@@ -135,11 +152,20 @@
     $modeTitle = $isReceive ? 'Receive Payment' : 'Make Payment';
     $modeIcon  = $isReceive ? 'bi-arrow-down-circle-fill' : 'bi-arrow-up-circle-fill';
     $modeColor = $isReceive ? '#10b981' : '#ef4444';
-    $partyLbl  = $isReceive ? 'Customer'  : 'Supplier';
+    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Supplier');
     $accentBg  = $isReceive
         ? 'linear-gradient(135deg,#10b981,#059669)'
         : 'linear-gradient(135deg,#ef4444,#dc2626)';
     $preselectPartyId = $preselectPartyId ?? 0;
+    $preselectParty   = $preselectParty ?? null;
+    $partySearchType  = $partySearchType ?? ($isReceive ? 'customer' : 'payment_out');
+    $partyPlaceholder = $isReceive
+        ? 'Type name or phone — Enter to select'
+        : (($importPayable ?? false)
+            ? 'Import partner — pre-selected from payable'
+            : 'Type supplier name or phone — Enter to select');
+    $linkRefId = (int) ($refId ?? 0);
+    $importPayableContext = $importPayableContext ?? null;
 ?>
 <div class="pf-page">
     <div class="pf-head">
@@ -174,6 +200,21 @@
         </div>
         <input type="hidden" name="ref_type" value="<?= htmlspecialchars($refType) ?>">
         <input type="hidden" name="ref_id"   value="<?= (int)$refId ?>">
+        <?php elseif ($importPayableContext): ?>
+        <div class="pf-ref" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fcd34d;">
+            <i class="bi bi-handshake"></i>
+            <span>
+                <strong><?= htmlspecialchars($importPayableContext['charge_label'] ?? 'Import payable') ?></strong>
+                · <?= htmlspecialchars($importPayableContext['shipment_no'] ?? '') ?>
+                · <?= htmlspecialchars(trim(($importPayableContext['po_no'] ?? '') . ' / ' . ($importPayableContext['item_name'] ?? ''), ' /')) ?>
+                · Pay to <strong><?= htmlspecialchars($importPayableContext['partner_name'] ?? '') ?></strong>
+                <?php if ((float) ($importPayableContext['amount'] ?? 0) > 0): ?>
+                · <strong><?= APP_CURRENCY ?> <?= number_format((float) $importPayableContext['amount'], DECIMAL_PLACES) ?></strong>
+                <?php endif; ?>
+            </span>
+        </div>
+        <input type="hidden" name="ref_type" value="<?= htmlspecialchars($refType) ?>">
+        <input type="hidden" name="ref_id"   value="<?= $linkRefId ?>">
         <?php else: ?>
         <input type="hidden" name="ref_type" value="<?= htmlspecialchars($refType) ?>">
         <input type="hidden" name="ref_id"   value="">
@@ -186,20 +227,19 @@
         </div>
 
         <!-- Party -->
-        <div class="pf-card c-party">
+        <div class="pf-card c-party" id="partyCard">
             <div class="pf-sec"><span class="num">1</span> <?= $partyLbl ?></div>
             <div class="pf-party-wrap">
-                <select name="party_id" class="form-select" required id="partySelect">
-                    <option value="">Search <?= strtolower($partyLbl) ?> by name or phone...</option>
-                    <?php foreach ($parties as $p):
-                        $isSelected = ($refData && $refData['party_id'] == $p['id']) ||
-                                      ($preselectPartyId && $preselectPartyId == $p['id']);
-                    ?>
-                    <option value="<?= $p['id'] ?>" <?= $isSelected ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($p['name']) ?><?= $p['phone'] ? ' · ' . htmlspecialchars($p['phone']) : '' ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
+                <i class="bi bi-person-circle pf-party-icon" aria-hidden="true"></i>
+                <input type="text" id="partySearch"
+                       class="pf-party-input<?= $preselectParty ? ' selected' : '' ?>"
+                       placeholder="<?= htmlspecialchars($partyPlaceholder) ?>"
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                       value="<?= htmlspecialchars($preselectParty['name'] ?? '') ?>"
+                       <?= ($importPayableContext && $preselectParty) ? 'readonly' : '' ?>>
+                <input type="hidden" name="party_id" id="partyIdInput"
+                       value="<?= $preselectParty ? (int) $preselectParty['id'] : '' ?>" required>
+                <div class="pf-party-drop" id="partyDropdown" role="listbox" aria-label="<?= htmlspecialchars($partyLbl) ?> results"></div>
             </div>
             <div class="pf-bal" id="partyBal">
                 <div>
@@ -217,14 +257,14 @@
                     <label>Account <span id="acctTypeBadge" style="font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:5px;display:none;text-transform:uppercase;letter-spacing:.4px;"></span></label>
                     <select name="account_id" id="accountSelect" required onchange="onAccountChange()">
                         <?php foreach ($accounts as $acc): ?>
-                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"><?= htmlspecialchars($acc['name']) ?></option>
+                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="pf-field">
                     <label>Amount</label>
                     <input type="number" name="amount" id="amt1" step="0.001" min="0.001" required
-                           value="<?= $refData ? $refData['balance'] : '' ?>" placeholder="0.000">
+                           value="<?= $refData ? $refData['balance'] : ((($preselectAmount ?? 0) > 0 ? number_format((float) $preselectAmount, 3, '.', '') : '') ?: ((float) ($importPayableContext['amount'] ?? 0) > 0 ? number_format((float) $importPayableContext['amount'], 3, '.', '') : '')) ?>" placeholder="0.000">
                 </div>
             </div>
 
@@ -244,13 +284,15 @@
             </div>
         </div>
 
+        <?php if (!$isReceive): ?>
         <!-- Notes -->
         <div class="pf-card c-notes">
             <div class="pf-sec"><span class="num">3</span> Notes (Optional)</div>
             <div class="pf-field">
-                <textarea name="notes" rows="2" placeholder="Reference, remarks..."></textarea>
+                <textarea name="notes" rows="2" placeholder="Reference, remarks..."><?= htmlspecialchars($preselectNotes ?? '') ?></textarea>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Footer -->
         <div class="pf-foot">
@@ -272,6 +314,16 @@
 
 <script>
 var partyBalance = 0;
+var partySearchType = <?= json_encode($partySearchType) ?>;
+var partyStore = { results: [] };
+var partyTimer = null;
+var partyHighlightIdx = -1;
+var partySearchAbort = null;
+
+function partyIdSelected() {
+    var el = document.getElementById('partyIdInput');
+    return el && parseInt(el.value, 10) > 0;
+}
 
 function onAccountChange() {
     var sel = document.getElementById('accountSelect');
@@ -301,57 +353,223 @@ function toggleCheque() {
     else document.getElementById('chequeInput').value = '';
 }
 
-function showPartyBalance() {
-    var sel    = document.getElementById('partySelect');
+function setBalLabel(label, iconClass, text) {
+    label.textContent = '';
+    var i = document.createElement('i');
+    i.className = 'bi ' + iconClass + ' me-1';
+    label.appendChild(i);
+    label.appendChild(document.createTextNode(text));
+}
+
+function renderPartyBalance(bal) {
     var box    = document.getElementById('partyBal');
     var label  = document.getElementById('balLabel');
     var amount = document.getElementById('balAmount');
-    if (!sel || !sel.value) { box.classList.remove('show','owes','youowe','clear'); return; }
+    var curr   = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
+    partyBalance = bal;
+    box.className = 'pf-bal show';
+    if (bal > 0.001) {
+        box.classList.add('owes');
+        setBalLabel(label, 'bi-exclamation-triangle-fill', '<?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>');
+        amount.textContent = curr + ' ' + bal.toFixed(3);
+    } else if (bal < -0.001) {
+        box.classList.add('youowe');
+        setBalLabel(label, 'bi-info-circle-fill', '<?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>');
+        amount.textContent = curr + ' ' + Math.abs(bal).toFixed(3);
+    } else {
+        box.classList.add('clear');
+        setBalLabel(label, 'bi-check-circle-fill', 'Account Clear');
+        amount.textContent = curr + ' 0.000';
+    }
+    box.classList.remove('pf-bal-pop');
+    void box.offsetWidth;
+    box.classList.add('pf-bal-pop');
+}
 
-    function setBalLabel(iconClass, text) {
-        label.textContent = '';
-        var i = document.createElement('i');
-        i.className = 'bi ' + iconClass + ' me-1';
-        label.appendChild(i);
-        label.appendChild(document.createTextNode(text));
+function showPartyBalance(balOverride) {
+    var box = document.getElementById('partyBal');
+    if (!partyIdSelected()) { box.classList.remove('show','owes','youowe','clear'); return; }
+    var partyId = document.getElementById('partyIdInput').value;
+
+    if (balOverride !== undefined && balOverride !== null) {
+        renderPartyBalance(parseFloat(balOverride) || 0);
+        return;
     }
 
-    setBalLabel('bi-hourglass-split', 'Loading...');
+    var label  = document.getElementById('balLabel');
+    var amount = document.getElementById('balAmount');
+    setBalLabel(label, 'bi-hourglass-split', 'Loading...');
     amount.textContent = '';
     box.className = 'pf-bal show clear';
 
-    fetch('?page=payments&action=partyBalance&id=' + sel.value)
+    fetch('?page=payments&action=partyBalance&id=' + partyId)
         .then(function(r) { return r.json(); })
-        .then(function(data) {
-            var bal  = parseFloat(data.balance) || 0;
-            partyBalance = bal;
-            var curr = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
-            box.className = 'pf-bal show';
-            if (bal > 0.001) {
-                box.classList.add('owes');
-                setBalLabel('bi-exclamation-triangle-fill', '<?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>');
-                amount.textContent = curr + ' ' + bal.toFixed(3);
-            } else if (bal < -0.001) {
-                box.classList.add('youowe');
-                setBalLabel('bi-info-circle-fill', '<?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>');
-                amount.textContent = curr + ' ' + Math.abs(bal).toFixed(3);
-            } else {
-                box.classList.add('clear');
-                setBalLabel('bi-check-circle-fill', 'Account Clear');
-                amount.textContent = curr + ' 0.000';
-            }
-            box.classList.remove('pf-bal-pop');
-            // retrigger tiny emphasis animation when fresh balance arrives
-            void box.offsetWidth;
-            box.classList.add('pf-bal-pop');
-        })
+        .then(function(data) { renderPartyBalance(parseFloat(data.balance) || 0); })
         .catch(function() { box.classList.remove('show'); });
+}
+
+function escapeHtml(text) {
+    return String(text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function setPartyDropdownOpen(open) {
+    var card = document.getElementById('partyCard');
+    if (card) card.classList.toggle('is-open', !!open);
+}
+
+function updatePartyHighlight() {
+    var drop = document.getElementById('partyDropdown');
+    drop.querySelectorAll('.pf-party-item').forEach(function(el) {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === partyHighlightIdx);
+    });
+    var active = drop.querySelector('.pf-party-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function partyBalanceHint(bal) {
+    var curr = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
+    var n = parseFloat(bal) || 0;
+    if (n > 0.001) return '<span class="pf-party-due">Due: ' + curr + ' ' + n.toFixed(3) + '</span>';
+    if (n < -0.001) return '<span class="pf-party-credit">Credit: ' + curr + ' ' + Math.abs(n).toFixed(3) + '</span>';
+    return '<span class="pf-party-clear">Account clear</span>';
+}
+
+function renderPartyDropdown(parties) {
+    var drop = document.getElementById('partyDropdown');
+    if (!parties.length) { drop.style.display = 'none'; setPartyDropdownOpen(false); partyHighlightIdx = -1; return; }
+    partyStore.results = parties;
+    partyHighlightIdx = parties.length === 1 ? 0 : -1;
+    drop.innerHTML = parties.map(function(p, idx) {
+        var meta = [];
+        if (p.phone) meta.push(escapeHtml(p.phone));
+        meta.push(partyBalanceHint(p.balance));
+        return '<div class="pf-party-item' + (idx === partyHighlightIdx ? ' active' : '') + '" data-idx="' + idx + '" role="option">'
+            + '<strong>' + escapeHtml(p.name) + '</strong>'
+            + '<div class="pf-party-meta">' + meta.join(' · ') + '</div>'
+            + '</div>';
+    }).join('');
+    drop.style.display = 'block';
+    setPartyDropdownOpen(true);
+}
+
+function selectParty(party, focusAmount) {
+    var input = document.getElementById('partySearch');
+    input.value = party.name;
+    input.title = party.name || '';
+    input.classList.add('selected');
+    document.getElementById('partyIdInput').value = party.id;
+    document.getElementById('partyDropdown').style.display = 'none';
+    setPartyDropdownOpen(false);
+    partyHighlightIdx = -1;
+    showPartyBalance(party.balance);
+    if (focusAmount !== false) {
+        var amtEl = document.getElementById('amt1');
+        if (amtEl) {
+            setTimeout(function() {
+                amtEl.focus();
+                try { amtEl.select(); } catch (e) { /* some browsers */ }
+            }, 30);
+        }
+    }
+}
+
+function searchParties(q) {
+    if (partySearchAbort) partySearchAbort.abort();
+    partySearchAbort = new AbortController();
+    fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(q) + '&type=' + encodeURIComponent(partySearchType), {
+        signal: partySearchAbort.signal
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(parties) { renderPartyDropdown(parties); })
+        .catch(function(err) {
+            if (err && err.name !== 'AbortError') {
+                document.getElementById('partyDropdown').style.display = 'none';
+                setPartyDropdownOpen(false);
+            }
+        });
+}
+
+function initPartySearch() {
+    var input = document.getElementById('partySearch');
+    var drop  = document.getElementById('partyDropdown');
+    if (!input || !drop) return;
+
+    input.addEventListener('input', function() {
+        input.classList.remove('selected');
+        document.getElementById('partyIdInput').value = '';
+        document.getElementById('partyBal').classList.remove('show','owes','youowe','clear');
+        clearTimeout(partyTimer);
+        var q = input.value.trim();
+        if (q.length < 1) {
+            drop.style.display = 'none';
+            setPartyDropdownOpen(false);
+            partyHighlightIdx = -1;
+            return;
+        }
+        partyTimer = setTimeout(function() { searchParties(q); }, 150);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab' && !e.shiftKey && partyIdSelected()) {
+            e.preventDefault();
+            var amtEl = document.getElementById('amt1');
+            if (amtEl) amtEl.focus();
+            return;
+        }
+        var visible = drop.style.display !== 'none';
+        var parties = partyStore.results || [];
+        if (!visible || !parties.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            partyHighlightIdx = partyHighlightIdx < parties.length - 1 ? partyHighlightIdx + 1 : 0;
+            updatePartyHighlight();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            partyHighlightIdx = partyHighlightIdx > 0 ? partyHighlightIdx - 1 : parties.length - 1;
+            updatePartyHighlight();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            var idx = partyHighlightIdx >= 0 ? partyHighlightIdx : 0;
+            selectParty(parties[idx]);
+        } else if (e.key === 'Escape') {
+            drop.style.display = 'none';
+            setPartyDropdownOpen(false);
+            partyHighlightIdx = -1;
+        }
+    });
+
+    drop.addEventListener('mousedown', function(e) {
+        var item = e.target.closest('.pf-party-item');
+        if (!item) return;
+        e.preventDefault();
+        selectParty(partyStore.results[parseInt(item.dataset.idx, 10)]);
+    });
+
+    drop.addEventListener('mouseover', function(e) {
+        var item = e.target.closest('.pf-party-item');
+        if (!item) return;
+        partyHighlightIdx = parseInt(item.dataset.idx, 10);
+        updatePartyHighlight();
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.pf-party-wrap')) {
+            drop.style.display = 'none';
+            setPartyDropdownOpen(false);
+            partyHighlightIdx = -1;
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     var payForm = document.getElementById('payForm');
     if (payForm) {
         payForm.addEventListener('submit', function(e) {
+            if (!partyIdSelected()) {
+                e.preventDefault();
+                document.getElementById('partySearch').focus();
+                return;
+            }
             if (payForm.dataset.submitting === '1') {
                 e.preventDefault();
                 return;
@@ -386,32 +604,32 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     onAccountChange();
-    var checkReady = setInterval(function() {
-        if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-            clearInterval(checkReady);
-            var $p = jQuery('#partySelect');
-            $p.select2({ placeholder: 'Search party by name or phone...' });
-            $p.on('select2:select', function() {
-                showPartyBalance();
-                <?php if ($isReceive): ?>
-                var amtEl = document.getElementById('amt1');
-                if (amtEl) {
-                    setTimeout(function() {
-                        amtEl.focus();
-                        try { amtEl.select(); } catch (e) { /* some browsers */ }
-                    }, 50);
-                }
-                <?php endif; ?>
-            });
-            $p.on('select2:clear',  function() { document.getElementById('partyBal').classList.remove('show'); });
-            if ($p.val()) showPartyBalance();
-            <?php if ($isReceive): ?>
-            // Default cursor focus on customer field for faster entry (receive mode only).
-            setTimeout(function() {
-                $p.select2('open');
-            }, 120);
-            <?php endif; ?>
-        }
-    }, 50);
+    initPartySearch();
+    var partySearchEl = document.getElementById('partySearch');
+    if (partyIdSelected()) {
+        if (partySearchEl && partySearchEl.value) partySearchEl.title = partySearchEl.value;
+        showPartyBalance();
+    }
+    setTimeout(function() {
+        if (partySearchEl) partySearchEl.focus();
+    }, 120);
 });
+
+<?php if ($isReceive): ?>
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+
+    var partyDrop = document.getElementById('partyDropdown');
+    if (partyDrop && partyDrop.style.display !== 'none') {
+        e.preventDefault();
+        e.stopPropagation();
+        partyDrop.style.display = 'none';
+        setPartyDropdownOpen(false);
+        partyHighlightIdx = -1;
+        return;
+    }
+
+    window.location.href = '?page=dashboard';
+}, true);
+<?php endif; ?>
 </script>

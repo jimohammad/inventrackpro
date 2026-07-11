@@ -61,7 +61,8 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
 /* ══════════════════════════════════
    THERMAL — Receipt Style
 ══════════════════════════════════ */
-    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; background: #fff; padding: 8px 2px; }
+<?php include __DIR__ . '/../partials/thermal_print_font.css.php'; ?>
+    body { font-size: 12px; color: #000; background: #fff; padding: 8px 2px; }
 
     .no-print { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; margin: -8px -2px 12px; text-align: center; }
     .no-print a, .no-print button { display: inline-block; background: #6366f1; color: #fff; border: none; padding: 6px 14px; border-radius: 5px; font-size: 13px; cursor: pointer; margin: 4px; text-decoration: none; font-family: system-ui, sans-serif; }
@@ -73,7 +74,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
 
     .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
     .company-name { font-size: 18px; font-weight: 800; color: #000; }
-    .company-info { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.6; }
+    .company-info { font-size: 11px; color: #000; margin-top: 4px; line-height: 1.35; }
 
     .receipt-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #000; margin: 14px 0 6px; }
     .receipt-subtitle { text-align: center; margin-bottom: 14px; }
@@ -84,8 +85,8 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
 
     .receipt-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
     .receipt-row:last-child { border-bottom: none; }
-    .receipt-row .lbl { color: #666; }
-    .receipt-row .val { font-weight: 600; color: #1a1a1a; text-align: right; }
+    .receipt-row .lbl { color: #000; }
+    .receipt-row .val { font-weight: 400; color: #000; text-align: right; }
 
     .items-section { margin: 14px 0; padding: 10px 0; border-top: 2px dashed #e5e7eb; border-bottom: 2px dashed #e5e7eb; }
     .items-section table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -94,21 +95,66 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
     .items-section tbody tr:last-child td { border-bottom: none; }
     .item-name { font-weight: 700; }
 
+    .items-total-qty-row {
+        padding-top: 10px;
+        margin-top: 6px;
+        border-top: 1px solid #000;
+        text-align: center;
+    }
+    .items-total-qty-center {
+        font-weight: bold !important;
+        font-size: 16px !important;
+        color: #000 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        line-height: 1.3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .items-total-qty-box {
+        display: inline-block;
+        border: 2px solid #000;
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        color: #000 !important;
+        min-width: 40px;
+        text-align: center;
+        line-height: 1.2;
+    }
+
     .balance-section { margin-top: 14px; padding-top: 12px; border-top: 2px dashed #e5e7eb; }
     .balance-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; font-size: 11.5px; }
-    .balance-row .lbl { color: #666; }
-    .balance-row .val { font-weight: 600; text-align: right; }
-    .balance-final { display: flex; justify-content: space-between; padding: 8px 0 0; border-top: 2px solid #000; margin-top: 4px; }
-    .balance-final .lbl { font-weight: 800; color: #000; font-size: 12px; }
-    .balance-final .val { font-weight: 800; font-size: 13px; }
+    .balance-row .lbl { color: #000; }
+    .balance-row .val { font-weight: 400; text-align: right; }
+    .balance-final { display: flex; justify-content: space-between; align-items: center; padding: 10px 0 0; border-top: 2px solid #000; margin-top: 6px; }
+    .balance-final .lbl,
+    .balance-final .val {
+        font-weight: bold !important;
+        color: #000 !important;
+    }
+    .balance-final .lbl { font-size: 14px !important; text-transform: uppercase; letter-spacing: 0.5px; }
+    .balance-final .val { font-size: 20px !important; text-align: right; }
 
     .receipt-footer { text-align: center; margin-top: 18px; padding-top: 14px; border-top: 2px dashed #e5e7eb; font-size: 10px; color: #888; }
 
     @media print {
-        body { padding: 0; background: #fff; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
+        body {
+            padding: 0;
+            background: #fff;
+            font-family: monospace;
+            font-weight: 400;
+            -webkit-font-smoothing: none;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
         .no-print { display: none !important; }
-        .wrap { border: none; padding: 0; width: 100%; max-width: 100%; }
-        @page { margin: 8mm 3mm; }
+        .wrap { border: none; padding: 0; width: 100%; max-width: 100%; font-family: monospace; }
+        @page { size: 72mm auto; margin: 2mm; }
     }
 <?php endif; ?>
 </style>
@@ -183,7 +229,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
         <tfoot>
             <tr style="border-top:2px solid #1e3a5f;font-weight:700;">
                 <td></td>
-                <td style="text-align:right;color:#555;">Total Devices Returned:</td>
+                <td style="text-align:right;color:#555;">Total Qty Returned:</td>
                 <td style="text-align:center;"><?= array_sum(array_column($return['items'], 'quantity')) ?></td>
                 <td></td>
                 <td></td>
@@ -258,6 +304,12 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
     <div class="receipt-row"><span class="lbl">Reason</span><span class="val"><?= htmlspecialchars($return['reason']) ?></span></div>
     <?php endif; ?>
 
+    <?php
+    $totalQtyReturned = 0.0;
+    foreach ($return['items'] as $__item) {
+        $totalQtyReturned += (float) ($__item['quantity'] ?? 0);
+    }
+    ?>
     <!-- Items -->
     <div class="items-section">
         <table>
@@ -280,6 +332,12 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <div class="items-total-qty-row">
+            <div class="items-total-qty-center">
+                <strong>Total Qty Returned</strong>
+                <span class="items-total-qty-box"><strong><?= rtrim(rtrim(number_format($totalQtyReturned, 2, '.', ''), '0'), '.') ?></strong></span>
+            </div>
+        </div>
     </div>
 
     <!-- Return Amount Box -->
@@ -299,10 +357,8 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
             <span class="val">- <?= APP_CURRENCY ?> <?= number_format($return['grand_total'], DECIMAL_PLACES) ?></span>
         </div>
         <div class="balance-final">
-            <span class="lbl">Current Balance</span>
-            <span class="val" style="color:#000;">
-                <?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?>
-            </span>
+            <span class="lbl"><strong>Current Balance</strong></span>
+            <span class="val"><strong><?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?></strong></span>
         </div>
     </div>
 
@@ -335,6 +391,12 @@ window.addEventListener('load', () => {
     var params = new URLSearchParams(window.location.search);
     if (params.get('autoprint') === '1') setTimeout(() => window.print(), 400);
     if (params.get('autopdf') === '1') setTimeout(() => exportPDF(), 600);
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    window.location.href = '?page=dashboard';
 });
 </script>
 </body>

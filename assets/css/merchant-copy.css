@@ -1,0 +1,15 @@
+@font-face {
+    font-family: 'Merchant Copy';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Merchant Copy'), url('../fonts/merchant-copy.woff') format('woff');
+    font-display: block;
+}
+
+@font-face {
+    font-family: 'Merchant Copy Wide';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Merchant Copy Wide'), url('../fonts/merchant-copy-wide.woff') format('woff');
+    font-display: block;
+}

@@ -2,7 +2,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title">Purchase Orders</h1>
-        <p class="page-subtitle">Track overseas supplier orders in AED or USD before goods arrive</p>
     </div>
     <a href="?page=purchaseorders&action=create" class="btn btn-primary">
         <i class="bi bi-plus-lg me-1"></i> New Purchase Order
@@ -22,6 +21,21 @@
                    value="<?= htmlspecialchars($search ?? '') ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+        </div>
+
+        <div style="flex:2;min-width:180px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+                <i class="bi bi-box-seam me-1"></i>Item
+            </label>
+            <select name="item" id="poItemFilter"
+                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
+                <option value="">All items</option>
+                <?php foreach (($allItems ?? []) as $it): ?>
+                <option value="<?= (int)$it['id'] ?>" <?= ((string)($itemQ ?? '') === (string)$it['id']) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($it['name']) ?><?= !empty($it['sku']) ? ' (' . htmlspecialchars($it['sku']) . ')' : '' ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
         </div>
 
         <div style="flex:1;min-width:140px;">
@@ -164,7 +178,7 @@ foreach ($orders as $o) { if (isset($counts[$o['status']])) $counts[$o['status']
                         <?= number_format($o['subtotal_foreign'], DECIMAL_PLACES) ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;color:#475569;">
-                        <?= number_format($o['subtotal_kwd'], DECIMAL_PLACES) ?> KWD
+                        <?= number_format((float)$o['subtotal_kwd'] + (float)($o['other_charges_kwd'] ?? 0), DECIMAL_PLACES) ?> KWD
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:center;">
                         <span style="background:<?= $stColor[0] ?>;color:<?= $stColor[1] ?>;padding:2px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;">
@@ -193,3 +207,31 @@ foreach ($orders as $o) { if (isset($counts[$o['status']])) $counts[$o['status']
         <?php endif; ?>
     </div>
 </div>
+
+<style>
+#poItemFilter + .select2-container { width:100% !important; }
+#poItemFilter + .select2-container .select2-selection--single {
+    height:38px !important; border:1.5px solid #c7d2fe !important; border-radius:10px !important; background:#fff !important;
+}
+#poItemFilter + .select2-container .select2-selection__rendered {
+    line-height:36px !important; padding-left:14px !important; font-size:0.85rem !important; color:#1e293b !important;
+}
+#poItemFilter + .select2-container .select2-selection__arrow { height:36px !important; }
+#poItemFilter + .select2-container--default.select2-container--focus .select2-selection--single {
+    border-color:#6366f1 !important;
+}
+</style>
+<script>
+(function () {
+    var ready = setInterval(function () {
+        if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.select2) {
+            clearInterval(ready);
+            jQuery('#poItemFilter').select2({
+                placeholder: 'Search item by name or SKU...',
+                allowClear: true,
+                width: '100%'
+            });
+        }
+    }, 60);
+})();
+</script>

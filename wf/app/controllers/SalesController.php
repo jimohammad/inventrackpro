@@ -55,7 +55,7 @@ class SalesController extends BaseController {
         $db         = Database::getInstance();
         $warehouses = $this->itemModel->getWarehouses();
         $accounts   = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY name");
-        $nextInv    = $this->saleModel->nextInvoiceNo();
+        $nextInv    = $this->saleModel->previewNextInvoiceNo();
         $pageTitle  = 'New Sale';
         $page       = 'sales';
 
@@ -85,16 +85,7 @@ class SalesController extends BaseController {
             $party = $db->fetchOne("SELECT name, credit_limit FROM parties WHERE id = ?", [$partyId]);
             $creditLimit = (float)($party['credit_limit'] ?? 0);
             if ($creditLimit > 0) {
-                $balRow = $db->fetchOne(
-                    "SELECT p.opening_balance
-                        + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                        - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                        as net_balance
-                     FROM parties p WHERE p.id = ?",
-                    [$partyId]
-                );
-                $outstanding = max(0, (float)($balRow['net_balance'] ?? 0));
+                $outstanding = max(0, $this->partyModel->currentNetBalance($partyId));
                 $newTotal = 0;
                 foreach ($rawItems as $r) {
                     if (empty($r['item_id']) || empty($r['quantity'])) continue;
@@ -206,6 +197,10 @@ class SalesController extends BaseController {
             $this->redirect('?page=sales');
         }
 
+        if (!$this->assertSaleWarehouseAccess($sale)) {
+            return;
+        }
+
         $db        = Database::getInstance();
         $accounts  = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1");
         $pageTitle = 'Sale: ' . $sale['invoice_no'];
@@ -225,6 +220,10 @@ class SalesController extends BaseController {
         $sale = $this->saleModel->findFull($id);
 
         if (!$sale) die('Invoice not found.');
+
+        if (!$this->assertSaleWarehouseAccess($sale, forPrint: true)) {
+            return;
+        }
 
         $db       = Database::getInstance();
         $settings = [];
@@ -381,5 +380,20 @@ class SalesController extends BaseController {
         );
 
         echo json_encode($items);
+    }
+
+    private function assertSaleWarehouseAccess(array $sale, bool $forPrint = false): bool {
+        if (Auth::isAdmin()) {
+            return true;
+        }
+        if ((int) ($sale['warehouse_id'] ?? 0) !== (int) Auth::warehouseId()) {
+            if ($forPrint) {
+                die('Invoice not found.');
+            }
+            $this->flash('error', 'This sale belongs to a different warehouse.');
+            $this->redirect('?page=sales');
+            return false;
+        }
+        return true;
     }
 }

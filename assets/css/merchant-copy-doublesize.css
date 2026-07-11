@@ -1,0 +1,20 @@
+@font-face {
+    font-family: 'Merchant Copy Doublesize';
+    font-style: italic;
+    font-weight: 400;
+    src: local('Merchant Copy Doublesize'), url('https://fonts.cdnfonts.com/s/27414/Merchant Copy Doublesize.woff') format('woff');
+}
+@font-face {
+    font-family: 'Merchant Copy Wide';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Merchant Copy Wide'), url('https://fonts.cdnfonts.com/s/27414/Merchant Copy Wide.woff') format('woff');
+}
+@font-face {
+    font-family: 'Merchant Copy';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Merchant Copy'), url('https://fonts.cdnfonts.com/s/27414/Merchant Copy.woff') format('woff');
+}
+
+

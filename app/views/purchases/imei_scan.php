@@ -37,11 +37,35 @@
 .btn-undo:disabled{opacity:0.4;cursor:not-allowed;}
 .btn-paste{padding:8px 18px;border-radius:8px;border:1.5px solid #0ea5e9;background:#fff;color:#0ea5e9;font-size:0.83rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
 .btn-paste:hover{background:#0ea5e9;color:#fff;}
+.btn-clear-all{padding:8px 18px;border-radius:8px;border:1.5px solid #fca5a5;background:#fff;color:#dc2626;font-size:0.83rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.btn-clear-all:hover{background:#fee2e2;}
+.btn-clear-all:disabled{opacity:0.4;cursor:not-allowed;}
+.btn-bulk-remove{padding:8px 18px;border-radius:8px;border:1.5px solid #f97316;background:#fff;color:#ea580c;font-size:0.83rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.btn-bulk-remove:hover{background:#fff7ed;}
+.btn-bulk-remove:disabled{opacity:0.4;cursor:not-allowed;}
+.btn-copy-sm{padding:5px 12px;border-radius:7px;border:1.5px solid #10b981;background:#fff;color:#059669;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+.btn-copy-sm:hover:not(:disabled){background:#ecfdf5;}
+.btn-copy-sm:disabled{opacity:0.4;cursor:not-allowed;}
+.copy-qty-wrap{display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 10px;border-radius:8px;border:1.5px solid #a7f3d0;background:#ecfdf5;}
+.copy-qty-label{font-size:0.72rem;font-weight:700;color:#047857;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;}
+.copy-qty-input{width:58px;padding:4px 6px;border:1.5px solid #10b981;border-radius:6px;font-size:0.85rem;font-weight:700;text-align:center;color:#065f46;background:#fff;outline:none;}
+.copy-qty-input:focus{border-color:#059669;box-shadow:0 0 0 3px rgba(16,185,129,0.15);}
+.copy-qty-max{font-size:0.7rem;color:#64748b;white-space:nowrap;}
 .queue-badge{font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;display:none;align-items:center;gap:4px;}
 .queue-badge.active{display:inline-flex;}
 .imei-list-wrap{border-top:1px solid #e0e7ff;padding:16px 20px;max-height:340px;overflow-y:auto;}
-.imei-list-title{font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;}
-.imei-row{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:7px;margin-bottom:4px;background:#f8fafc;transition:background 0.2s;}
+.imei-list-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.imei-list-title{font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin:0;display:flex;align-items:center;gap:8px;}
+.imei-select-all{display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;user-select:none;}
+.imei-select-all input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#6366f1;}
+.btn-delete-selected{padding:5px 12px;border-radius:7px;border:1.5px solid #fca5a5;background:#fff;color:#dc2626;font-size:0.78rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+.btn-delete-selected:hover:not(:disabled){background:#fee2e2;}
+.btn-delete-selected:disabled{opacity:0.4;cursor:not-allowed;}
+.imei-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:7px;margin-bottom:4px;background:#f8fafc;transition:background 0.2s,border-color 0.2s;}
+.imei-row.is-selected{background:#fff1f2;border-color:#fecaca;}
+.imei-row .imei-check{display:flex;align-items:center;flex-shrink:0;}
+.imei-row .imei-check input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#6366f1;}
+.imei-row .imei-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0;}
 .imei-row.is-pending{background:#fffbeb;border:1px solid #fde68a;}
 .imei-row.is-failed{background:#fef2f2;border:1px solid #fecaca;opacity:0.85;}
 .imei-row.is-ok{background:#f0fdf4;border:1px solid #bbf7d0;}
@@ -147,22 +171,88 @@
                 <button type="button" class="btn-paste" id="btnPaste" onclick="openPasteMode()">
                     <i class="bi bi-clipboard-plus"></i> Paste IMEIs
                 </button>
+                <button type="button" class="btn-bulk-remove" id="btnBulkRemove" disabled>
+                    <i class="bi bi-clipboard-x"></i> Bulk Remove
+                </button>
+                <button type="button" class="btn-clear-all" id="btnClearAll" disabled>
+                    <i class="bi bi-trash3"></i> Clear All
+                </button>
                 <span class="queue-badge" id="queueBadge" title="Pending scans">
                     <i class="bi bi-hourglass-split"></i> <span id="queueCount">0</span> queued
                 </span>
                 <span style="font-size:0.78rem;color:#94a3b8;align-self:center;">
-                    <i class="bi bi-keyboard me-1"></i> Enter to confirm · Undo removes last scan · Paste for bulk import
+                    <i class="bi bi-keyboard me-1"></i> Enter to confirm · Paste to import · Select rows or Bulk Remove to delete
                 </span>
             </div>
         </div>
 
         <div class="imei-list-wrap" id="imeiListWrap">
-            <div class="imei-list-title">Scanned IMEIs (most recent first)</div>
+            <div class="imei-list-header">
+                <label class="imei-list-title imei-select-all">
+                    <input type="checkbox" id="selectAllImeis" disabled>
+                    <span>Scanned IMEIs (most recent first)</span>
+                </label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <div class="copy-qty-wrap" title="Copy and select the most recently scanned IMEIs">
+                        <span class="copy-qty-label">Copy latest</span>
+                        <input type="number" id="copyQtyInput" class="copy-qty-input" value="80" min="1" max="1" inputmode="numeric">
+                        <span class="copy-qty-max">of <span id="copyQtyMax">0</span></span>
+                        <button type="button" class="btn-copy-sm" id="btnCopyLatest" disabled>
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                    </div>
+                    <button type="button" class="btn-copy-sm" id="btnCopySelected" disabled>
+                        <i class="bi bi-clipboard"></i> Copy Selected (<span id="copySelectedCount">0</span>)
+                    </button>
+                    <button type="button" class="btn-delete-selected" id="btnDeleteSelected" disabled>
+                        <i class="bi bi-trash3"></i> Delete Selected (<span id="selectedCount">0</span>)
+                    </button>
+                </div>
+            </div>
             <div id="imeiList"><div class="empty-list"><i class="bi bi-upc-scan d-block mb-1 fs-4"></i> No IMEIs scanned yet</div></div>
         </div>
     </div>
 
     <?php endif; ?>
+</div>
+
+<!-- ── Bulk Remove IMEIs Modal ───────────────────────────────────── -->
+<div class="modal fade" id="bulkRemoveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border-bottom:1px solid #fdba74;">
+                <h5 class="modal-title" style="font-size:0.95rem;font-weight:700;display:flex;align-items:center;gap:8px;color:#9a3412;">
+                    <i class="bi bi-clipboard-x" style="color:#ea580c;"></i>
+                    Bulk Remove IMEIs — <span id="brItemName" style="color:#6366f1;"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.82rem;color:#64748b;margin-bottom:10px;">
+                    <i class="bi bi-info-circle me-1" style="color:#ea580c;"></i>
+                    Paste IMEIs to remove — one per line, or separated by commas/semicolons. Only IMEIs scanned for this item on this purchase will be deleted.
+                </p>
+                <div style="font-size:0.78rem;color:#475569;margin-bottom:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                    <span><i class="bi bi-list-check me-1"></i> Currently scanned: <strong id="brScannedCount" style="color:#6366f1;">0</strong></span>
+                    <span><i class="bi bi-stickies me-1"></i> Lines pasted: <strong id="brLineCount">0</strong></span>
+                </div>
+                <textarea id="brTextarea" class="pm-textarea"
+                          placeholder="Paste IMEIs to remove (one per line)...&#10;&#10;355851156907021&#10;355851156749589"></textarea>
+                <div id="brPreview" style="margin-top:12px;display:none;"></div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #e5e7eb;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm" id="brValidateBtn"
+                        style="background:#ea580c;color:#fff;border:none;font-weight:600;">
+                    <i class="bi bi-check2-all me-1"></i> Validate
+                </button>
+                <button type="button" class="btn btn-sm" id="brConfirmBtn" disabled
+                        style="background:#dc2626;color:#fff;border:none;font-weight:600;">
+                    <i class="bi bi-trash3 me-1"></i> Confirm Remove
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ── Paste IMEIs Modal ───────────────────────────────────────── -->
@@ -229,15 +319,22 @@ const itemData = {
     <?php endforeach; ?>
 };
 
+function getScanImeiRule(name) {
+    const n = (name || currentItemName || '').toLowerCase();
+    if (n.indexOf('h40') !== -1) return { min: 13, max: 13, label: '13', test: imei => /^\d{13}$/.test(imei) };
+    return { min: 15, max: 18, label: '15–18', test: imei => /^\d{15,18}$/.test(imei) };
+}
+
 const scanInput = document.getElementById('scanInput');
 
 // Always keep input focused (skip when paste modal is open)
 document.addEventListener('click', e => {
-    if (document.querySelector('#pasteModal.show')) return;
+    if (document.querySelector('#pasteModal.show, #bulkRemoveModal.show')) return;
+    if (e.target.closest('#imeiListWrap') && e.target.closest('.imei-check, .btn-delete-selected, .btn-copy-sm, #selectAllImeis, #copyQtyInput, .copy-qty-wrap')) return;
     if (document.activeElement !== scanInput) scanInput.focus();
 });
 document.addEventListener('keydown', e => {
-    if (document.querySelector('#pasteModal.show')) return;
+    if (document.querySelector('#pasteModal.show, #bulkRemoveModal.show')) return;
     if (document.activeElement !== scanInput && !['INPUT','SELECT','TEXTAREA','BUTTON'].includes(e.target.tagName)) {
         scanInput.focus();
     }
@@ -267,10 +364,10 @@ function enqueueScan(raw) {
     const imei = normalizeImei(raw);
     if (!imei) return;
 
-    // Format check: 15-18 digits (numeric IMEI)
-    if (!/^\d{15,18}$/.test(imei)) {
+    const rule = getScanImeiRule(currentItemName);
+    if (!rule.test(imei)) {
         flashInput('err');
-        showFeedback('err', '<i class="bi bi-x-circle me-1"></i> Must be 15–18 digits — got "' + imei + '"');
+        showFeedback('err', '<i class="bi bi-x-circle me-1"></i> Must be ' + rule.label + ' digits — got "' + imei + '"');
         return;
     }
 
@@ -428,6 +525,392 @@ function deleteImei(imei) {
     });
 }
 
+function getListedImeis() {
+    return Array.from(document.querySelectorAll('#imeiList .imei-row.is-ok .imei-num'))
+        .map(el => el.textContent.trim())
+        .filter(Boolean);
+}
+
+function getCopyQty() {
+    const listed = getListedImeis();
+    if (!listed.length) return 0;
+    const raw = parseInt(document.getElementById('copyQtyInput').value, 10);
+    const qty = Number.isFinite(raw) && raw > 0 ? raw : 80;
+    return Math.min(qty, listed.length);
+}
+
+async function copyImeisToClipboard(imeis, label) {
+    if (!imeis.length) {
+        showFeedback('err', '<i class="bi bi-clipboard-x me-1"></i> Nothing to copy');
+        return;
+    }
+    const text = imeis.join('\n');
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        showFeedback('ok', '<i class="bi bi-clipboard-check me-1"></i> Copied ' + imeis.length + ' IMEI(s)' + (label ? ' (' + label + ')' : ''));
+    } catch (err) {
+        showFeedback('err', '<i class="bi bi-clipboard-x me-1"></i> Could not copy — select and copy manually from the list');
+    }
+}
+
+function selectImeisByValues(imeis) {
+    const wanted = new Set(imeis);
+    document.querySelectorAll('#imeiList .imei-cb:not(:disabled)').forEach(cb => {
+        cb.checked = wanted.has(cb.value);
+    });
+    updateSelectionUI();
+}
+
+function copyLatestImeis() {
+    const listed = getListedImeis();
+    if (!listed.length) {
+        showFeedback('err', '<i class="bi bi-clipboard-x me-1"></i> No IMEIs to copy');
+        return;
+    }
+    const qty = getCopyQty();
+    const slice = listed.slice(0, qty);
+    selectImeisByValues(slice);
+    copyImeisToClipboard(slice, 'latest ' + slice.length);
+}
+
+function copySelectedImeis() {
+    copyImeisToClipboard(getSelectedImeis(), 'selected');
+}
+
+function updateCopyButtons() {
+    const listed = getListedImeis();
+    const total = listed.length;
+    const qtyInput = document.getElementById('copyQtyInput');
+    const maxEl = document.getElementById('copyQtyMax');
+
+    maxEl.textContent = total;
+    qtyInput.max = Math.max(1, total);
+    document.getElementById('btnCopyLatest').disabled = total === 0;
+
+    const selected = getSelectedImeis();
+    document.getElementById('copySelectedCount').textContent = selected.length;
+    document.getElementById('btnCopySelected').disabled = selected.length === 0;
+}
+
+function updateDeleteButtons() {
+    const hasScanned = currentScanned > 0;
+    document.getElementById('btnClearAll').disabled    = !hasScanned;
+    document.getElementById('btnBulkRemove').disabled  = !hasScanned;
+    document.getElementById('btnDeleteSelected').style.display = hasScanned ? 'inline-flex' : 'none';
+    if (!hasScanned) {
+        resetSelection();
+    } else {
+        updateSelectionUI();
+    }
+    updateCopyButtons();
+}
+
+function getSelectedImeis() {
+    return Array.from(document.querySelectorAll('#imeiList .imei-cb:checked')).map(cb => cb.value);
+}
+
+function resetSelection() {
+    const selectAll = document.getElementById('selectAllImeis');
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+    selectAll.disabled = true;
+    document.getElementById('selectedCount').textContent = '0';
+    document.getElementById('btnDeleteSelected').disabled = true;
+}
+
+function updateSelectionUI() {
+    const selected = getSelectedImeis();
+    const count = selected.length;
+    const allCbs = document.querySelectorAll('#imeiList .imei-cb:not(:disabled)');
+    const selectAll = document.getElementById('selectAllImeis');
+
+    document.getElementById('selectedCount').textContent = count;
+    document.getElementById('btnDeleteSelected').disabled = count === 0;
+
+    if (allCbs.length > 0) {
+        selectAll.disabled = false;
+        selectAll.indeterminate = count > 0 && count < allCbs.length;
+        selectAll.checked = count > 0 && count === allCbs.length;
+    } else {
+        resetSelection();
+    }
+
+    document.querySelectorAll('#imeiList .imei-row').forEach(row => {
+        const cb = row.querySelector('.imei-cb');
+        row.classList.toggle('is-selected', !!(cb && cb.checked));
+    });
+    updateCopyButtons();
+}
+
+function deleteSelectedImeis() {
+    const selected = getSelectedImeis();
+    if (selected.length === 0) return;
+
+    const msg = 'Remove ' + selected.length + ' selected IMEI(s) from "' + currentItemName + '"?';
+    if (!confirm(msg)) { scanInput.focus(); return; }
+
+    const btn = document.getElementById('btnDeleteSelected');
+    btn.disabled = true;
+
+    fetch('?page=purchases&action=imeiScanBulkDelete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+            purchase_id: PURCHASE_ID,
+            item_id:     currentItemId,
+            scope:       'list',
+            imeis:       selected.join('\n'),
+            csrf_token:  CSRF_TOKEN
+        })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.ok) {
+            showFeedback('err', res.msg || 'Delete failed');
+            updateSelectionUI();
+            scanInput.focus();
+            return;
+        }
+
+        selected.forEach(imei => {
+            if (lastImei === imei) {
+                lastImei = null;
+                document.getElementById('btnUndo').disabled = true;
+            }
+            removeImeiRow(imei);
+        });
+
+        updateProgress(res.scanned, currentQty);
+        resetSelection();
+        updateSelectionUI();
+
+        let msg = res.deleted + ' IMEI(s) removed';
+        if (res.skipped && res.skipped.length > 0) {
+            msg += ' · ' + res.skipped.length + ' skipped';
+        }
+        showFeedback('ok', '<i class="bi bi-check-circle me-1"></i> ' + msg);
+        scanInput.focus();
+    })
+    .catch(() => {
+        showFeedback('err', '<i class="bi bi-wifi-off me-1"></i> Network error during delete');
+        updateSelectionUI();
+        scanInput.focus();
+    });
+}
+
+function clearAllImeis() {
+    if (currentScanned === 0) return;
+    const msg = 'Remove all ' + currentScanned + ' scanned IMEI(s) for "' + currentItemName + '"?\n\nThis cannot be undone.';
+    if (!confirm(msg)) { scanInput.focus(); return; }
+
+    const btn = document.getElementById('btnClearAll');
+    btn.disabled = true;
+
+    fetch('?page=purchases&action=imeiScanBulkDelete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+            purchase_id: PURCHASE_ID,
+            item_id:     currentItemId,
+            scope:       'all',
+            csrf_token:  CSRF_TOKEN
+        })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.ok) {
+            showFeedback('err', res.msg || 'Bulk delete failed');
+            updateDeleteButtons();
+            scanInput.focus();
+            return;
+        }
+
+        lastImei = null;
+        document.getElementById('btnUndo').disabled = true;
+        scanLocalSeen = {};
+        updateProgress(res.scanned, currentQty);
+        renderImeiList([]);
+        resetSelection();
+
+        let msg = res.deleted + ' IMEI(s) removed';
+        if (res.skipped && res.skipped.length > 0) {
+            msg += ' · ' + res.skipped.length + ' skipped';
+        }
+        showFeedback('ok', '<i class="bi bi-check-circle me-1"></i> ' + msg);
+        scanInput.focus();
+    })
+    .catch(() => {
+        showFeedback('err', '<i class="bi bi-wifi-off me-1"></i> Network error during bulk delete');
+        updateDeleteButtons();
+        scanInput.focus();
+    });
+}
+
+// ════════════════════════════════════════════
+//  BULK REMOVE — delete pasted IMEI list
+// ════════════════════════════════════════════
+let brValidList = [];
+
+function openBulkRemoveMode() {
+    if (!currentItemId || currentScanned === 0) return;
+    document.getElementById('brItemName').textContent      = currentItemName;
+    document.getElementById('brScannedCount').textContent  = currentScanned;
+    document.getElementById('brTextarea').value            = '';
+    document.getElementById('brLineCount').textContent     = '0';
+    document.getElementById('brPreview').style.display     = 'none';
+    document.getElementById('brPreview').innerHTML         = '';
+    document.getElementById('brConfirmBtn').disabled       = true;
+    document.getElementById('brConfirmBtn').innerHTML        = '<i class="bi bi-trash3 me-1"></i> Confirm Remove';
+    brValidList = [];
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkRemoveModal'));
+    modal.show();
+    setTimeout(() => document.getElementById('brTextarea').focus(), 350);
+}
+
+function updateBulkRemoveLineCount() {
+    const raw = document.getElementById('brTextarea').value;
+    const lines = raw.split(/[\r\n,;]+/).filter(s => s.trim().length > 0);
+    document.getElementById('brLineCount').textContent = lines.length;
+}
+
+function validateBulkRemove() {
+    const raw   = document.getElementById('brTextarea').value;
+    const lines = raw.split(/[\r\n,;]+/);
+
+    const valid  = [];
+    const errors = [];
+    const seen   = {};
+
+    lines.forEach(line => {
+        const imei = normalizeImei(line);
+        if (!imei) return;
+
+        const rule = getScanImeiRule(currentItemName);
+        if (!rule.test(imei)) {
+            errors.push({ imei: imei, reason: 'Must be ' + rule.label + ' digits (got ' + imei.length + ')' });
+            return;
+        }
+        if (seen[imei]) {
+            errors.push({ imei: imei, reason: 'Duplicate in list' });
+            return;
+        }
+        seen[imei] = true;
+        valid.push(imei);
+    });
+
+    brValidList = valid;
+
+    let html = '<div class="pm-summary">';
+    html += '<span class="pm-ok-count"><i class="bi bi-check-circle-fill"></i> ' + valid.length + ' to remove</span>';
+    if (errors.length > 0) {
+        html += '<span class="pm-err-count"><i class="bi bi-x-circle-fill"></i> ' + errors.length + ' invalid (will be skipped)</span>';
+    }
+    html += '</div>';
+
+    if (errors.length > 0) {
+        html += '<div class="pm-err-list"><div class="pm-err-header">Invalid entries:</div>';
+        errors.forEach(e => {
+            html += '<div class="pm-err-row"><span class="pm-err-imei">' + e.imei + '</span><span class="pm-err-reason">' + e.reason + '</span></div>';
+        });
+        html += '</div>';
+    }
+
+    const preview = document.getElementById('brPreview');
+    preview.innerHTML     = html;
+    preview.style.display = 'block';
+    document.getElementById('brConfirmBtn').disabled = (valid.length === 0);
+}
+
+function confirmBulkRemove() {
+    if (brValidList.length === 0) return;
+    if (!confirm('Remove ' + brValidList.length + ' IMEI(s) from "' + currentItemName + '"?')) return;
+
+    const btn = document.getElementById('brConfirmBtn');
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Removing...';
+
+    fetch('?page=purchases&action=imeiScanBulkDelete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+            purchase_id: PURCHASE_ID,
+            item_id:     currentItemId,
+            scope:       'list',
+            imeis:       brValidList.join('\n'),
+            csrf_token:  CSRF_TOKEN
+        })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.ok) {
+            showFeedback('err', res.msg || 'Bulk remove failed');
+            btn.disabled  = false;
+            btn.innerHTML = '<i class="bi bi-trash3 me-1"></i> Confirm Remove';
+            return;
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('bulkRemoveModal')).hide();
+        switchItem(currentItemId, currentQty, currentItemName);
+
+        let msg = res.deleted + ' IMEI(s) removed';
+        if (res.skipped && res.skipped.length > 0) {
+            msg += ' · ' + res.skipped.length + ' skipped';
+        }
+        showFeedback('ok', '<i class="bi bi-check-circle me-1"></i> ' + msg);
+    })
+    .catch(() => {
+        showFeedback('err', '<i class="bi bi-wifi-off me-1"></i> Network error during bulk remove');
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="bi bi-trash3 me-1"></i> Confirm Remove';
+    });
+}
+
+document.getElementById('btnClearAll').addEventListener('click', clearAllImeis);
+document.getElementById('btnBulkRemove').addEventListener('click', openBulkRemoveMode);
+document.getElementById('btnCopyLatest').addEventListener('click', copyLatestImeis);
+document.getElementById('btnCopySelected').addEventListener('click', copySelectedImeis);
+document.getElementById('copyQtyInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        copyLatestImeis();
+    }
+});
+document.getElementById('btnDeleteSelected').addEventListener('click', deleteSelectedImeis);
+document.getElementById('selectAllImeis').addEventListener('change', function() {
+    const checked = this.checked;
+    document.querySelectorAll('#imeiList .imei-cb:not(:disabled)').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateSelectionUI();
+});
+document.getElementById('imeiList').addEventListener('change', function(e) {
+    if (e.target.classList.contains('imei-cb')) {
+        updateSelectionUI();
+    }
+});
+document.getElementById('imeiList').addEventListener('click', function(e) {
+    const delBtn = e.target.closest('.del-imei');
+    if (!delBtn) return;
+    const imei = delBtn.dataset.imei;
+    if (imei) deleteImei(imei);
+});
+document.getElementById('brTextarea').addEventListener('input', updateBulkRemoveLineCount);
+document.getElementById('brValidateBtn').addEventListener('click', validateBulkRemove);
+document.getElementById('brConfirmBtn').addEventListener('click', confirmBulkRemove);
+
 // ════════════════════════════════════════════
 //  PASTE MODE — bulk import with validation
 // ════════════════════════════════════════════
@@ -470,8 +953,9 @@ function validatePaste() {
         const imei = normalizeImei(line);
         if (!imei) return;
 
-        if (!/^\d{15,18}$/.test(imei)) {
-            errors.push({ imei: imei, reason: 'Must be 15–18 digits (got ' + imei.length + ')' });
+        const rule = getScanImeiRule(currentItemName);
+        if (!rule.test(imei)) {
+            errors.push({ imei: imei, reason: 'Must be ' + rule.label + ' digits (got ' + imei.length + ')' });
             return;
         }
         if (seen[imei]) {
@@ -576,6 +1060,7 @@ function switchItem(itemId, qty, name) {
     currentItemName = name;
     lastImei        = null;
     scanLocalSeen   = {};
+    resetSelection();
     document.getElementById('btnUndo').disabled = true;
     document.getElementById('stationItemName').textContent = name;
     document.getElementById('stationNeed').textContent     = '/ ' + qty;
@@ -618,6 +1103,25 @@ function updateProgress(scanned, qty) {
         }
     }
     if (itemData[currentItemId]) itemData[currentItemId].scanned = scanned;
+    updateDeleteButtons();
+}
+
+function buildImeiRowHtml(imei, state, timeLabel, reason) {
+    const canSelect = state === 'ok';
+    const checkbox = canSelect
+        ? '<label class="imei-check"><input type="checkbox" class="imei-cb" value="' + imei + '"></label>'
+        : '<span class="imei-check" style="width:15px;"></span>';
+    const icon = state === 'pending'
+        ? '<span class="imei-status" title="Saving..."><i class="bi bi-hourglass-split" style="color:#f59e0b;"></i></span>'
+        : (state === 'failed'
+            ? '<span class="imei-status" title="' + (reason || 'Failed') + '"><i class="bi bi-x-circle-fill" style="color:#dc2626;"></i></span>'
+            : '<span class="imei-status" title="Saved"><i class="bi bi-check-circle-fill" style="color:#16a34a;"></i></span>');
+    return '<div class="imei-row is-' + state + '" id="ir_' + imei + '" data-imei="' + imei + '">' +
+        checkbox +
+        '<div class="imei-main"><span class="imei-num">' + imei + '</span></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' + icon +
+        '<span class="imei-time">' + timeLabel + '</span>' +
+        '<button type="button" class="del-imei" data-imei="' + imei + '" title="Remove">×</button></div></div>';
 }
 
 function prependImeiRow(imei, state) {
@@ -626,21 +1130,15 @@ function prependImeiRow(imei, state) {
     const empty = list.querySelector('.empty-list');
     if (empty) empty.remove();
 
-    // Don't double-add if row already exists (e.g., paste flow)
     const existing = document.getElementById('ir_' + imei);
     if (existing) { markImeiRow(imei, state); return; }
 
-    const now  = new Date().toLocaleTimeString();
-    const div  = document.createElement('div');
-    div.className = 'imei-row is-' + state;
-    div.id        = 'ir_' + imei;
-    const icon = state === 'pending'
-        ? '<span class="imei-status" title="Saving..."><i class="bi bi-hourglass-split" style="color:#f59e0b;"></i></span>'
-        : (state === 'failed'
-            ? '<span class="imei-status" title="Failed"><i class="bi bi-x-circle-fill" style="color:#dc2626;"></i></span>'
-            : '<span class="imei-status" title="Saved"><i class="bi bi-check-circle-fill" style="color:#16a34a;"></i></span>');
-    div.innerHTML = `<span class="imei-num">${imei}</span><div style="display:flex;align-items:center;gap:8px;">${icon}<span class="imei-time">${now}</span><button class="del-imei" onclick="deleteImei('${imei}')" title="Remove">×</button></div>`;
-    list.insertBefore(div, list.firstChild);
+    const now = new Date().toLocaleTimeString();
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = buildImeiRowHtml(imei, state, now);
+    const row = wrapper.firstElementChild;
+    list.insertBefore(row, list.firstChild);
+    updateSelectionUI();
 }
 
 function markImeiRow(imei, state, reason) {
@@ -658,6 +1156,11 @@ function markImeiRow(imei, state, reason) {
             status.innerHTML = '<i class="bi bi-check-circle-fill" style="color:#16a34a;" title="Saved"></i>';
         }
     }
+    const checkWrap = row.querySelector('.imei-check');
+    if (state === 'ok' && checkWrap && !checkWrap.querySelector('.imei-cb')) {
+        checkWrap.outerHTML = '<label class="imei-check"><input type="checkbox" class="imei-cb" value="' + imei + '"></label>';
+    }
+    updateSelectionUI();
 }
 
 function removeImeiRow(imei) {
@@ -665,6 +1168,9 @@ function removeImeiRow(imei) {
     delete scanLocalSeen[imei];
     if (!document.getElementById('imeiList').children.length) {
         document.getElementById('imeiList').innerHTML = '<div class="empty-list"><i class="bi bi-upc-scan d-block mb-1 fs-4"></i> No IMEIs scanned yet</div>';
+        resetSelection();
+    } else {
+        updateSelectionUI();
     }
 }
 
@@ -672,25 +1178,17 @@ function renderImeiList(rows) {
     const list = document.getElementById('imeiList');
     if (!rows.length) {
         list.innerHTML = '<div class="empty-list"><i class="bi bi-upc-scan d-block mb-1 fs-4"></i> No IMEIs scanned yet</div>';
+        resetSelection();
         return;
     }
-    list.innerHTML = rows.map(r => `
-        <div class="imei-row is-ok" id="ir_${r.imei}">
-            <span class="imei-num">${r.imei}</span>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span class="imei-status" title="Saved"><i class="bi bi-check-circle-fill" style="color:#16a34a;"></i></span>
-                <span class="imei-time">${r.created_at}</span>
-                <button class="del-imei" onclick="deleteImei('${r.imei}')" title="Remove">×</button>
-            </div>
-        </div>
-    `).join('');
+    list.innerHTML = rows.map(r => buildImeiRowHtml(r.imei, 'ok', r.created_at)).join('');
+    updateSelectionUI();
 }
 
 function flashInput(type) {
-    scanInput.classList.remove('flash-ok', 'flash-err');
-    void scanInput.offsetWidth; // reflow
-    scanInput.classList.add('flash-' + type);
-    setTimeout(() => scanInput.classList.remove('flash-ok', 'flash-err'), 600);
+    // Color-flash animation disabled: the forced reflow + CSS transition + timer
+    // on every scan slowed down rapid barcode scanning. Feedback still shown via
+    // showFeedback() text banner, which is cheap and non-blocking.
 }
 
 function showFeedback(type, msg) {

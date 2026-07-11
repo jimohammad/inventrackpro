@@ -14,6 +14,12 @@ if (!empty($po['account_id'])) {
         if ((int)$acc['id'] === (int)$po['account_id']) { $paidAccountName = $acc['name']; break; }
     }
 }
+// Foreign price is captured as a reference/record only (no KWD conversion), so the
+// exchange rate is 1. Only surface rate/foreign-paid lines if a real rate was used.
+$showRate     = abs((float)($po['exchange_rate'] ?? 1) - 1.0) > 0.0000001;
+$hasForeign   = (float)($po['subtotal_foreign'] ?? 0) > 0 && ($po['currency'] ?? 'KWD') !== 'KWD';
+$otherChargesKwd = (float)($po['other_charges_kwd'] ?? 0);
+$poTotalKwd      = (float)$po['subtotal_kwd'] + $otherChargesKwd;
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -24,6 +30,12 @@ if (!empty($po['account_id'])) {
             <span style="background:<?= $statusConfig['bg'] ?>;color:<?= $statusConfig['color'] ?>;padding:2px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;margin-left:8px;">
                 <?= $statusConfig['label'] ?>
             </span>
+            <?php if (!empty($openShipment)): ?>
+            <a href="?page=landedcost&action=view&id=<?= (int) $openShipment['id'] ?>"
+               style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;margin-left:8px;text-decoration:none;">
+                On shipment <?= htmlspecialchars($openShipment['shipment_no']) ?>
+            </a>
+            <?php endif; ?>
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -39,7 +51,7 @@ if (!empty($po['account_id'])) {
         <div id="markPaidModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
             <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
                 <h5 style="font-weight:700;color:#1e293b;margin-bottom:6px;"><i class="bi bi-cash-coin" style="color:#f59e0b;"></i> Mark as Paid</h5>
-                <p style="color:#64748b;font-size:0.85rem;margin-bottom:18px;">This will deduct <strong><?= number_format($po['subtotal_kwd'], DECIMAL_PLACES) ?> KWD</strong> from the selected account and mark the PO as paid.</p>
+                <p style="color:#64748b;font-size:0.85rem;margin-bottom:18px;">This will deduct <strong><?= number_format($poTotalKwd, DECIMAL_PLACES) ?> KWD</strong> from the selected account and mark the PO as paid.</p>
                 <form method="POST" action="?page=purchaseorders&action=markPaid">
                     <?= Auth::csrfField() ?>
                     <input type="hidden" name="po_markpaid_nonce" value="<?= htmlspecialchars($poMarkPaidNonce ?? '') ?>">
@@ -49,7 +61,7 @@ if (!empty($po['account_id'])) {
                         style="width:100%;padding:9px 12px;border:2px solid #e0e7ff;border-radius:10px;font-size:0.875rem;color:#1e293b;margin-bottom:16px;outline:none;">
                         <option value="">— Select Account —</option>
                         <?php foreach ($accounts as $acc): ?>
-                        <option value="<?= $acc['id'] ?>"><?= htmlspecialchars($acc['name']) ?> (<?= number_format($acc['current_balance'], DECIMAL_PLACES) ?> KWD)</option>
+                        <option value="<?= $acc['id'] ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
                         <?php endforeach; ?>
                     </select>
                     <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -66,11 +78,20 @@ if (!empty($po['account_id'])) {
             </div>
         </div>
         <?php endif; ?>
-        <?php if (in_array($po['status'], ['draft','paid'])): ?>
+        <?php if (!empty($openShipment) && in_array($po['status'], ['draft','paid'])): ?>
+        <span class="small text-muted align-self-center" style="max-width:220px;">Receive via <a href="?page=landedcost&action=view&id=<?= (int) $openShipment['id'] ?>">shipment</a> to apply logistics.</span>
+        <?php endif; ?>
+        <?php if (in_array($po['status'], ['draft','paid']) && empty($openShipment)): ?>
         <a href="?page=purchaseorders&action=convert&id=<?= $po['id'] ?>"
            onclick="return confirm('Convert this PO to a Purchase Invoice?\n\nThis will:\n✓ Create a Purchase Invoice in KWD\n✓ Add stock to your warehouse\n✓ Update item purchase prices\n\nProceed?')"
            style="padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#10b981,#059669);border:none;color:#fff;font-size:0.85rem;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(16,185,129,0.4);">
             <i class="bi bi-arrow-repeat"></i> Convert to Purchase Invoice
+        </a>
+        <?php elseif (in_array($po['status'], ['draft','paid'])): ?>
+        <a href="?page=purchaseorders&action=convert&id=<?= $po['id'] ?>"
+           onclick="return confirm('Convert without import shipment?\n\nUse Import Logistics if this PO is on a Dubai/Kuwait shipment with extra charges.\n\nProceed?')"
+           style="padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#64748b,#475569);border:none;color:#fff;font-size:0.85rem;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+            <i class="bi bi-arrow-repeat"></i> Convert only (no shipment)
         </a>
         <?php endif; ?>
         <?php if ($po['status'] === 'converted' && $po['purchase_invoice_no']): ?>
@@ -78,6 +99,16 @@ if (!empty($po['account_id'])) {
            style="padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#4f46e5);border:none;color:#fff;font-size:0.85rem;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
             <i class="bi bi-receipt"></i> View Invoice <?= $po['purchase_invoice_no'] ?>
         </a>
+        <?php if (!empty($canReverseToPo) && Auth::can('purchases', 'delete')): ?>
+        <form method="POST" action="?page=purchaseorders&action=reverseToPo" class="d-inline" id="formPoReverseToPo">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$po['id'] ?>">
+            <button type="submit"
+               style="padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#64748b,#475569);border:none;color:#fff;font-size:0.85rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                <i class="bi bi-arrow-counterclockwise"></i> Reverse to PO
+            </button>
+        </form>
+        <?php endif; ?>
         <?php endif; ?>
         <?php if (!in_array($po['status'], ['converted','cancelled'])): ?>
         <form method="POST" action="?page=purchaseorders&action=cancel" style="display:inline;"
@@ -121,7 +152,7 @@ if (!empty($po['account_id'])) {
                         <i class="bi bi-list-ul me-1"></i> Ordered Items
                     </span>
                     <span style="background:<?= $po['currency']==='AED'?'#dbeafe':'#fef9c3' ?>;color:<?= $po['currency']==='AED'?'#1d4ed8':'#854d0e' ?>;padding:2px 10px;border-radius:6px;font-size:0.75rem;font-weight:700;">
-                        <?= $po['currency'] ?> · Rate: <?= number_format($po['exchange_rate'], 4) ?>
+                        <?= htmlspecialchars($po['currency']) ?><?= $showRate ? ' · Rate: ' . number_format($po['exchange_rate'], 4) : '' ?>
                     </span>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:0.83rem;">
@@ -130,31 +161,52 @@ if (!empty($po['account_id'])) {
                             <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;">#</th>
                             <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;">Item</th>
                             <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:center;">Qty</th>
-                            <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Price (<?= $po['currency'] ?>)</th>
-                            <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Total (<?= $po['currency'] ?>)</th>
+                            <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Price (<?= htmlspecialchars($po['currency']) ?>)</th>
+                            <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Total (<?= htmlspecialchars($po['currency']) ?>)</th>
+                            <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Price (KWD)</th>
                             <th style="padding:9px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Total (KWD)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($items as $n => $item): ?>
+                        <?php foreach ($items as $n => $item):
+                            $qty = (int)($item['quantity'] ?? 0);
+                            $unitKwd = (float)($item['unit_price_kwd'] ?? 0);
+                            if ($unitKwd <= 0 && (float)($item['total_kwd'] ?? 0) > 0 && $qty > 0) {
+                                $unitKwd = round((float)$item['total_kwd'] / $qty, 3);
+                            }
+                        ?>
                         <tr style="background:#fff;" onmouseover="this.style.background='#f8faff'" onmouseout="this.style.background='#fff'">
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#94a3b8;"><?= $n+1 ?></td>
                             <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-weight:600;color:#1e293b;">
                                 <?= htmlspecialchars($item['item_name']) ?>
                                 <div style="font-size:0.72rem;color:#94a3b8;font-family:'JetBrains Mono',monospace;"><?= htmlspecialchars((string) ($item['sku'] ?? '')) ?></div>
                             </td>
-                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:center;font-weight:700;color:#4338ca;"><?= $item['quantity'] ?></td>
-                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;color:#475569;"><?= number_format($item['unit_price_foreign'], DECIMAL_PLACES) ?></td>
-                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:600;color:#f59e0b;"><?= number_format($item['total_foreign'], DECIMAL_PLACES) ?></td>
-                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:700;color:#6366f1;"><?= number_format($item['total_kwd'], DECIMAL_PLACES) ?></td>
+                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:center;font-weight:700;color:#4338ca;"><?= $qty ?></td>
+                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;color:#475569;"><?= number_format((float)$item['unit_price_foreign'], DECIMAL_PLACES) ?></td>
+                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:600;color:#f59e0b;"><?= number_format((float)$item['total_foreign'], DECIMAL_PLACES) ?></td>
+                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:600;color:#1e3a5f;"><?= $unitKwd > 0 ? number_format($unitKwd, DECIMAL_PLACES) : '—' ?></td>
+                            <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:700;color:#6366f1;"><?= number_format((float)$item['total_kwd'], DECIMAL_PLACES) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                     <tfoot>
+                        <tr style="background:#f8f9ff;">
+                            <td colspan="4" style="padding:9px 14px;font-weight:600;color:#64748b;">Subtotal</td>
+                            <td style="padding:9px 14px;text-align:right;font-weight:700;color:#f59e0b;"><?= number_format((float)$po['subtotal_foreign'], DECIMAL_PLACES) ?> <?= htmlspecialchars($po['currency']) ?></td>
+                            <td style="padding:9px 14px;text-align:right;color:#94a3b8;">—</td>
+                            <td style="padding:9px 14px;text-align:right;font-weight:700;color:#6366f1;"><?= number_format((float)$po['subtotal_kwd'], DECIMAL_PLACES) ?> KWD</td>
+                        </tr>
+                        <?php if ($otherChargesKwd > 0.001): ?>
+                        <tr style="background:#f8f9ff;">
+                            <td colspan="6" style="padding:9px 14px;font-weight:600;color:#64748b;">Other Charges (delivery, etc.)</td>
+                            <td style="padding:9px 14px;text-align:right;font-weight:700;color:#b45309;"><?= number_format($otherChargesKwd, DECIMAL_PLACES) ?> KWD</td>
+                        </tr>
+                        <?php endif; ?>
                         <tr style="background:linear-gradient(135deg,#f8faff,#f0f4ff);">
                             <td colspan="4" style="padding:11px 14px;font-weight:700;color:#4338ca;">Total</td>
-                            <td style="padding:11px 14px;text-align:right;font-weight:800;color:#f59e0b;"><?= number_format($po['subtotal_foreign'], DECIMAL_PLACES) ?> <?= $po['currency'] ?></td>
-                            <td style="padding:11px 14px;text-align:right;font-weight:800;color:#6366f1;"><?= number_format($po['subtotal_kwd'], DECIMAL_PLACES) ?> KWD</td>
+                            <td style="padding:11px 14px;text-align:right;font-weight:800;color:#f59e0b;"><?= number_format((float)$po['subtotal_foreign'], DECIMAL_PLACES) ?> <?= htmlspecialchars($po['currency']) ?></td>
+                            <td style="padding:11px 14px;text-align:right;color:#94a3b8;">—</td>
+                            <td style="padding:11px 14px;text-align:right;font-weight:800;color:#6366f1;"><?= number_format($poTotalKwd, DECIMAL_PLACES) ?> KWD</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -193,21 +245,33 @@ if (!empty($po['account_id'])) {
                     <span style="color:#64748b;">Currency</span>
                     <span style="font-weight:700;color:<?= $po['currency']==='AED'?'#1d4ed8':'#854d0e' ?>;"><?= $po['currency'] ?></span>
                 </div>
+                <?php if ($showRate): ?>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
                     <span style="color:#64748b;">Exchange Rate</span>
-                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">1 <?= $po['currency'] ?> = <?= $po['exchange_rate'] ?> KWD</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">1 <?= htmlspecialchars($po['currency']) ?> = <?= $po['exchange_rate'] ?> KWD</span>
                 </div>
+                <?php endif; ?>
+                <?php if ($hasForeign): ?>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
-                    <span style="color:#64748b;">Order Total</span>
-                    <span style="font-weight:700;color:#f59e0b;"><?= number_format($po['subtotal_foreign'], DECIMAL_PLACES) ?> <?= $po['currency'] ?></span>
+                    <span style="color:#64748b;">Order Total (<?= htmlspecialchars($po['currency']) ?>)</span>
+                    <span style="font-weight:700;color:#f59e0b;"><?= number_format($po['subtotal_foreign'], DECIMAL_PLACES) ?> <?= htmlspecialchars($po['currency']) ?></span>
                 </div>
+                <?php endif; ?>
+                <?php if ($showRate): ?>
                 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
                     <span style="color:#64748b;">Paid</span>
-                    <span style="font-weight:600;color:#10b981;"><?= number_format($po['paid_foreign'], DECIMAL_PLACES) ?> <?= $po['currency'] ?></span>
+                    <span style="font-weight:600;color:#10b981;"><?= number_format($po['paid_foreign'], DECIMAL_PLACES) ?> <?= htmlspecialchars($po['currency']) ?></span>
                 </div>
+                <?php endif; ?>
+                <?php if ($otherChargesKwd > 0.001): ?>
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <span style="color:#64748b;">Other Charges</span>
+                    <span style="font-weight:600;color:#b45309;"><?= number_format($otherChargesKwd, DECIMAL_PLACES) ?> KWD</span>
+                </div>
+                <?php endif; ?>
                 <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid #e0e7ff;margin-top:6px;">
                     <span style="font-weight:700;color:#1e293b;">Total in KWD</span>
-                    <span style="font-size:1.1rem;font-weight:800;color:#6366f1;"><?= number_format($po['subtotal_kwd'], DECIMAL_PLACES) ?> KWD</span>
+                    <span style="font-size:1.1rem;font-weight:800;color:#6366f1;"><?= number_format($poTotalKwd, DECIMAL_PLACES) ?> KWD</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:4px 0;">
                     <span style="color:#94a3b8;font-size:0.78rem;">Paid in KWD</span>
@@ -255,3 +319,16 @@ if (!empty($po['account_id'])) {
         </div>
     </div>
 </div>
+<?php if (!empty($canReverseToPo) && Auth::can('purchases', 'delete')): ?>
+<script>
+(function () {
+    var form = document.getElementById('formPoReverseToPo');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+        if (!confirm('Reverse this PO conversion?\n\nThis will cancel the linked purchase invoice, remove its stock, and reopen this PO for editing.\n\nProceed?')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+<?php endif; ?>

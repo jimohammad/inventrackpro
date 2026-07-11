@@ -4,11 +4,24 @@
         <h1 class="page-title">Expenses Report</h1>
         <p class="page-subtitle">All expenses by date range, category, or account</p>
     </div>
-    <?php if (!empty($expenses)): ?>
+    <?php if (!empty($expenses)):
+        $expPrintQs = 'from_date=' . urlencode((string) $fromDate)
+            . '&to_date=' . urlencode((string) $toDate);
+        if ($categoryId) {
+            $expPrintQs .= '&category_id=' . (int) $categoryId;
+        }
+        if ($accountId) {
+            $expPrintQs .= '&account_id=' . (int) $accountId;
+        }
+        if ($search !== '') {
+            $expPrintQs .= '&search=' . urlencode((string) $search);
+        }
+        $expPrintUrl = '?page=reports&action=expensesPrint&' . $expPrintQs;
+    ?>
     <div class="d-flex gap-2">
-        <button onclick="exportReportCSV('expensesRptTable','Expenses_Report')" class="btn btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <button onclick="window.print()" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</button>
+        <button type="button" class="btn btn-success js-export-report-csv" data-table-id="expensesRptTable" data-title="Expenses_Report"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($expPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($expPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
     <?php endif; ?>
 </div>
@@ -123,20 +136,6 @@
 <div class="card">
     <div class="card-body p-0">
 
-        <!-- Print header -->
-        <div class="print-only" style="padding:20px 24px 10px;border-bottom:2px solid #e2e8f0;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
-                    <h2 style="margin:0;font-size:1.3rem;color:#1e293b;"><?= APP_NAME ?? 'Expenses Report' ?></h2>
-                    <p style="margin:4px 0 0;color:#64748b;font-size:0.9rem;">Expenses Report</p>
-                </div>
-                <div style="text-align:right;">
-                    <p style="margin:0;font-weight:700;font-size:1rem;color:#f59e0b;">Total: <?= number_format($totalAmount, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></p>
-                    <p style="margin:2px 0 0;color:#64748b;font-size:0.82rem;"><?= date('d M Y', strtotime($fromDate)) ?> — <?= date('d M Y', strtotime($toDate)) ?></p>
-                </div>
-            </div>
-        </div>
-
         <table id="expensesRptTable" style="width:100%;border-collapse:collapse;font-size:0.83rem;">
             <thead>
                 <tr>
@@ -152,7 +151,7 @@
             </thead>
             <tbody>
                 <?php $n = 1; foreach ($expenses as $exp): ?>
-                <tr style="background:#fff;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='#fff'">
+                <tr class="exp-rpt-row">
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#94a3b8;"><?= $n++ ?></td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($exp['date'])) ?>
@@ -213,12 +212,6 @@
     }
 });</script>
 <style>
-@media print {
-    .no-print, .sidebar, nav, .topbar { display:none !important; }
-    .print-only { display:block !important; }
-    body { background:#fff !important; }
-    .card { box-shadow:none !important; border:none !important; }
-    .stat-card { border:1px solid #e2e8f0 !important; box-shadow:none !important; }
-}
-.print-only { display:none; }
+#expensesRptTable tbody tr.exp-rpt-row:hover { background: #fffbeb; }
+.print-only { display: none; }
 </style>

@@ -30,14 +30,14 @@ $sales = $db->fetchOne(
 // Payments received today
 $paymentsIn = $db->fetchOne(
     "SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
-     FROM payments WHERE date = ? AND payment_type = 'in'",
+     FROM payments WHERE date = ? AND payment_type = 'in' AND status = 'active'",
     [$date]
 );
 
 // Payments sent today
 $paymentsOut = $db->fetchOne(
     "SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
-     FROM payments WHERE date = ? AND payment_type = 'out'",
+     FROM payments WHERE date = ? AND payment_type = 'out' AND status = 'active'",
     [$date]
 );
 

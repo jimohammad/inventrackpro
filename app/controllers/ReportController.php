@@ -1,6 +1,9 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../services/NetWorthService.php';
+require_once __DIR__ . '/../services/AccountBalanceService.php';
+require_once __DIR__ . '/../models/Party.php';
 
 class ReportController extends BaseController {
 
@@ -66,11 +69,16 @@ class ReportController extends BaseController {
         }
     }
 
+    /** Active session warehouse — all reports are scoped to this branch only. */
+    private function reportWarehouseId(): int {
+        return (int) Auth::warehouseId();
+    }
+
     public function index(): void {
         // Allow access if user has master reports OR any individual report permission
         if (!Auth::can('reports', 'view')) {
             $hasAny = false;
-            foreach (['rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_customer_purchases','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei'] as $rk) {
+            foreach (['rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_customer_purchases','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei','rpt_purchase_imei','rpt_purchase_orders','rpt_partner_profit'] as $rk) {
                 if (Auth::can($rk, 'view')) { $hasAny = true; break; }
             }
             if (!$hasAny) { Auth::authorize('reports', 'view'); }
@@ -89,116 +97,9 @@ class ReportController extends BaseController {
         $this->authorizeReport('rpt_daybook');
 
         $date = $this->input('date', date('Y-m-d'), 'get');
-        $db   = Database::getInstance();
-        $whId = Auth::warehouseId();
-
-        // Sales
-        $sales = $db->fetchAll(
-            "SELECT s.id, s.invoice_no as ref_no, 'Sale' as type, s.date, s.grand_total as amount,
-                    p.name as party_name, s.status, s.created_at,
-                    u.name as created_by
-             FROM sales s
-             JOIN parties p ON p.id = s.party_id
-             LEFT JOIN users u ON u.id = s.created_by
-             WHERE s.date = ? AND s.status != 'cancelled' AND s.warehouse_id = ?
-             ORDER BY s.created_at ASC", [$date, $whId]
-        );
-
-        // Purchases
-        $purchases = $db->fetchAll(
-            "SELECT pr.id, pr.invoice_no as ref_no, 'Purchase' as type, pr.date, pr.grand_total as amount,
-                    p.name as party_name, pr.status, pr.created_at,
-                    u.name as created_by
-             FROM purchases pr
-             JOIN parties p ON p.id = pr.party_id
-             LEFT JOIN users u ON u.id = pr.created_by
-             WHERE pr.date = ? AND pr.status != 'cancelled' AND pr.warehouse_id = ?
-             ORDER BY pr.created_at ASC", [$date, $whId]
-        );
-
-        // Payments In (received from customers) — exclude discounts
-        $paymentsIn = $db->fetchAll(
-            "SELECT py.id, py.payment_no as ref_no, 'Payment In' as type, py.date, py.amount,
-                    p.name as party_name, 'paid' as status, py.created_at,
-                    u.name as created_by
-             FROM payments py
-             JOIN parties p ON p.id = py.party_id
-             LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.payment_type = 'in' AND py.ref_type != 'discount' AND py.warehouse_id = ?
-             ORDER BY py.created_at ASC", [$date, $whId]
-        );
-
-        // Discounts given (separate from cash)
-        $discountsGiven = $db->fetchAll(
-            "SELECT py.id, py.payment_no as ref_no, 'Discount' as type, py.date, py.amount,
-                    p.name as party_name, 'paid' as status, py.created_at,
-                    u.name as created_by
-             FROM payments py
-             JOIN parties p ON p.id = py.party_id
-             LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.ref_type = 'discount' AND py.warehouse_id = ?
-             ORDER BY py.created_at ASC", [$date, $whId]
-        );
-
-        // Payments Out (paid to suppliers)
-        $paymentsOut = $db->fetchAll(
-            "SELECT py.id, py.payment_no as ref_no, 'Payment Out' as type, py.date, py.amount,
-                    p.name as party_name, 'paid' as status, py.created_at,
-                    u.name as created_by
-             FROM payments py
-             JOIN parties p ON p.id = py.party_id
-             LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.payment_type = 'out' AND py.warehouse_id = ?
-             ORDER BY py.created_at ASC", [$date, $whId]
-        );
-
-        // Returns
-        $returns = $db->fetchAll(
-            "SELECT r.id, r.return_no as ref_no, 'Return' as type, r.date, r.grand_total as amount,
-                    p.name as party_name, r.status, r.created_at,
-                    u.name as created_by
-             FROM returns r
-             JOIN parties p ON p.id = r.party_id
-             LEFT JOIN users u ON u.id = r.created_by
-             WHERE r.date = ? AND r.status != 'cancelled' AND r.warehouse_id = ?
-             ORDER BY r.created_at ASC", [$date, $whId]
-        );
-
-        // Expenses
-        $expenses = $db->fetchAll(
-            "SELECT e.id, e.expense_no as ref_no, 'Expense' as type, e.date, e.amount,
-                    ec.name as party_name, 'paid' as status, e.created_at,
-                    u.name as created_by
-             FROM expenses e
-             LEFT JOIN expense_categories ec ON ec.id = e.category_id
-             LEFT JOIN users u ON u.id = e.created_by
-             WHERE e.date = ? AND e.warehouse_id = ?
-             ORDER BY e.created_at ASC", [$date, $whId]
-        );
-
-        // Merge and sort by created_at
-        $transactions = array_merge($sales, $purchases, $paymentsIn, $paymentsOut, $returns, $expenses, $discountsGiven);
-        usort($transactions, function($a, $b) {
-            return strtotime($a['created_at']) - strtotime($b['created_at']);
-        });
-
-        // Summaries
-        $summary = [
-            'sales'        => array_sum(array_column($sales, 'amount')),
-            'sales_count'  => count($sales),
-            'purchases'       => array_sum(array_column($purchases, 'amount')),
-            'purchases_count' => count($purchases),
-            'payments_in'       => array_sum(array_column($paymentsIn, 'amount')),
-            'payments_in_count' => count($paymentsIn),
-            'payments_out'       => array_sum(array_column($paymentsOut, 'amount')),
-            'payments_out_count' => count($paymentsOut),
-            'returns'       => array_sum(array_column($returns, 'amount')),
-            'returns_count' => count($returns),
-            'expenses'       => array_sum(array_column($expenses, 'amount')),
-            'expenses_count' => count($expenses),
-            'discounts'       => array_sum(array_column($discountsGiven, 'amount')),
-            'discounts_count' => count($discountsGiven),
-        ];
+        $report = $this->fetchDaybookReport($date);
+        $transactions = $report['transactions'];
+        $summary      = $report['summary'];
 
         $pageTitle = 'Day Book';
         $page      = 'reports';
@@ -209,38 +110,145 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    public function daybookPrint(): void {
+        $this->authorizeReport('rpt_daybook');
+
+        $date     = $this->input('date', date('Y-m-d'), 'get');
+        $report   = $this->fetchDaybookReport($date);
+        $transactions = $report['transactions'];
+        $summary      = $report['summary'];
+        $settings     = self::getSettings();
+
+        include __DIR__ . '/../views/reports/daybook_print.php';
+    }
+
+    /** @return array{transactions: list<array<string, mixed>>, summary: array<string, float|int>} */
+    private function fetchDaybookReport(string $date): array {
+        $whId = $this->reportWarehouseId();
+
+        $sales = $this->db->fetchAll(
+            "SELECT s.id, s.invoice_no as ref_no, 'Sale' as type, s.date, s.grand_total as amount,
+                    p.name as party_name, s.status, s.created_at,
+                    u.name as created_by
+             FROM sales s
+             JOIN parties p ON p.id = s.party_id
+             LEFT JOIN users u ON u.id = s.created_by
+             WHERE s.date = ? AND s.status != 'cancelled' AND s.warehouse_id = ?
+             ORDER BY s.created_at ASC",
+            [$date, $whId]
+        );
+
+        $purchases = $this->db->fetchAll(
+            "SELECT pr.id, pr.invoice_no as ref_no, 'Purchase' as type, pr.date, pr.grand_total as amount,
+                    p.name as party_name, pr.status, pr.created_at,
+                    u.name as created_by
+             FROM purchases pr
+             JOIN parties p ON p.id = pr.party_id
+             LEFT JOIN users u ON u.id = pr.created_by
+             WHERE pr.date = ? AND pr.status != 'cancelled' AND pr.warehouse_id = ?
+             ORDER BY pr.created_at ASC",
+            [$date, $whId]
+        );
+
+        $paymentsIn = $this->db->fetchAll(
+            "SELECT py.id, py.payment_no as ref_no, 'Payment In' as type, py.date, py.amount,
+                    p.name as party_name, 'paid' as status, py.created_at,
+                    u.name as created_by
+             FROM payments py
+             JOIN parties p ON p.id = py.party_id
+             LEFT JOIN users u ON u.id = py.created_by
+             WHERE py.date = ? AND py.payment_type = 'in' AND py.ref_type != 'discount'
+               AND py.warehouse_id = ? AND py.status = 'active'
+             ORDER BY py.created_at ASC",
+            [$date, $whId]
+        );
+
+        $discountsGiven = $this->db->fetchAll(
+            "SELECT py.id, py.payment_no as ref_no, 'Discount' as type, py.date, py.amount,
+                    p.name as party_name, 'paid' as status, py.created_at,
+                    u.name as created_by
+             FROM payments py
+             JOIN parties p ON p.id = py.party_id
+             LEFT JOIN users u ON u.id = py.created_by
+             WHERE py.date = ? AND py.ref_type = 'discount' AND py.warehouse_id = ? AND py.status = 'active'
+             ORDER BY py.created_at ASC",
+            [$date, $whId]
+        );
+
+        $paymentsOut = $this->db->fetchAll(
+            "SELECT py.id, py.payment_no as ref_no, 'Payment Out' as type, py.date, py.amount,
+                    p.name as party_name, 'paid' as status, py.created_at,
+                    u.name as created_by
+             FROM payments py
+             JOIN parties p ON p.id = py.party_id
+             LEFT JOIN users u ON u.id = py.created_by
+             WHERE py.date = ? AND py.payment_type = 'out' AND py.warehouse_id = ? AND py.status = 'active'
+             ORDER BY py.created_at ASC",
+            [$date, $whId]
+        );
+
+        $returns = $this->db->fetchAll(
+            "SELECT r.id, r.return_no as ref_no, 'Return' as type, r.date, r.grand_total as amount,
+                    p.name as party_name, r.status, r.created_at,
+                    u.name as created_by
+             FROM returns r
+             JOIN parties p ON p.id = r.party_id
+             LEFT JOIN users u ON u.id = r.created_by
+             WHERE r.date = ? AND r.status != 'cancelled' AND r.warehouse_id = ?
+             ORDER BY r.created_at ASC",
+            [$date, $whId]
+        );
+
+        $expenses = $this->db->fetchAll(
+            "SELECT e.id, e.expense_no as ref_no, 'Expense' as type, e.date, e.amount,
+                    ec.name as party_name, 'paid' as status, e.created_at,
+                    u.name as created_by
+             FROM expenses e
+             LEFT JOIN expense_categories ec ON ec.id = e.category_id
+             LEFT JOIN users u ON u.id = e.created_by
+             WHERE e.date = ? AND e.warehouse_id = ?
+             ORDER BY e.created_at ASC",
+            [$date, $whId]
+        );
+
+        $transactions = array_merge($sales, $purchases, $paymentsIn, $paymentsOut, $returns, $expenses, $discountsGiven);
+        usort($transactions, function ($a, $b) {
+            return strtotime((string) $a['created_at']) <=> strtotime((string) $b['created_at']);
+        });
+
+        $summary = [
+            'sales'               => (float) array_sum(array_column($sales, 'amount')),
+            'sales_count'         => count($sales),
+            'purchases'           => (float) array_sum(array_column($purchases, 'amount')),
+            'purchases_count'     => count($purchases),
+            'payments_in'         => (float) array_sum(array_column($paymentsIn, 'amount')),
+            'payments_in_count'   => count($paymentsIn),
+            'payments_out'        => (float) array_sum(array_column($paymentsOut, 'amount')),
+            'payments_out_count'  => count($paymentsOut),
+            'returns'             => (float) array_sum(array_column($returns, 'amount')),
+            'returns_count'       => count($returns),
+            'expenses'            => (float) array_sum(array_column($expenses, 'amount')),
+            'expenses_count'      => count($expenses),
+            'discounts'           => (float) array_sum(array_column($discountsGiven, 'amount')),
+            'discounts_count'     => count($discountsGiven),
+        ];
+
+        return ['transactions' => $transactions, 'summary' => $summary];
+    }
+
     public function sales(): void {
         $this->authorizeReport('rpt_sales');
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
-        $whId     = Auth::warehouseId();
 
-        $data = $this->db->fetchAll(
-            "SELECT s.id, s.invoice_no, s.date, p.name as party_name,
-                    s.grand_total, s.paid_amount, s.balance, s.status,
-                    u.name as created_by_name
-             FROM sales s
-             JOIN parties p ON p.id = s.party_id
-             LEFT JOIN users u ON u.id = s.created_by
-             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled' AND s.warehouse_id = ?
-             ORDER BY s.date DESC",
-            [$fromDate, $toDate, $whId]
-        );
+        $report = $this->fetchSalesReport($fromDate, $toDate);
+        $data    = $report['rows'];
+        $summary = $report['summary'];
 
-        $summary = $this->db->fetchOne(
-            "SELECT COUNT(*) as count,
-                    SUM(grand_total) as total,
-                    SUM(paid_amount) as paid,
-                    SUM(balance) as balance
-             FROM sales
-             WHERE date BETWEEN ? AND ? AND status != 'cancelled' AND warehouse_id = ?",
-            [$fromDate, $toDate, $whId]
-        );
-
-        $parties   = $this->db->fetchAll("SELECT id, name FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name");
-        $pageTitle = 'Sales Report';
-        $page      = 'reports';
+        $parties    = (new Party())->listForFilter('customer');
+        $pageTitle  = 'Sales Report';
+        $page       = 'reports';
         $reportType = 'sales';
 
         ob_start();
@@ -249,34 +257,60 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    public function salesPrint(): void {
+        $this->authorizeReport('rpt_sales');
+
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+
+        $report   = $this->fetchSalesReport($fromDate, $toDate);
+        $data     = $report['rows'];
+        $summary  = $report['summary'];
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/sales_print.php';
+    }
+
+    /** @return array{rows: list<array<string, mixed>>, summary: array<string, mixed>} */
+    private function fetchSalesReport(string $fromDate, string $toDate): array {
+        $whId = $this->reportWarehouseId();
+
+        $rows = $this->db->fetchAll(
+            "SELECT s.id, s.invoice_no, s.date, p.name as party_name,
+                    s.grand_total, s.paid_amount, s.balance, s.status,
+                    u.name as created_by_name
+             FROM sales s
+             JOIN parties p ON p.id = s.party_id
+             LEFT JOIN users u ON u.id = s.created_by
+             WHERE s.date BETWEEN ? AND ? AND s.status != 'cancelled' AND s.warehouse_id = ?
+             ORDER BY s.date DESC, s.id DESC",
+            [$fromDate, $toDate, $whId]
+        );
+
+        $summary = $this->db->fetchOne(
+            "SELECT COUNT(*) as count,
+                    COALESCE(SUM(grand_total), 0) as total,
+                    COALESCE(SUM(paid_amount), 0) as paid,
+                    COALESCE(SUM(balance), 0) as balance
+             FROM sales
+             WHERE date BETWEEN ? AND ? AND status != 'cancelled' AND warehouse_id = ?",
+            [$fromDate, $toDate, $whId]
+        );
+
+        return ['rows' => $rows, 'summary' => $summary ?: []];
+    }
+
     public function stock(): void {
         $this->authorizeReport('rpt_stock');
 
-        $warehouseId = $this->inputInt('warehouse_id', 0, 'get');
-        $params = [];
-        $wClause = '';
-        if ($warehouseId) {
-            $wClause = "AND s.warehouse_id = ?";
-            $params[] = $warehouseId;
-        }
+        $report      = $this->fetchStockReport();
+        $data        = $report['rows'];
+        $totalValue  = $report['totalValue'];
+        $lowCount    = $report['lowCount'];
+        $warehouse   = $report['warehouse'];
 
-        $data = $this->db->fetchAll(
-            "SELECT i.name, i.sku, i.brand, i.model, i.min_stock,
-                    i.purchase_price, i.sale_price,
-                    COALESCE(SUM(s.quantity),0) as stock,
-                    COALESCE(SUM(s.quantity),0) * i.purchase_price as stock_value
-             FROM items i
-             LEFT JOIN stock s ON s.item_id = i.id {$wClause}
-             WHERE i.is_active = 1
-             GROUP BY i.id
-             ORDER BY i.name",
-            $params
-        );
-
-        $warehouses  = $this->db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1");
-        $totalValue  = array_sum(array_column($data, 'stock_value'));
-        $pageTitle   = 'Stock Report';
-        $page        = 'reports';
+        $pageTitle  = 'Stock Report';
+        $page       = 'reports';
 
         ob_start();
         include __DIR__ . '/../views/reports/stock.php';
@@ -284,12 +318,65 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    public function stockPrint(): void {
+        $this->authorizeReport('rpt_stock');
+
+        $report      = $this->fetchStockReport();
+        $data        = $report['rows'];
+        $totalValue  = $report['totalValue'];
+        $lowCount    = $report['lowCount'];
+        $warehouse   = $report['warehouse'];
+        $settings    = self::getSettings();
+
+        include __DIR__ . '/../views/reports/stock_print.php';
+    }
+
+    /** @return array{rows: list<array<string, mixed>>, totalValue: float, lowCount: int, warehouse: array<string, mixed>} */
+    private function fetchStockReport(): array {
+        $warehouseId = $this->reportWarehouseId();
+        $wClause     = 'AND s.warehouse_id = ?';
+        $params      = [$warehouseId];
+
+        $rows = $this->db->fetchAll(
+            "SELECT i.name, i.sku, i.brand, i.model, i.min_stock,
+                    i.purchase_price, i.sale_price,
+                    COALESCE(SUM(s.quantity), 0) as stock,
+                    COALESCE(SUM(s.quantity), 0) * i.purchase_price as stock_value
+             FROM items i
+             LEFT JOIN stock s ON s.item_id = i.id {$wClause}
+             WHERE i.is_active = 1
+             GROUP BY i.id
+             HAVING COALESCE(SUM(s.quantity), 0) > 0
+             ORDER BY i.name",
+            $params
+        );
+
+        $lowCount = 0;
+        foreach ($rows as $row) {
+            if ((int) $row['stock'] <= (int) $row['min_stock'] && (int) $row['min_stock'] > 0) {
+                $lowCount++;
+            }
+        }
+
+        $warehouse = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ? AND is_active = 1',
+            [$warehouseId]
+        ) ?: ['id' => $warehouseId, 'name' => Auth::warehouseName()];
+
+        return [
+            'rows'       => $rows,
+            'totalValue' => (float) array_sum(array_column($rows, 'stock_value')),
+            'lowCount'   => $lowCount,
+            'warehouse'  => $warehouse,
+        ];
+    }
+
     public function profit(): void {
         $this->authorizeReport('rpt_profit');
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
-        $whId     = Auth::warehouseId();
+        $whId     = $this->reportWarehouseId();
 
         // Sales revenue
         $salesRev = $this->db->fetchOne(
@@ -346,10 +433,7 @@ class ReportController extends BaseController {
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
 
-        // Show ALL parties (not just customers) since we use unified accounts
-        $parties = $this->db->fetchAll(
-            "SELECT id, name, type, party_code FROM parties WHERE is_active = 1 ORDER BY name ASC"
-        );
+        $parties = (new Party())->listForFilter('all');
 
         $party            = null;
         $transactions     = [];
@@ -370,123 +454,12 @@ class ReportController extends BaseController {
             );
 
             if ($party && $reportError === null) {
-                // ============================================================
-                // UNIFIED ACCOUNT: All transaction types in one timeline
-                // Debit = balance goes up (they owe us more / we owe them less)
-                // Credit = balance goes down (they owe us less / we owe them more)
-                // ============================================================
+                $whId       = $this->reportWarehouseId();
+                $partyModel = new Party();
+                $transactions = $partyModel->getPartyStatementTransactions($partyId, $fromDate, $toDate, $whId);
 
-                // Sales — debit (they owe us)
-                $sales = $this->db->fetchAll(
-                    "SELECT id, 'sale' as txn_type, invoice_no as ref_no,
-                            date, grand_total as debit, 0 as credit, notes
-                     FROM sales
-                     WHERE party_id = ? AND date BETWEEN ? AND ? AND status != 'cancelled'
-                     ORDER BY date ASC, id ASC",
-                    [$partyId, $fromDate, $toDate]
-                );
-
-                // Purchases — credit (we owe them)
-                $purchases = $this->db->fetchAll(
-                    "SELECT id, 'purchase' as txn_type, invoice_no as ref_no,
-                            date, 0 as debit, grand_total as credit, notes
-                     FROM purchases
-                     WHERE party_id = ? AND date BETWEEN ? AND ? AND status != 'cancelled'
-                     ORDER BY date ASC, id ASC",
-                    [$partyId, $fromDate, $toDate]
-                );
-
-                // ALL payments — one type, debit/credit tells direction
-                // payment_in (they pay us) = credit, payment_out (we pay them) = debit
-                $payments = $this->db->fetchAll(
-                    "SELECT 'payment' as txn_type, payment_no as ref_no, date,
-                            CASE WHEN payment_type = 'out' THEN amount ELSE 0 END as debit,
-                            CASE WHEN payment_type = 'in'  THEN amount ELSE 0 END as credit,
-                            notes
-                     FROM payments
-                     WHERE party_id = ? AND date BETWEEN ? AND ?
-                     ORDER BY date ASC, id ASC",
-                    [$partyId, $fromDate, $toDate]
-                );
-
-                // ALL returns — one type, debit/credit tells direction
-                // sale_return = credit (reduces their debt), purchase_return = debit (reduces our debt)
-                $returns = $this->db->fetchAll(
-                    "SELECT 'return' as txn_type, return_no as ref_no, date,
-                            CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END as debit,
-                            CASE WHEN type = 'sale_return'     THEN grand_total ELSE 0 END as credit,
-                            reason as notes
-                     FROM returns
-                     WHERE party_id = ? AND date BETWEEN ? AND ? AND status = 'approved'
-                     ORDER BY date ASC, id ASC",
-                    [$partyId, $fromDate, $toDate]
-                );
-
-                // Customer discounts — credit (reduces what customer owes)
-                $discounts = $this->db->fetchAll(
-                    "SELECT id, 'discount' as txn_type, discount_no as ref_no, date,
-                            0 as debit, amount as credit, reason as notes
-                     FROM customer_discounts
-                     WHERE party_id = ? AND date BETWEEN ? AND ?
-                     ORDER BY date ASC, id ASC",
-                    [$partyId, $fromDate, $toDate]
-                );
-
-                // Merge and sort
-                $transactions = array_merge($sales, $purchases, $payments, $returns, $discounts);
-                usort($transactions, function($a, $b) {
-                    $d = strcmp($a['date'], $b['date']);
-                    return $d !== 0 ? $d : 0;
-                });
-
-                // ============================================================
-                // Opening balance from all transactions BEFORE the date range
-                // ============================================================
-                $salesBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM sales
-                     WHERE party_id = ? AND date < ? AND status != 'cancelled'",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $purchasesBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM purchases
-                     WHERE party_id = ? AND date < ? AND status != 'cancelled'",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $payInBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                     WHERE party_id = ? AND payment_type = 'in' AND date < ?",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $payOutBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                     WHERE party_id = ? AND payment_type = 'out' AND date < ?",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $saleRetBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM returns
-                     WHERE party_id = ? AND type = 'sale_return' AND status = 'approved' AND date < ?",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $purRetBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM returns
-                     WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' AND date < ?",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $discountsBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM customer_discounts
-                     WHERE party_id = ? AND date < ?",
-                    [$partyId, $fromDate]
-                )['t'] ?? 0);
-
-                $openingBal = (float)($party['opening_balance'] ?? 0)
-                    + $salesBefore - $payInBefore - $saleRetBefore - $discountsBefore
-                    - $purchasesBefore + $payOutBefore + $purRetBefore;
+                // Same rules as Party Master / getPartyStatementTransactions (incl. NULL warehouse rows).
+                $openingBal = $partyModel->computeStatementOpeningBalance($partyId, $fromDate, $whId);
 
                 // Running balance
                 $running = $openingBal;
@@ -546,76 +519,11 @@ class ReportController extends BaseController {
         $party = $this->db->fetchOne("SELECT * FROM parties WHERE id = ?", [$partyId]);
         if (!$party) $this->redirect('?page=reports&action=party');
 
-        // Unified: all transaction types
-        $sales = $this->db->fetchAll(
-            "SELECT 'sale' as txn_type, invoice_no as ref_no, date,
-                    grand_total as debit, 0 as credit, notes
-             FROM sales WHERE party_id = ? AND date BETWEEN ? AND ? AND status != 'cancelled'
-             ORDER BY date ASC, id ASC",
-            [$partyId, $fromDate, $toDate]
-        );
-        $purchases = $this->db->fetchAll(
-            "SELECT 'purchase' as txn_type, invoice_no as ref_no, date,
-                    0 as debit, grand_total as credit, notes
-             FROM purchases WHERE party_id = ? AND date BETWEEN ? AND ? AND status != 'cancelled'
-             ORDER BY date ASC, id ASC",
-            [$partyId, $fromDate, $toDate]
-        );
-        $payments = $this->db->fetchAll(
-            "SELECT 'payment' as txn_type, payment_no as ref_no, date,
-                    CASE WHEN payment_type = 'out' THEN amount ELSE 0 END as debit,
-                    CASE WHEN payment_type = 'in'  THEN amount ELSE 0 END as credit,
-                    notes
-             FROM payments WHERE party_id = ? AND date BETWEEN ? AND ?
-             ORDER BY date ASC, id ASC",
-            [$partyId, $fromDate, $toDate]
-        );
-        $returns = $this->db->fetchAll(
-            "SELECT 'return' as txn_type, return_no as ref_no, date,
-                    CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END as debit,
-                    CASE WHEN type = 'sale_return'     THEN grand_total ELSE 0 END as credit,
-                    reason as notes
-             FROM returns WHERE party_id = ? AND date BETWEEN ? AND ? AND status = 'approved'
-             ORDER BY date ASC, id ASC",
-            [$partyId, $fromDate, $toDate]
-        );
-        $discounts = $this->db->fetchAll(
-            "SELECT 'discount' as txn_type, discount_no as ref_no, date,
-                    0 as debit, amount as credit, reason as notes
-             FROM customer_discounts WHERE party_id = ? AND date BETWEEN ? AND ?
-             ORDER BY date ASC, id ASC",
-            [$partyId, $fromDate, $toDate]
-        );
+        $whId         = $this->reportWarehouseId();
+        $partyModel   = new Party();
+        $transactions = $partyModel->getPartyStatementTransactions($partyId, $fromDate, $toDate, $whId);
 
-        $transactions = array_merge($sales, $purchases, $payments, $returns, $discounts);
-        usort($transactions, function($a, $b) { return strcmp($a['date'], $b['date']); });
-
-        // Opening balance
-        $salesBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(grand_total),0) as t FROM sales WHERE party_id = ? AND date < ? AND status != 'cancelled'", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $purchasesBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(grand_total),0) as t FROM purchases WHERE party_id = ? AND date < ? AND status != 'cancelled'", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $payInBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE party_id = ? AND payment_type = 'in' AND date < ?", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $payOutBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(amount),0) as t FROM payments WHERE party_id = ? AND payment_type = 'out' AND date < ?", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $saleRetBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(grand_total),0) as t FROM returns WHERE party_id = ? AND type = 'sale_return' AND status = 'approved' AND date < ?", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $purRetBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(grand_total),0) as t FROM returns WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' AND date < ?", [$partyId, $fromDate]
-        )['t'] ?? 0);
-        $discountsBefore = (float)($this->db->fetchOne(
-            "SELECT COALESCE(SUM(amount),0) as t FROM customer_discounts WHERE party_id = ? AND date < ?", [$partyId, $fromDate]
-        )['t'] ?? 0);
-
-        $openingBal = (float)($party['opening_balance'] ?? 0)
-            + $salesBefore - $payInBefore - $saleRetBefore - $discountsBefore
-            - $purchasesBefore + $payOutBefore + $purRetBefore;
+        $openingBal = $partyModel->computeStatementOpeningBalance($partyId, $fromDate, $whId);
 
         $running = $openingBal;
         foreach ($transactions as &$t) {
@@ -636,80 +544,24 @@ class ReportController extends BaseController {
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
 
-        // All items for dropdown
         $items = $this->db->fetchAll(
             "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name ASC"
         );
 
-        $item         = null;
-        $rows         = array();
-        $summary      = array('qty' => 0, 'revenue' => 0, 'avg_price' => 0, 'invoices' => 0);
-        $partyBreakdown   = array();
-        $monthlyBreakdown = array();
+        $item             = null;
+        $rows             = [];
+        $summary          = ['qty' => 0, 'revenue' => 0, 'avg_price' => 0, 'invoices' => 0];
+        $partyBreakdown   = [];
+        $monthlyBreakdown = [];
 
         if ($itemId) {
-            $item = $this->db->fetchOne(
-                "SELECT * FROM items WHERE id = ?", [$itemId]
-            );
-
-            if ($item) {
-                // All sales of this item line by line
-                $rows = $this->db->fetchAll(
-                    "SELECT s.id as sale_id, s.invoice_no, s.date, p.name as party_name, p.id as party_id,
-                            si.quantity, si.unit_price, si.discount, si.total,
-                            s.status, s.warehouse_id, w.name as warehouse_name
-                     FROM sale_items si
-                     JOIN sales s ON s.id = si.sale_id
-                     JOIN parties p ON p.id = s.party_id
-                     LEFT JOIN warehouses w ON w.id = s.warehouse_id
-                     WHERE si.item_id = ?
-                       AND s.date BETWEEN ? AND ?
-                       AND s.status != 'cancelled'
-                     ORDER BY s.date DESC, s.id DESC",
-                    [$itemId, $fromDate, $toDate]
-                );
-
-                // Summary totals
-                $summary['qty']      = array_sum(array_column($rows, 'quantity'));
-                $summary['revenue']  = array_sum(array_column($rows, 'total'));
-                $summary['invoices'] = count(array_unique(array_column($rows, 'invoice_no')));
-                $summary['avg_price'] = $summary['qty'] > 0
-                    ? $summary['revenue'] / $summary['qty'] : 0;
-
-                // Per-party breakdown
-                $partyMap = array();
-                foreach ($rows as $r) {
-                    $pid = $r['party_id'];
-                    if (!isset($partyMap[$pid])) {
-                        $partyMap[$pid] = array(
-                            'name' => $r['party_name'],
-                            'qty'  => 0,
-                            'total'=> 0,
-                            'count'=> 0
-                        );
-                    }
-                    $partyMap[$pid]['qty']   += $r['quantity'];
-                    $partyMap[$pid]['total'] += $r['total'];
-                    $partyMap[$pid]['count'] += 1;
-                }
-                usort($partyMap, function($a, $b) {
-                    if ($b['total'] == $a['total']) return 0;
-                    return ($b['total'] > $a['total']) ? 1 : -1;
-                });
-                $partyBreakdown = array_values($partyMap);
-
-                // Monthly breakdown
-                $monthMap = array();
-                foreach ($rows as $r) {
-                    $mon = date('Y-m', strtotime($r['date']));
-                    if (!isset($monthMap[$mon])) {
-                        $monthMap[$mon] = array('month' => $mon, 'qty' => 0, 'total' => 0);
-                    }
-                    $monthMap[$mon]['qty']   += $r['quantity'];
-                    $monthMap[$mon]['total'] += $r['total'];
-                }
-                ksort($monthMap);
-                $monthlyBreakdown = array_values($monthMap);
+            $report = $this->fetchItemSalesReport($itemId, $fromDate, $toDate);
+            if ($report !== null) {
+                $item             = $report['item'];
+                $rows             = $report['rows'];
+                $summary          = $report['summary'];
+                $partyBreakdown   = $report['partyBreakdown'];
+                $monthlyBreakdown = $report['monthlyBreakdown'];
             }
         }
 
@@ -729,44 +581,92 @@ class ReportController extends BaseController {
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
 
+        $report = $this->fetchItemSalesReport($itemId, $fromDate, $toDate);
+        if ($report === null) {
+            $this->redirect('?page=reports&action=itemSales');
+        }
+
+        $item             = $report['item'];
+        $rows             = $report['rows'];
+        $summary          = $report['summary'];
+        $partyBreakdown   = $report['partyBreakdown'];
+        $monthlyBreakdown = $report['monthlyBreakdown'];
+        $settings         = self::getSettings();
+
+        include __DIR__ . '/../views/reports/item_sales_print.php';
+    }
+
+    /**
+     * @return array{
+     *     item: array<string, mixed>,
+     *     rows: list<array<string, mixed>>,
+     *     summary: array<string, float|int>,
+     *     partyBreakdown: list<array<string, mixed>>,
+     *     monthlyBreakdown: list<array<string, mixed>>
+     * }|null
+     */
+    private function fetchItemSalesReport(int $itemId, string $fromDate, string $toDate): ?array {
         $item = $this->db->fetchOne("SELECT * FROM items WHERE id = ?", [$itemId]);
-        if (!$item) $this->redirect('?page=reports&action=itemSales');
+        if (!$item) {
+            return null;
+        }
+
+        $whId = $this->reportWarehouseId();
 
         $rows = $this->db->fetchAll(
-            "SELECT s.invoice_no, s.date, p.name as party_name,
-                    si.quantity, si.unit_price, si.discount, si.total, s.status
+            "SELECT s.id as sale_id, s.invoice_no, s.date, p.name as party_name, p.id as party_id,
+                    si.quantity, si.unit_price, si.discount, si.total,
+                    s.status, w.name as warehouse_name
              FROM sale_items si
              JOIN sales s ON s.id = si.sale_id
              JOIN parties p ON p.id = s.party_id
-             WHERE si.item_id = ? AND s.date BETWEEN ? AND ? AND s.status != 'cancelled'
+             LEFT JOIN warehouses w ON w.id = s.warehouse_id
+             WHERE si.item_id = ? AND s.warehouse_id = ? AND s.date BETWEEN ? AND ? AND s.status != 'cancelled'
              ORDER BY s.date DESC, s.id DESC",
-            [$itemId, $fromDate, $toDate]
+            [$itemId, $whId, $fromDate, $toDate]
         );
 
-        $partyMap = array();
+        $qty     = (float) array_sum(array_column($rows, 'quantity'));
+        $revenue = (float) array_sum(array_column($rows, 'total'));
+
+        $partyMap = [];
         foreach ($rows as $r) {
-            $k = $r['party_name'];
-            if (!isset($partyMap[$k])) {
-                $partyMap[$k] = array('name' => $k, 'qty' => 0, 'total' => 0);
+            $pid = $r['party_id'];
+            if (!isset($partyMap[$pid])) {
+                $partyMap[$pid] = ['name' => $r['party_name'], 'qty' => 0, 'total' => 0];
             }
-            $partyMap[$k]['qty']   += $r['quantity'];
-            $partyMap[$k]['total'] += $r['total'];
+            $partyMap[$pid]['qty']   += $r['quantity'];
+            $partyMap[$pid]['total'] += $r['total'];
         }
-        usort($partyMap, function($a, $b) {
-            if ($b['total'] == $a['total']) return 0;
-            return ($b['total'] > $a['total']) ? 1 : -1;
+        usort($partyMap, function ($a, $b) {
+            return $b['total'] <=> $a['total'];
         });
         $partyBreakdown = array_values($partyMap);
 
-        $summary = array(
-            'qty'      => array_sum(array_column($rows, 'quantity')),
-            'revenue'  => array_sum(array_column($rows, 'total')),
-            'invoices' => count(array_unique(array_column($rows, 'invoice_no')))
-        );
+        $monthMap = [];
+        foreach ($rows as $r) {
+            $mon = date('Y-m', strtotime($r['date']));
+            if (!isset($monthMap[$mon])) {
+                $monthMap[$mon] = ['month' => $mon, 'qty' => 0, 'total' => 0];
+            }
+            $monthMap[$mon]['qty']   += $r['quantity'];
+            $monthMap[$mon]['total'] += $r['total'];
+        }
+        ksort($monthMap);
+        $monthlyBreakdown = array_values($monthMap);
 
-        $settings = self::getSettings();
-
-        include __DIR__ . '/../views/reports/item_sales_print.php';
+        return [
+            'item'             => $item,
+            'rows'             => $rows,
+            'summary'          => [
+                'qty'       => $qty,
+                'revenue'   => $revenue,
+                'invoices'  => count(array_unique(array_column($rows, 'invoice_no'))),
+                'avg_price' => $qty > 0 ? $revenue / $qty : 0,
+            ],
+            'partyBreakdown'   => $partyBreakdown,
+            'monthlyBreakdown' => $monthlyBreakdown,
+        ];
     }
 
     public function customerPurchases(): void {
@@ -776,11 +676,7 @@ class ReportController extends BaseController {
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
 
-        $customers = $this->db->fetchAll(
-            "SELECT id, name, phone, party_code FROM parties
-             WHERE is_active = 1 AND type IN ('customer','both')
-             ORDER BY name ASC"
-        );
+        $customers = (new Party())->listForFilter('customer');
 
         $party            = null;
         $rows             = [];
@@ -792,6 +688,7 @@ class ReportController extends BaseController {
         $monthlyBreakdown = [];
 
         if ($partyId) {
+            $whId = $this->reportWarehouseId();
             $party = $this->db->fetchOne(
                 "SELECT id, name, phone, party_code, type FROM parties WHERE id = ? AND type IN ('customer','both')",
                 [$partyId]
@@ -810,11 +707,11 @@ class ReportController extends BaseController {
                          JOIN sales s ON s.id = si.sale_id
                          JOIN items i ON i.id = si.item_id
                          LEFT JOIN warehouses w ON w.id = s.warehouse_id
-                         WHERE s.party_id = ?
+                         WHERE s.party_id = ? AND s.warehouse_id = ?
                            AND s.date BETWEEN ? AND ?
                            AND s.status != 'cancelled'
                          ORDER BY s.date DESC, s.id DESC, i.name ASC",
-                        [$partyId, $fromDate, $toDate]
+                        [$partyId, $whId, $fromDate, $toDate]
                     );
 
                     $capped = ListPage::capRows($allRows, ListPage::REPORT_LEDGER_MAX);
@@ -899,15 +796,16 @@ class ReportController extends BaseController {
             $this->redirect('?page=reports&action=customerPurchases&party_id=' . $partyId);
         }
 
+        $whId = $this->reportWarehouseId();
         $rows = $this->db->fetchAll(
             "SELECT s.invoice_no, s.date, i.name as item_name, i.sku,
                     si.quantity, si.unit_price, si.discount, si.total
              FROM sale_items si
              JOIN sales s ON s.id = si.sale_id
              JOIN items i ON i.id = si.item_id
-             WHERE s.party_id = ? AND s.date BETWEEN ? AND ? AND s.status != 'cancelled'
+             WHERE s.party_id = ? AND s.warehouse_id = ? AND s.date BETWEEN ? AND ? AND s.status != 'cancelled'
              ORDER BY s.date DESC, s.id DESC, i.name ASC",
-            [$partyId, $fromDate, $toDate]
+            [$partyId, $whId, $fromDate, $toDate]
         );
 
         $itemMap = [];
@@ -944,21 +842,21 @@ class ReportController extends BaseController {
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
-        $whId     = Auth::warehouseId();
+        $whId     = $this->reportWarehouseId();
 
         $data = $this->db->fetchAll(
             "SELECT py.*, pa.name as party_name, a.name as account_name
              FROM payments py
              LEFT JOIN parties pa ON pa.id = py.party_id
              LEFT JOIN accounts a ON a.id = py.account_id
-             WHERE py.date BETWEEN ? AND ? AND py.warehouse_id = ?
+             WHERE py.date BETWEEN ? AND ? AND py.warehouse_id = ? AND py.status = 'active'
              ORDER BY py.date DESC",
             [$fromDate, $toDate, $whId]
         );
 
         $totals = $this->db->fetchAll(
             "SELECT payment_method, SUM(amount) as total, COUNT(*) as count
-             FROM payments WHERE date BETWEEN ? AND ? AND warehouse_id = ?
+             FROM payments WHERE date BETWEEN ? AND ? AND warehouse_id = ? AND status = 'active'
              GROUP BY payment_method",
             [$fromDate, $toDate, $whId]
         );
@@ -977,118 +875,29 @@ class ReportController extends BaseController {
 
         $date = $this->input('date', date('Y-m-d'), 'get');
         $db   = $this->db;
+        $whId = $this->reportWarehouseId();
 
-        // All accounts with their recorded current balance
-        $accounts = self::getAccounts();
-
-        $results = [];
-        foreach ($accounts as $acc) {
-            $id = (int) $acc['id'];
-
-            // Sum of all payments IN (sales receipts), excluding discounts
-            $in = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-                 WHERE account_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND date <= ?",
-                [$id, $date]
-            );
-
-            // Sum of all payments OUT (supplier payments etc.)
-            $out = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-                 WHERE account_id = ? AND payment_type = 'out' AND ref_type != 'discount' AND date <= ?",
-                [$id, $date]
-            );
-
-            // Expenses from this account
-            $exp = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-                 WHERE account_id = ? AND date <= ?",
-                [$id, $date]
-            );
-
-            // Inter-account transfers (same definition as Accounts → Recalculate)
-            $transRow = $db->fetchOne(
-                "SELECT
-                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE to_account_id = ? AND date <= ?), 0) AS in_total,
-                    COALESCE((SELECT SUM(amount) FROM account_transfers WHERE from_account_id = ? AND date <= ?), 0) AS out_total",
-                [$id, $date, $id, $date]
-            );
-            $transferNet = (float)($transRow['in_total'] ?? 0) - (float)($transRow['out_total'] ?? 0);
-
-            // Manual balance adjustments (“Adjust Balance” on Accounts page)
-            $adjRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
-                 FROM account_balance_adjustments
-                 WHERE account_id = ? AND date <= ?",
-                [$id, $date]
-            );
-            $adjustmentsNet = (float)($adjRow['net'] ?? 0);
-
-            // PO advances recorded on the PO row but not yet mirrored as payments rows (Accounts activity list uses the same exclusions)
-            $poRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
-                 FROM purchase_orders po
-                 LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
-                 LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
-                 LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
-                    AND pay3.party_id = po.party_id
-                    AND ABS(pay3.amount - po.paid_kwd) < 0.001
-                    AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
-                 WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date <= ?
-                  AND po.status NOT IN ('cancelled')
-                  AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
-                [$id, $date]
-            );
-            $poUnlinkedOut = (float)($poRow['total'] ?? 0);
-
-            $openingBalance  = (float)($acc['opening_balance'] ?? 0);
-            $totalIn         = (float)$in['total'];
-            $totalOut        = (float)$out['total'];
-            $totalExpenses   = (float)$exp['total'];
-            // Mirrors AccountController::recalcBalance, plus orphan PO outs (same heuristic as Accounts → transaction merge)
-            $calculatedBal   = round(
-                $openingBalance + $totalIn - $totalOut - $totalExpenses + $transferNet + $adjustmentsNet - $poUnlinkedOut,
-                3
-            );
-            $recordedBal     = (float)($acc['current_balance'] ?? 0);
-            $difference      = round($calculatedBal - $recordedBal, 3);
-
-            $results[] = [
-                'account'           => $acc['name'],
-                'type'                => $acc['type'],
-                'opening'             => $openingBalance,
-                'total_in'            => $totalIn,
-                'total_out'           => $totalOut,
-                'total_expenses'      => $totalExpenses,
-                'net_transfers'       => $transferNet,
-                'net_adjustments'     => $adjustmentsNet,
-                'po_unlinked_payouts' => $poUnlinkedOut,
-                'calculated'          => $calculatedBal,
-                'recorded'            => $recordedBal,
-                'difference'          => $difference,
-                'status'              => abs($difference) < 0.001 ? 'ok' : 'mismatch',
-            ];
-        }
+        $results = AccountBalanceService::reconciliationRows($db, $date, $whId > 0 ? $whId : null);
 
         // Today's sales total vs payments received today
         $salesToday = $db->fetchOne(
             "SELECT COALESCE(SUM(paid_amount), 0) as total FROM sales
-             WHERE date = ? AND status != 'cancelled'",
-            [$date]
+             WHERE date = ? AND warehouse_id = ? AND status != 'cancelled'",
+            [$date, $whId]
         );
         $paymentsToday = $db->fetchOne(
             "SELECT COALESCE(SUM(amount), 0) as total FROM payments
-             WHERE date = ? AND payment_type = 'in' AND ref_type != 'discount'",
-            [$date]
+             WHERE date = ? AND warehouse_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND status = 'active'",
+            [$date, $whId]
         );
         $expensesToday = $db->fetchOne(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE date = ?",
-            [$date]
+            "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE date = ? AND warehouse_id = ?",
+            [$date, $whId]
         );
         $purchasesToday = $db->fetchOne(
             "SELECT COALESCE(SUM(paid_amount), 0) as total FROM purchases
-             WHERE date = ? AND status != 'cancelled'",
-            [$date]
+             WHERE date = ? AND warehouse_id = ? AND status != 'cancelled'",
+            [$date, $whId]
         );
 
         $summary = [
@@ -1116,6 +925,7 @@ class ReportController extends BaseController {
         $accountId = $this->inputInt('account_id', 0, 'get');
         $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate    = $this->input('to_date', date('Y-m-d'), 'get');
+        $scopeAll  = $this->input('scope', '', 'get') === 'all';
 
         $account          = null;
         $transactions     = [];
@@ -1126,47 +936,58 @@ class ReportController extends BaseController {
         $listTruncated    = false;
         $listLimit        = ListPage::REPORT_LEDGER_MAX;
         $ledgerTotalCount = 0;
+        $statementScopeLabel = '';
 
         if ($accountId) {
             $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
             $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$accountId]);
 
             if ($account && $reportError === null) {
+            $whId = $this->reportWarehouseId();
+            $whForLedger = $scopeAll ? null : ($whId > 0 ? $whId : null);
+            $statementScopeLabel = $scopeAll
+                ? 'Company-wide (all branches — matches Settings → Recalculate)'
+                : trim((string) Auth::warehouseName()) . ' branch + legacy rows with no warehouse';
 
-            // Payments IN (money received into this account)
+            [$payWhSql, $payWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger);
+            [$payRangeSql, $payRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate);
+            $payWhere = AccountBalanceService::sqlPaymentLedgerWhere('p');
+            $payBaseParams = array_merge([$accountId], $payWhParams, $payRangeParams);
+
             $paymentsIn = $db->fetchAll(
                 "SELECT p.date, p.payment_no as ref, COALESCE(pa.name,'—') as party_name,
                         p.amount as credit, 0 as debit,
                         'Payment In' as type, p.notes as notes, p.id as sort_id
                  FROM payments p
                  LEFT JOIN parties pa ON pa.id = p.party_id
-                 WHERE p.account_id = ? AND p.payment_type = 'in' AND p.ref_type != 'discount' AND p.date BETWEEN ? AND ?
+                 WHERE p.account_id = ? AND p.payment_type = 'in' AND {$payWhere}{$payWhSql}{$payRangeSql}
                  ORDER BY p.date, p.id",
-                [$accountId, $fromDate, $toDate]
+                $payBaseParams
             );
 
-            // Payments OUT (money paid out from this account)
             $paymentsOut = $db->fetchAll(
                 "SELECT p.date, p.payment_no as ref, COALESCE(pa.name,'—') as party_name,
                         0 as credit, p.amount as debit,
                         'Payment Out' as type, p.notes as notes, p.id as sort_id
                  FROM payments p
                  LEFT JOIN parties pa ON pa.id = p.party_id
-                 WHERE p.account_id = ? AND p.payment_type = 'out' AND p.ref_type != 'discount' AND p.date BETWEEN ? AND ?
+                 WHERE p.account_id = ? AND p.payment_type = 'out' AND {$payWhere}{$payWhSql}{$payRangeSql}
                  ORDER BY p.date, p.id",
-                [$accountId, $fromDate, $toDate]
+                $payBaseParams
             );
 
-            // Expenses from this account
+            [$expWhSql, $expWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger);
+            [$expRangeSql, $expRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate);
+
             $expenses = $db->fetchAll(
                 "SELECT e.date, e.expense_no as ref, COALESCE(ec.name,'—') as party_name,
                         0 as credit, e.amount as debit,
                         'Expense' as type, e.description as notes, e.id as sort_id
                  FROM expenses e
                  LEFT JOIN expense_categories ec ON ec.id = e.category_id
-                 WHERE e.account_id = ? AND e.date BETWEEN ? AND ?
+                 WHERE e.account_id = ?{$expWhSql}{$expRangeSql}
                  ORDER BY e.date, e.id",
-                [$accountId, $fromDate, $toDate]
+                array_merge([$accountId], $expWhParams, $expRangeParams)
             );
 
             // Transfers INTO this account
@@ -1209,7 +1030,10 @@ class ReportController extends BaseController {
                     [$accountId, $fromDate, $toDate]
                 );
 
-                // PO paid amounts without a mirrored payments row
+                // PO paid amounts without a mirrored payments row (same rules as AccountBalanceService)
+                $poLedgerWhere = AccountBalanceService::sqlUnlinkedPoLedgerWhere();
+                [$poWhSql, $poWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger, 'po.warehouse_id');
+                [$poRangeSql, $poRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate, 'po.date');
                 $poStmt = $db->fetchAll(
                     "SELECT po.date, po.po_no as ref, p.name as party_name,
                             0 as credit, po.paid_kwd as debit,
@@ -1218,17 +1042,9 @@ class ReportController extends BaseController {
                             po.id as sort_id
                      FROM purchase_orders po
                      JOIN parties p ON p.id = po.party_id
-                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
-                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
-                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
-                        AND pay3.party_id = po.party_id
-                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
-                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
-                     WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date BETWEEN ? AND ?
-                      AND po.status NOT IN ('cancelled')
-                      AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL
+                     WHERE po.account_id = ? AND {$poLedgerWhere}{$poWhSql}{$poRangeSql}
                      ORDER BY po.date, po.id",
-                    [$accountId, $fromDate, $toDate]
+                    array_merge([$accountId], $poWhParams, $poRangeParams)
                 );
 
                 // Merge; stable-sort by date + ledger id within each source
@@ -1250,57 +1066,19 @@ class ReportController extends BaseController {
                     return ((int) ($a['sort_id'] ?? 0)) <=> ((int) ($b['sort_id'] ?? 0));
                 });
 
-                // Opening balance components before from_date
-                $beforeCredits = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                     WHERE account_id = ? AND payment_type = 'in' AND ref_type != 'discount' AND date < ?",
-                    [$accountId, $fromDate]
-                )['t'] ?? 0);
-                $beforeDebits = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                     WHERE account_id = ? AND payment_type = 'out' AND ref_type != 'discount' AND date < ?",
-                    [$accountId, $fromDate]
-                )['t'] ?? 0);
-                $beforeExpenses = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM expenses
-                     WHERE account_id = ? AND date < ?",
-                    [$accountId, $fromDate]
-                )['t'] ?? 0);
-                $beforeTransIn = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
-                     WHERE to_account_id = ? AND date < ?",
-                    [$accountId, $fromDate]
-                )['t'] ?? 0);
-                $beforeTransOut = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM account_transfers
-                     WHERE from_account_id = ? AND date < ?",
-                    [$accountId, $fromDate]
-                )['t'] ?? 0);
-                $beforeAdjNet = (float) ($db->fetchOne(
-                    "SELECT COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
-                     FROM account_balance_adjustments
-                     WHERE account_id = ? AND date < ?",
-                    [$accountId, $fromDate]
-                )['net'] ?? 0);
-                $beforePoRow = $db->fetchOne(
-                    "SELECT COALESCE(SUM(po.paid_kwd), 0) AS total
-                     FROM purchase_orders po
-                     LEFT JOIN payments pay ON pay.ref_type = 'purchase_order' AND pay.ref_id = po.id
-                     LEFT JOIN payments pay2 ON pay2.ref_type = 'purchase' AND pay2.ref_id = po.converted_to
-                     LEFT JOIN payments pay3 ON pay3.ref_type = 'purchase'
-                        AND pay3.party_id = po.party_id
-                        AND ABS(pay3.amount - po.paid_kwd) < 0.001
-                        AND pay3.date BETWEEN DATE_SUB(po.date, INTERVAL 1 DAY) AND DATE_ADD(po.date, INTERVAL 1 DAY)
-                     WHERE po.account_id = ? AND po.paid_kwd > 0 AND po.date < ?
-                      AND po.status NOT IN ('cancelled')
-                      AND pay.id IS NULL AND pay2.id IS NULL AND pay3.id IS NULL",
-                    [$accountId, $fromDate]
-                );
-                $beforePoOut = (float) ($beforePoRow['total'] ?? 0);
-
-                $openingBalance = (float) ($account['opening_balance'] ?? 0)
-                    + $beforeCredits - $beforeDebits - $beforeExpenses + $beforeTransIn - $beforeTransOut
-                    + $beforeAdjNet - $beforePoOut;
+                $dayBefore = date('Y-m-d', strtotime($fromDate . ' -1 day'));
+                $openingBalance = AccountBalanceService::computeFromLedgerAsOf(
+                    $db,
+                    $accountId,
+                    $dayBefore,
+                    $whForLedger
+                )['balance'];
+                $closingBalance = AccountBalanceService::computeFromLedgerAsOf(
+                    $db,
+                    $accountId,
+                    $toDate,
+                    $whForLedger
+                )['balance'];
 
             // Add running balance to each row
             $running = $openingBalance;
@@ -1309,8 +1087,6 @@ class ReportController extends BaseController {
                 $tx['running'] = $running;
             }
             unset($tx);
-
-            $closingBalance = $running ?: $openingBalance;
 
                 $ledgerView = $this->finalizeReportLedger($transactions, $fromDate, $toDate);
                 if ($ledgerView['reportError'] !== null) {
@@ -1339,59 +1115,20 @@ class ReportController extends BaseController {
     public function expenses(): void {
         $this->authorizeReport('rpt_expenses');
 
-        $db         = Database::getInstance();
-        $categories = $db->fetchAll("SELECT * FROM expense_categories ORDER BY name");
-        $accounts   = self::getAccounts();
-
         $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
         $categoryId = $this->inputInt('category_id', 0, 'get');
         $accountId  = $this->inputInt('account_id', 0, 'get');
         $search     = $this->input('search', '', 'get');
 
-        $where  = "WHERE e.date BETWEEN ? AND ?";
-        $params = [$fromDate, $toDate];
+        $categories = Database::getInstance()->fetchAll("SELECT * FROM expense_categories ORDER BY name");
+        $accounts   = self::getAccounts();
 
-        if ($categoryId) { $where .= " AND e.category_id = ?"; $params[] = $categoryId; }
-        if ($accountId)  { $where .= " AND e.account_id = ?";  $params[] = $accountId; }
-        if ($search)     {
-            $where .= " AND (e.expense_no LIKE ? OR e.description LIKE ?)";
-            $params[] = "%$search%";
-            $params[] = "%$search%";
-        }
-
-        $expenses = $db->fetchAll(
-            "SELECT e.*, ec.name as category_name, a.name as account_name, u.name as created_by_name
-             FROM expenses e
-             LEFT JOIN expense_categories ec ON ec.id = e.category_id
-             LEFT JOIN accounts a ON a.id = e.account_id
-             LEFT JOIN users u ON u.id = e.created_by
-             $where
-             ORDER BY e.date DESC, e.id DESC",
-            $params
-        );
-
-        $totalAmount = array_sum(array_column($expenses, 'amount'));
-
-        // Summary by category
-        $catSummary = $db->fetchAll(
-            "SELECT ec.name as category, COUNT(*) as count, SUM(e.amount) as total
-             FROM expenses e
-             LEFT JOIN expense_categories ec ON ec.id = e.category_id
-             $where
-             GROUP BY e.category_id ORDER BY total DESC",
-            $params
-        );
-
-        // Summary by account
-        $accSummary = $db->fetchAll(
-            "SELECT a.name as account, COUNT(*) as count, SUM(e.amount) as total
-             FROM expenses e
-             LEFT JOIN accounts a ON a.id = e.account_id
-             $where
-             GROUP BY e.account_id ORDER BY total DESC",
-            $params
-        );
+        $report = $this->fetchExpensesReport($fromDate, $toDate, $categoryId, $accountId, $search);
+        $expenses     = $report['expenses'];
+        $totalAmount  = $report['totalAmount'];
+        $catSummary   = $report['catSummary'];
+        $accSummary   = $report['accSummary'];
 
         $pageTitle = 'Expenses Report';
         $page      = 'reports';
@@ -1402,17 +1139,129 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    public function expensesPrint(): void {
+        $this->authorizeReport('rpt_expenses');
+
+        $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
+        $categoryId = $this->inputInt('category_id', 0, 'get');
+        $accountId  = $this->inputInt('account_id', 0, 'get');
+        $search     = $this->input('search', '', 'get');
+
+        $report = $this->fetchExpensesReport($fromDate, $toDate, $categoryId, $accountId, $search);
+        $expenses     = $report['expenses'];
+        $totalAmount  = $report['totalAmount'];
+        $catSummary   = $report['catSummary'];
+        $accSummary   = $report['accSummary'];
+        $settings     = self::getSettings();
+
+        include __DIR__ . '/../views/reports/expenses_print.php';
+    }
+
+    /** @return array{expenses: list<array<string, mixed>>, totalAmount: float, catSummary: list<array<string, mixed>>, accSummary: list<array<string, mixed>>} */
+    private function fetchExpensesReport(string $fromDate, string $toDate, int $categoryId, int $accountId, string $search): array {
+        $where  = "WHERE e.date BETWEEN ? AND ? AND e.warehouse_id = ?";
+        $params = [$fromDate, $toDate, $this->reportWarehouseId()];
+
+        if ($categoryId) {
+            $where .= " AND e.category_id = ?";
+            $params[] = $categoryId;
+        }
+        if ($accountId) {
+            $where .= " AND e.account_id = ?";
+            $params[] = $accountId;
+        }
+        if ($search !== '') {
+            $where .= " AND (e.expense_no LIKE ? OR e.description LIKE ?)";
+            $params[] = '%' . $search . '%';
+            $params[] = '%' . $search . '%';
+        }
+
+        $expenses = $this->db->fetchAll(
+            "SELECT e.*, ec.name as category_name, a.name as account_name, u.name as created_by_name
+             FROM expenses e
+             LEFT JOIN expense_categories ec ON ec.id = e.category_id
+             LEFT JOIN accounts a ON a.id = e.account_id
+             LEFT JOIN users u ON u.id = e.created_by
+             {$where}
+             ORDER BY e.date DESC, e.id DESC",
+            $params
+        );
+
+        $catSummary = $this->db->fetchAll(
+            "SELECT ec.name as category, COUNT(*) as count, SUM(e.amount) as total
+             FROM expenses e
+             LEFT JOIN expense_categories ec ON ec.id = e.category_id
+             {$where}
+             GROUP BY e.category_id ORDER BY total DESC",
+            $params
+        );
+
+        $accSummary = $this->db->fetchAll(
+            "SELECT a.name as account, COUNT(*) as count, SUM(e.amount) as total
+             FROM expenses e
+             LEFT JOIN accounts a ON a.id = e.account_id
+             {$where}
+             GROUP BY e.account_id ORDER BY total DESC",
+            $params
+        );
+
+        return [
+            'expenses'    => $expenses,
+            'totalAmount' => (float) array_sum(array_column($expenses, 'amount')),
+            'catSummary'  => $catSummary,
+            'accSummary'  => $accSummary,
+        ];
+    }
+
     public function salesReturns(): void {
         $this->authorizeReport('rpt_sales_returns');
 
-        $db      = Database::getInstance();
-        $parties = $db->fetchAll("SELECT id, name FROM parties WHERE type IN ('customer','both') ORDER BY name");
+        $parties = (new Party())->listForFilter('customer');
 
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
         $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
         $partyId  = $this->inputInt('party_id', 0, 'get');
         $search   = $this->input('search', '', 'get');
-        $whId     = Auth::warehouseId();
+
+        $report = $this->fetchSalesReturnsReport($fromDate, $toDate, $partyId, $search);
+        extract($report);
+
+        $pageTitle = 'Sales Returns Report';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/sales_returns.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function salesReturnsPrint(): void {
+        $this->authorizeReport('rpt_sales_returns');
+
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $search   = $this->input('search', '', 'get');
+
+        $report   = $this->fetchSalesReturnsReport($fromDate, $toDate, $partyId, $search);
+        $settings = self::getSettings();
+        extract($report);
+
+        include __DIR__ . '/../views/reports/sales_returns_print.php';
+    }
+
+    /** @return array{
+     *   returns: list<array<string, mixed>>,
+     *   totalAmount: float,
+     *   totalQty: int,
+     *   itemsByReturn: array<int, list<array<string, mixed>>>,
+     *   custSummary: list<array<string, mixed>>
+     * }
+     */
+    private function fetchSalesReturnsReport(string $fromDate, string $toDate, int $partyId, string $search): array {
+        $db   = Database::getInstance();
+        $whId = $this->reportWarehouseId();
 
         $where  = "WHERE r.type = 'sale_return' AND r.date BETWEEN ? AND ? AND r.warehouse_id = ?";
         $params = [$fromDate, $toDate, $whId];
@@ -1437,10 +1286,10 @@ class ReportController extends BaseController {
             $params
         );
 
-        $totalAmount  = array_sum(array_column($returns, 'grand_total'));
-        $totalQty     = 0;
+        $totalAmount = (float) array_sum(array_column($returns, 'grand_total'));
+        $totalQty    = 0;
+        $itemsByReturn = [];
 
-        // Get item details for all returns
         if (!empty($returns)) {
             $idsArr       = array_column($returns, 'id');
             $placeholders = implode(',', array_fill(0, count($idsArr), '?'));
@@ -1448,21 +1297,17 @@ class ReportController extends BaseController {
                 "SELECT ri.return_id, i.name as item_name, ri.quantity, ri.unit_price, ri.total
                  FROM return_items ri
                  JOIN items i ON i.id = ri.item_id
-                 WHERE ri.return_id IN ($placeholders)",
+                 WHERE ri.return_id IN ($placeholders)
+                 ORDER BY ri.id",
                 $idsArr
             );
-            $totalQty = array_sum(array_column($returnItems, 'quantity'));
+            $totalQty = (int) array_sum(array_column($returnItems, 'quantity'));
 
-            // Group items by return_id
-            $itemsByReturn = [];
             foreach ($returnItems as $ri) {
                 $itemsByReturn[$ri['return_id']][] = $ri;
             }
-        } else {
-            $itemsByReturn = [];
         }
 
-        // Summary by customer
         $custSummary = $db->fetchAll(
             "SELECT p.name as party_name, COUNT(*) as count, SUM(r.grand_total) as total
              FROM returns r
@@ -1472,21 +1317,13 @@ class ReportController extends BaseController {
             $params
         );
 
-        $pageTitle = 'Sales Returns Report';
-        $page      = 'reports';
-
-        ob_start();
-        include __DIR__ . '/../views/reports/sales_returns.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+        return compact('returns', 'totalAmount', 'totalQty', 'itemsByReturn', 'custSummary');
     }
 
     public function supplierStatement(): void {
         $this->authorizeReport('rpt_supplier_stmt');
 
-        $suppliers = $this->db->fetchAll(
-            "SELECT id, name FROM parties WHERE type IN ('supplier','both') AND is_active = 1 ORDER BY name"
-        );
+        $suppliers = (new Party())->listForFilter('supplier');
 
         $supplierId = $this->inputInt('supplier_id', 0, 'get');
         $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
@@ -1507,79 +1344,67 @@ class ReportController extends BaseController {
             $supplier = $this->db->fetchOne("SELECT * FROM parties WHERE id = ?", [$supplierId]);
 
             if ($supplier && $reportError === null) {
+                $whId       = $this->reportWarehouseId();
+                $partyModel = new Party();
+                $rawTxns    = $partyModel->getPartyStatementTransactions($supplierId, $fromDate, $toDate, $whId);
+                $openingUnified = $partyModel->computeStatementOpeningBalance($supplierId, $fromDate, $whId);
+                $openingBal = Party::displayBalanceDue($supplier, $openingUnified, 'supplier')['amount'];
 
-                // Purchase invoices in period
-                $purchases = $this->db->fetchAll(
-                    "SELECT 'purchase' as txn_type, invoice_no as ref_no, id,
-                            date, grand_total as amount, paid_amount, balance, status, notes
-                     FROM purchases
-                     WHERE party_id = ? AND date BETWEEN ? AND ? AND status != 'cancelled'
-                     ORDER BY date ASC, id ASC",
-                    [$supplierId, $fromDate, $toDate]
-                );
+                $runningPayable   = $openingBal;
+                $totalPurchases   = 0.0;
+                $totalPaid        = 0.0;
+                $transactions     = [];
 
-                // Payments OUT to supplier in period
-                $payments = $this->db->fetchAll(
-                    "SELECT 'payment' as txn_type, payment_no as ref_no, id,
-                            date, amount, 0 as paid_amount, 0 as balance, payment_type as status, notes
-                     FROM payments
-                     WHERE party_id = ? AND payment_type = 'out' AND date BETWEEN ? AND ?
-                     ORDER BY date ASC, id ASC",
-                    [$supplierId, $fromDate, $toDate]
-                );
+                foreach ($rawTxns as $t) {
+                    $txnType = (string) ($t['txn_type'] ?? '');
+                    $debit   = (float) ($t['debit'] ?? 0);
+                    $credit  = (float) ($t['credit'] ?? 0);
+                    $amount  = 0.0;
+                    $displayType = 'payment';
 
-                // Purchase returns in period
-                $returns = $this->db->fetchAll(
-                    "SELECT 'return' as txn_type, return_no as ref_no, id,
-                            date, grand_total as amount, 0 as paid_amount, 0 as balance, status, notes
-                     FROM returns
-                     WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' AND date BETWEEN ? AND ?
-                     ORDER BY date ASC, id ASC",
-                    [$supplierId, $fromDate, $toDate]
-                );
-
-                // Merge and sort
-                $transactions = array_merge($purchases, $payments, $returns);
-                usort($transactions, fn($a, $b) => strcmp($a['date'], $b['date']));
-
-                // Opening balance = total purchases before fromDate minus total payments before fromDate
-                $purBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM purchases
-                     WHERE party_id = ? AND date < ? AND status != 'cancelled'",
-                    [$supplierId, $fromDate]
-                )['t'] ?? 0);
-                $payBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(amount),0) as t FROM payments
-                     WHERE party_id = ? AND payment_type = 'out' AND date < ?",
-                    [$supplierId, $fromDate]
-                )['t'] ?? 0);
-                $retBefore = (float)($this->db->fetchOne(
-                    "SELECT COALESCE(SUM(grand_total),0) as t FROM returns
-                     WHERE party_id = ? AND type = 'purchase_return' AND status = 'approved' AND date < ?",
-                    [$supplierId, $fromDate]
-                )['t'] ?? 0);
-                $openingBal = -1 * (float)($supplier['opening_balance'] ?? 0) + $purBefore - $payBefore - $retBefore;
-
-                // Running balance
-                $running = $openingBal;
-                foreach ($transactions as &$tx) {
-                    if ($tx['txn_type'] === 'purchase') {
-                        $running += (float)$tx['amount'];  // we owe more
-                    } elseif ($tx['txn_type'] === 'return') {
-                        $running -= (float)$tx['amount'];  // return reduces what we owe
-                    } else {
-                        $running -= (float)$tx['amount'];  // we paid
+                    if ($txnType === 'purchase' || $txnType === 'import_payable') {
+                        $amount      = $credit;
+                        $displayType = 'purchase';
+                        $totalPurchases += $amount;
+                    } elseif ($txnType === 'return') {
+                        $amount = $debit > 0 ? $debit : $credit;
+                        if ($debit > 0) {
+                            $totalPaid += $amount;
+                        } else {
+                            $totalPurchases += $amount;
+                        }
+                    } elseif ($txnType === 'payment') {
+                        $amount = $debit > 0 ? $debit : $credit;
+                        if ($debit > 0) {
+                            $totalPaid += $debit;
+                        }
+                        if ($credit > 0) {
+                            $totalPaid += $credit;
+                        }
+                    } elseif ($txnType === 'sale') {
+                        $amount      = $debit;
+                        $displayType = 'payment';
+                        $totalPaid  += $amount;
                     }
-                    $tx['running'] = $running;
+
+                    $runningPayable += $credit - $debit;
+
+                    $transactions[] = [
+                        'id'         => $t['id'],
+                        'txn_type'   => $displayType === 'purchase' ? 'purchase' : 'payment',
+                        'ref_no'     => $t['ref_no'],
+                        'date'       => $t['date'],
+                        'amount'     => $amount,
+                        'notes'      => $t['notes'] ?? '',
+                        'status'     => $t['status'] ?? '',
+                        'created_at' => $t['created_at'] ?? '',
+                        'running'    => $runningPayable,
+                    ];
                 }
-                unset($tx);
 
-                $purTxns = array_filter($transactions, fn($t) => $t['txn_type'] === 'purchase');
-                $payTxns = array_filter($transactions, fn($t) => $t['txn_type'] === 'payment');
-
-                $summary['total_purchases'] = array_sum(array_column(array_values($purTxns), 'amount'));
-                $summary['total_paid']      = array_sum(array_column(array_values($payTxns), 'amount'));
-                $summary['balance']         = $running;
+                $summary['total_purchases'] = $totalPurchases;
+                $summary['total_paid']      = $totalPaid;
+                $summary['balance']         = $runningPayable;
 
                 $ledgerView = $this->finalizeReportLedger($transactions, $fromDate, $toDate);
                 if ($ledgerView['reportError'] !== null) {
@@ -1605,83 +1430,190 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    /**
+     * Validate and normalize a report as-of / range date (YYYY-MM-DD).
+     */
+    private function parseReportDate(string $input, string $fallback = ''): string {
+        $fallback = $fallback !== '' ? $fallback : date('Y-m-d');
+        if ($input === ''
+            || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)
+            || ($dt = DateTimeImmutable::createFromFormat('Y-m-d', $input)) === false
+            || $dt->format('Y-m-d') !== $input) {
+            return $fallback;
+        }
+        if ($input > date('Y-m-d')) {
+            return date('Y-m-d');
+        }
+        return $input;
+    }
+
+    /**
+     * Active accounts with their balance reconstructed as of a date.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function accountsAsOf(string $asOfDate): array {
+        return NetWorthService::accountsAsOf($this->db, $asOfDate, $this->reportWarehouseId());
+    }
+
+    /**
+     * Balance sheet totals as of a date (same rules as balanceSheet report).
+     *
+     * @return array{
+     *   total_cash: float,
+     *   total_receivable: float,
+     *   total_payable: float,
+     *   total_po_advances: float,
+     *   stock_val: float,
+     *   total_assets: float,
+     *   total_liabilities: float,
+     *   net_worth: float
+     * }
+     */
+    private function balanceSheetTotalsAsOf(string $asOfDate): array {
+        return NetWorthService::snapshot($this->db, $asOfDate, $this->reportWarehouseId());
+    }
+
+    /**
+     * Net worth for a month-end: prefer a recorded branch snapshot, fall back
+     * to live reconstruction when none was captured for that month.
+     *
+     * @return array{net_worth: float, recorded: bool}
+     */
+    private function monthEndNetWorth(string $endDate): array {
+        $whId     = $this->reportWarehouseId();
+        $recorded = NetWorthService::recordedSnapshot($this->db, $endDate, $whId);
+        if ($recorded !== null) {
+            return [
+                'net_worth' => (float) ($recorded['net_worth'] ?? 0),
+                'recorded'  => true,
+            ];
+        }
+
+        return [
+            'net_worth' => $this->balanceSheetTotalsAsOf($endDate)['net_worth'],
+            'recorded'  => false,
+        ];
+    }
+
+    /**
+     * Month-end net worth snapshots for the three months before the report as-of date.
+     *
+     * @param array<string,float>|null $currentSnapshot Reuse the live as-of snapshot for the final trend point.
+     * @return list<array{label: string, date: string, net_worth: float, recorded: bool, change: float|null, change_pct: float|null}>
+     */
+    private function buildNetWorthTrend(string $asOfDate, ?array $currentSnapshot = null): array {
+        $ref = new DateTimeImmutable($asOfDate);
+        $points = [];
+
+        for ($monthsBack = 3; $monthsBack >= 1; $monthsBack--) {
+            $monthEnd = $ref->modify('first day of this month')
+                ->modify("-{$monthsBack} months")
+                ->modify('last day of this month');
+            $endDate = $monthEnd->format('Y-m-d');
+            $mw = $this->monthEndNetWorth($endDate);
+            $points[] = [
+                'label'     => $monthEnd->format('M Y'),
+                'date'      => $endDate,
+                'net_worth' => $mw['net_worth'],
+                'recorded'  => $mw['recorded'],
+            ];
+        }
+
+        $currentTotals = $currentSnapshot ?? $this->balanceSheetTotalsAsOf($asOfDate);
+        $points[] = [
+            'label'     => $ref->format('Y-m-d') === date('Y-m-d') ? 'Today' : date('d M Y', strtotime($asOfDate)),
+            'date'      => $asOfDate,
+            'net_worth' => (float) ($currentTotals['net_worth'] ?? 0),
+            'recorded'  => false,
+        ];
+
+        $prevNet = null;
+        foreach ($points as $i => $point) {
+            $change    = $prevNet !== null ? $point['net_worth'] - $prevNet : null;
+            $changePct = ($prevNet !== null && abs($prevNet) > 0.001)
+                ? ($change / abs($prevNet)) * 100
+                : null;
+            $points[$i]['change']     = $change;
+            $points[$i]['change_pct'] = $changePct;
+            $prevNet = $point['net_worth'];
+        }
+
+        return $points;
+    }
+
+    /**
+     * Capture (or refresh) a net worth snapshot for a chosen month-end.
+     * POST-only; CSRF is auto-verified by BaseController. Stored as 'manual'.
+     */
+    public function captureNetWorth(): void {
+        $this->authorizeReport('rpt_balance_sheet');
+
+        $asOf = $this->input('as_of', date('Y-m-d'), 'get');
+        $back = '?page=reports&action=balanceSheet&as_of=' . urlencode($asOf);
+
+        if (!$this->isPost()) {
+            $this->redirect($back);
+        }
+
+        $snapshotDate = $this->input('snapshot_date', '', 'post');
+        if ($snapshotDate === ''
+            || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $snapshotDate)
+            || ($dt = DateTimeImmutable::createFromFormat('Y-m-d', $snapshotDate)) === false
+            || $dt->format('Y-m-d') !== $snapshotDate) {
+            $this->flash('error', 'Please choose a valid snapshot date.');
+            $this->redirect($back);
+        }
+
+        if ($snapshotDate > date('Y-m-d')) {
+            $this->flash('error', 'Cannot capture a snapshot for a future date.');
+            $this->redirect($back);
+        }
+
+        try {
+            $whId   = $this->reportWarehouseId();
+            $totals = NetWorthService::snapshot($this->db, $snapshotDate, $whId);
+            NetWorthService::storeSnapshot($this->db, $snapshotDate, $totals, 'manual', null, $whId);
+            $this->logActivity('capture_networth_snapshot', 'reports', 0,
+                'Snapshot ' . $snapshotDate . ' = ' . APP_CURRENCY . ' ' . number_format($totals['net_worth'], DECIMAL_PLACES));
+            $this->flash('success', 'Net worth snapshot saved for ' . date('d M Y', strtotime($snapshotDate))
+                . ' (' . APP_CURRENCY . ' ' . number_format($totals['net_worth'], DECIMAL_PLACES) . ').');
+        } catch (Throwable $e) {
+            error_log('captureNetWorth failed: ' . $e->getMessage());
+            $this->flash('error', 'Could not save snapshot. Ensure the net_worth_snapshots table exists (see database/schema.sql).');
+        }
+
+        $this->redirect($back);
+    }
+
     public function balanceSheet(): void {
         $this->authorizeReport('rpt_balance_sheet');
 
-        $db   = Database::getInstance();
-        $date = $this->input('as_of', date('Y-m-d'), 'get');
+        $date = $this->parseReportDate($this->input('as_of', date('Y-m-d'), 'get'));
+        $whId = $this->reportWarehouseId();
 
-        // ── ASSETS ──
+        $bundle           = NetWorthService::balanceSheetBundle($this->db, $date, $whId);
+        $snapshot         = $bundle['snapshot'];
+        $accounts         = $bundle['accounts'];
+        $receivables      = $bundle['receivables'];
+        $payables         = $bundle['payables'];
+        $poAdvances       = $bundle['po_advances'];
+        $totalCash        = $snapshot['total_cash'];
+        $totalReceivable  = $snapshot['total_receivable'];
+        $totalPayable     = $snapshot['total_payable'];
+        $totalPoAdvances  = $snapshot['total_po_advances'];
+        $stockVal         = $snapshot['stock_val'];
+        $totalAssets      = $snapshot['total_assets'];
+        $totalLiabilities = $snapshot['total_liabilities'];
+        $netWorth         = $snapshot['net_worth'];
+        $netWorthTrend    = $this->buildNetWorthTrend($date, $snapshot);
 
-        // 1. Cash & Bank accounts
-        $accounts = self::getAccounts();
-        $totalCash = 0;
-        foreach ($accounts as $a) $totalCash += (float)$a['current_balance'];
-
-        // 2. All parties with net balance (unified formula)
-        $allParties = $db->fetchAll(
-            "SELECT p.id, p.name, p.party_code, p.type,
-                    p.opening_balance
-                    + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled' AND date <= ?), 0)
-                    - COALESCE((SELECT SUM(CASE WHEN payment_type='in' THEN amount ELSE -amount END) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount') AND date <= ?), 0)
-                    - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved' AND date <= ?), 0)
-                    - COALESCE((SELECT SUM(grand_total) FROM purchases WHERE party_id = p.id AND status != 'cancelled' AND date <= ?), 0)
-                    + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('purchase','purchase_order') AND date <= ?), 0)
-                    + COALESCE((SELECT SUM(paid_kwd)
-                                FROM purchase_orders
-                                WHERE party_id = p.id AND status IN ('paid','draft') AND date <= ?), 0)
-                    + COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'purchase_return' AND status = 'approved' AND date <= ?), 0)
-                    as balance
-             FROM parties p WHERE p.is_active = 1
-             ORDER BY p.name",
-            [$date, $date, $date, $date, $date, $date, $date]
-        );
-
-        // Split into receivables (positive = they owe us) and payables (negative = we owe them)
-        $receivables = [];
-        $payables = [];
-        $totalReceivable = 0;
-        $totalPayable = 0;
-
-        foreach ($allParties as $p) {
-            $bal = (float)$p['balance'];
-            if ($bal > 0.001) {
-                $receivables[] = $p;
-                $totalReceivable += $bal;
-            } elseif ($bal < -0.001) {
-                $p['balance'] = abs($bal);
-                $payables[] = $p;
-                $totalPayable += abs($bal);
-            }
-        }
-
-        // Sort by balance descending
-        usort($receivables, fn($a, $b) => (float)$b['balance'] <=> (float)$a['balance']);
-        usort($payables, fn($a, $b) => (float)$b['balance'] <=> (float)$a['balance']);
-
-        // PO advances (prepaid to suppliers) — displayed explicitly for clarity
-        $poAdvances = $db->fetchAll(
-            "SELECT p.id, p.name, p.party_code,
-                    COALESCE(SUM(po.paid_kwd),0) as amount
-             FROM purchase_orders po
-             JOIN parties p ON p.id = po.party_id
-             WHERE po.status IN ('paid','draft') AND po.date <= ? AND po.paid_kwd > 0
-             GROUP BY po.party_id
-             HAVING amount > 0.001
-             ORDER BY amount DESC",
-            [$date]
-        );
-        $totalPoAdvances = array_sum(array_map(fn($r) => (float)$r['amount'], $poAdvances));
-
-        // 3. Stock valuation
-        $stockVal = (float)($db->fetchOne(
-            "SELECT COALESCE(SUM(s.quantity * i.purchase_price), 0) as val
-             FROM stock s JOIN items i ON i.id = s.item_id WHERE s.quantity > 0"
-        )['val'] ?? 0);
-
-        $totalAssets = $totalCash + $totalReceivable + $stockVal;
-        $totalLiabilities = $totalPayable;
-        $netWorth = $totalAssets - $totalLiabilities;
+        $compareDate = (new DateTimeImmutable($date))
+            ->modify('first day of this month')
+            ->modify('-1 day')
+            ->format('Y-m-d');
+        $compareSnapshot = NetWorthService::snapshot($this->db, $compareDate, $whId);
+        $compareLabel    = date('d M Y', strtotime($compareDate));
 
         $pageTitle = 'Balance Sheet';
         $page      = 'reports';
@@ -1692,51 +1624,56 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    public function balanceSheetPrint(): void {
+        $this->authorizeReport('rpt_balance_sheet');
+
+        $date = $this->parseReportDate($this->input('as_of', date('Y-m-d'), 'get'));
+        $whId = $this->reportWarehouseId();
+
+        $bundle           = NetWorthService::balanceSheetBundle($this->db, $date, $whId);
+        $snapshot         = $bundle['snapshot'];
+        $accounts         = $bundle['accounts'];
+        $receivables      = $bundle['receivables'];
+        $payables         = $bundle['payables'];
+        $poAdvances       = $bundle['po_advances'];
+        $totalCash        = $snapshot['total_cash'];
+        $totalReceivable  = $snapshot['total_receivable'];
+        $totalPayable     = $snapshot['total_payable'];
+        $totalPoAdvances  = $snapshot['total_po_advances'];
+        $stockVal         = $snapshot['stock_val'];
+        $totalAssets      = $snapshot['total_assets'];
+        $totalLiabilities = $snapshot['total_liabilities'];
+        $netWorth         = $snapshot['net_worth'];
+
+        $compareDate = (new DateTimeImmutable($date))
+            ->modify('first day of this month')
+            ->modify('-1 day')
+            ->format('Y-m-d');
+        $compareSnapshot = NetWorthService::snapshot($this->db, $compareDate, $whId);
+        $compareLabel    = date('d M Y', strtotime($compareDate));
+        $settings        = self::getSettings();
+
+        include __DIR__ . '/../views/reports/balance_sheet_print.php';
+    }
+
     // Customer IMEI Report — list of IMEIs sold to a customer with item, invoice, date
     public function customerImei(): void {
         $this->authorizeReport('rpt_customer_imei');
 
-        $db       = Database::getInstance();
-        $partyId  = $this->inputInt('party_id', 0, 'get');
-        $fromDate = $this->input('from_date', '', 'get');
-        $toDate   = $this->input('to_date', '', 'get');
+        $partyId   = $this->inputInt('party_id', 0, 'get');
+        $itemId    = $this->inputInt('item_id', 0, 'get');
+        $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate    = $this->input('to_date', date('Y-m-d'), 'get');
+        $invoiceNo = trim((string) $this->input('invoice_no', '', 'get'));
 
-        // Get customers for dropdown
-        $customers = $db->fetchAll(
-            "SELECT id, name, phone, party_code FROM parties
-             WHERE is_active = 1 AND (type = 'customer' OR type = 'both')
-             ORDER BY name ASC"
+        $customers = (new Party())->listForFilter('customer');
+        $items = $this->db->fetchAll(
+            "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name ASC"
         );
 
-        $records = [];
-        if ($partyId) {
-            $where  = "WHERE s.party_id = ? AND s.status != 'cancelled' AND ir.id IS NOT NULL";
-            $params = [$partyId];
-
-            if ($fromDate) {
-                $where .= " AND s.date >= ?";
-                $params[] = $fromDate;
-            }
-            if ($toDate) {
-                $where .= " AND s.date <= ?";
-                $params[] = $toDate;
-            }
-
-            $records = $db->fetchAll(
-                "SELECT ir.imei, ir.imei2, i.name as item_name, i.brand, i.model,
-                        s.invoice_no, s.date, s.id as sale_id,
-                        p.name as party_name, p.phone as party_phone, p.party_code
-                 FROM sale_item_imei sii
-                 JOIN sale_items si ON si.id = sii.sale_item_id
-                 JOIN sales s ON s.id = si.sale_id
-                 JOIN imei_records ir ON ir.id = sii.imei_id
-                 JOIN items i ON i.id = si.item_id
-                 JOIN parties p ON p.id = s.party_id
-                 {$where}
-                 ORDER BY s.date DESC, s.id DESC, i.name ASC",
-                $params
-            );
-        }
+        $records = $partyId
+            ? $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId)
+            : [];
 
         $pageTitle = 'Customer IMEI Report';
         $page      = 'reports';
@@ -1745,6 +1682,624 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/reports/customer_imei.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    public function customerImeiPrint(): void {
+        $this->authorizeReport('rpt_customer_imei');
+
+        $partyId   = $this->inputInt('party_id', 0, 'get');
+        $itemId    = $this->inputInt('item_id', 0, 'get');
+        $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate    = $this->input('to_date', date('Y-m-d'), 'get');
+        $invoiceNo = trim((string) $this->input('invoice_no', '', 'get'));
+
+        if (!$partyId) {
+            $this->redirect('?page=reports&action=customerImei');
+        }
+
+        $party = $this->db->fetchOne(
+            "SELECT id, name, phone, party_code FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'customer' OR type = 'both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->redirect('?page=reports&action=customerImei');
+        }
+
+        $itemName = '';
+        if ($itemId > 0) {
+            $itemRow = $this->db->fetchOne(
+                "SELECT name FROM items WHERE id = ? AND is_active = 1",
+                [$itemId]
+            );
+            $itemName = $itemRow ? (string) $itemRow['name'] : '';
+        }
+
+        $records  = $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/customer_imei_print.php';
+    }
+
+    public function customerImeiExport(): void {
+        $this->authorizeReport('rpt_customer_imei');
+
+        $partyId   = $this->inputInt('party_id', 0, 'get');
+        $itemId    = $this->inputInt('item_id', 0, 'get');
+        $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate    = $this->input('to_date', date('Y-m-d'), 'get');
+        $invoiceNo = trim((string) $this->input('invoice_no', '', 'get'));
+
+        if (!$partyId) {
+            $this->redirect('?page=reports&action=customerImei');
+        }
+
+        $party = $this->db->fetchOne(
+            "SELECT id, name FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'customer' OR type = 'both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->redirect('?page=reports&action=customerImei');
+        }
+
+        $records = $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+
+        $safeName = preg_replace('/[^a-z0-9]+/i', '_', (string) $party['name']) ?: 'Customer';
+        $filename = 'Customer_IMEI_' . $safeName . '_' . date('Y-m-d') . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+
+        $out = fopen('php://output', 'w');
+        if ($out === false) {
+            http_response_code(500);
+            exit;
+        }
+
+        fprintf($out, "\xEF\xBB\xBF");
+        fputcsv($out, ['#', 'Sales Invoice', 'Date', 'Customer', 'Item', 'Brand', 'Model', 'IMEI', 'IMEI 2']);
+
+        $num = 1;
+        foreach ($records as $r) {
+            fputcsv($out, [
+                $num++,
+                $r['invoice_no'] ?? '',
+                $r['date'] ?? '',
+                $r['party_name'] ?? '',
+                $r['item_name'] ?? '',
+                $r['brand'] ?? '',
+                $r['model'] ?? '',
+                $r['imei'] ?? '',
+                $r['imei2'] ?? '',
+            ]);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchCustomerImeiRecords(
+        int $partyId,
+        string $fromDate,
+        string $toDate,
+        string $invoiceNo,
+        int $itemId = 0
+    ): array {
+        $where  = "WHERE s.party_id = ? AND s.warehouse_id = ? AND s.status != 'cancelled' AND ir.id IS NOT NULL";
+        $params = [$partyId, $this->reportWarehouseId()];
+
+        if ($fromDate !== '') {
+            $where .= " AND s.date >= ?";
+            $params[] = $fromDate;
+        }
+        if ($toDate !== '') {
+            $where .= " AND s.date <= ?";
+            $params[] = $toDate;
+        }
+        if ($invoiceNo !== '') {
+            $where .= " AND s.invoice_no LIKE ?";
+            $params[] = '%' . $invoiceNo . '%';
+        }
+        if ($itemId > 0) {
+            $where .= " AND si.item_id = ?";
+            $params[] = $itemId;
+        }
+
+        return $this->db->fetchAll(
+            "SELECT ir.imei, ir.imei2, i.name as item_name, i.brand, i.model,
+                    s.invoice_no, s.date, s.id as sale_id,
+                    p.name as party_name, p.phone as party_phone, p.party_code
+             FROM sale_item_imei sii
+             JOIN sale_items si ON si.id = sii.sale_item_id
+             JOIN sales s ON s.id = si.sale_id
+             JOIN imei_records ir ON ir.id = sii.imei_id
+             JOIN items i ON i.id = si.item_id
+             JOIN parties p ON p.id = s.party_id
+             {$where}
+             ORDER BY s.date DESC, s.id DESC, i.name ASC, ir.imei ASC",
+            $params
+        );
+    }
+
+    // Purchase IMEI Report — IMEIs received on purchase invoices, grouped by invoice & item
+    public function purchaseImei(): void {
+        $this->authorizeReport('rpt_purchase_imei');
+
+        $supplierId = $this->inputInt('supplier_id', 0, 'get');
+        $fromDate   = $this->input('from_date', '', 'get');
+        $toDate     = $this->input('to_date', '', 'get');
+        $invoiceNo  = trim((string) $this->input('invoice_no', '', 'get'));
+
+        $suppliers = (new Party())->listForFilter('supplier');
+
+        $records = $supplierId
+            ? $this->fetchPurchaseImeiRecords($supplierId, $fromDate, $toDate, $invoiceNo)
+            : [];
+
+        $pageTitle = 'Purchase IMEI Report';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/purchase_imei.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function purchaseImeiPrint(): void {
+        $this->authorizeReport('rpt_purchase_imei');
+
+        $supplierId = $this->inputInt('supplier_id', 0, 'get');
+        $fromDate   = $this->input('from_date', '', 'get');
+        $toDate     = $this->input('to_date', '', 'get');
+        $invoiceNo  = trim((string) $this->input('invoice_no', '', 'get'));
+
+        if (!$supplierId) {
+            $this->redirect('?page=reports&action=purchaseImei');
+        }
+
+        $supplier = $this->db->fetchOne(
+            "SELECT id, name, phone, party_code FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'supplier' OR type = 'both')",
+            [$supplierId]
+        );
+        if (!$supplier) {
+            $this->redirect('?page=reports&action=purchaseImei');
+        }
+
+        $records  = $this->fetchPurchaseImeiRecords($supplierId, $fromDate, $toDate, $invoiceNo);
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/purchase_imei_print.php';
+    }
+
+    public function purchaseImeiExport(): void {
+        $this->authorizeReport('rpt_purchase_imei');
+
+        $supplierId = $this->inputInt('supplier_id', 0, 'get');
+        $fromDate   = $this->input('from_date', '', 'get');
+        $toDate     = $this->input('to_date', '', 'get');
+        $invoiceNo  = trim((string) $this->input('invoice_no', '', 'get'));
+
+        if (!$supplierId) {
+            $this->redirect('?page=reports&action=purchaseImei');
+        }
+
+        $supplier = $this->db->fetchOne(
+            "SELECT id, name FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'supplier' OR type = 'both')",
+            [$supplierId]
+        );
+        if (!$supplier) {
+            $this->redirect('?page=reports&action=purchaseImei');
+        }
+
+        $records = $this->fetchPurchaseImeiRecords($supplierId, $fromDate, $toDate, $invoiceNo);
+
+        $safeName = preg_replace('/[^a-z0-9]+/i', '_', (string) $supplier['name']) ?: 'Supplier';
+        $filename = 'Purchase_IMEI_' . $safeName . '_' . date('Y-m-d') . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+
+        $out = fopen('php://output', 'w');
+        if ($out === false) {
+            http_response_code(500);
+            exit;
+        }
+
+        fprintf($out, "\xEF\xBB\xBF");
+        fputcsv($out, ['#', 'Purchase Invoice', 'Date', 'Supplier', 'Item', 'Brand', 'Model', 'IMEI', 'IMEI 2']);
+
+        $num = 1;
+        foreach ($records as $r) {
+            fputcsv($out, [
+                $num++,
+                $r['invoice_no'] ?? '',
+                $r['date'] ?? '',
+                $r['party_name'] ?? '',
+                $r['item_name'] ?? '',
+                $r['brand'] ?? '',
+                $r['model'] ?? '',
+                $r['imei'] ?? '',
+                $r['imei2'] ?? '',
+            ]);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    public function purchaseOrders(): void {
+        $this->authorizeReport('rpt_purchase_orders');
+
+        $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
+        $supplierId = $this->inputInt('supplier_id', 0, 'get');
+        $status     = $this->input('status', '', 'get');
+        $currency   = $this->input('currency', '', 'get');
+        $search     = trim((string) $this->input('search', '', 'get'));
+
+        $suppliers = (new Party())->listForFilter('supplier');
+        $report    = $this->fetchPurchaseOrdersReport($fromDate, $toDate, $supplierId, $status, $currency, $search);
+        $orders    = $report['orders'];
+        $summary   = $report['summary'];
+        $itemsByPo = $this->fetchPurchaseOrderItemsGrouped(array_map(fn($o) => (int) $o['id'], $orders));
+
+        $pageTitle = 'Purchase Orders Report';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/purchase_orders.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function purchaseOrdersPrint(): void {
+        $this->authorizeReport('rpt_purchase_orders');
+
+        $fromDate   = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate     = $this->input('to_date', date('Y-m-d'), 'get');
+        $supplierId = $this->inputInt('supplier_id', 0, 'get');
+        $status     = $this->input('status', '', 'get');
+        $currency   = $this->input('currency', '', 'get');
+        $search     = trim((string) $this->input('search', '', 'get'));
+
+        $report     = $this->fetchPurchaseOrdersReport($fromDate, $toDate, $supplierId, $status, $currency, $search);
+        $orders     = $report['orders'];
+        $summary    = $report['summary'];
+        $itemsByPo  = $this->fetchPurchaseOrderItemsGrouped(array_map(fn($o) => (int) $o['id'], $orders));
+        $settings   = self::getSettings();
+
+        include __DIR__ . '/../views/reports/purchase_orders_print.php';
+    }
+
+    /** @param list<int> $poIds @return array<int, list<array<string, mixed>>> */
+    private function fetchPurchaseOrderItemsGrouped(array $poIds): array {
+        $poIds = array_values(array_filter(array_map('intval', $poIds)));
+        if ($poIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($poIds), '?'));
+        $rows = $this->db->fetchAll(
+            "SELECT poi.*, i.name as item_name, i.sku, i.unit
+             FROM purchase_order_items poi
+             JOIN items i ON i.id = poi.item_id
+             WHERE poi.po_id IN ({$placeholders})
+             ORDER BY poi.po_id ASC, poi.id ASC",
+            $poIds
+        );
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $grouped[(int) $row['po_id']][] = $row;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @return array{
+     *   orders: list<array<string, mixed>>,
+     *   summary: array{
+     *     count: int,
+     *     statusCounts: array<string, int>,
+     *     totalKwd: float,
+     *     totalPaidKwd: float,
+     *     byCurrency: list<array<string, mixed>>
+     *   }
+     * }
+     */
+    private function fetchPurchaseOrdersReport(
+        string $fromDate,
+        string $toDate,
+        int $supplierId,
+        string $status,
+        string $currency,
+        string $search
+    ): array {
+        $where  = "WHERE po.warehouse_id = ? AND po.date BETWEEN ? AND ?";
+        $params = [$this->reportWarehouseId(), $fromDate, $toDate];
+
+        if ($supplierId) {
+            $where .= " AND po.party_id = ?";
+            $params[] = $supplierId;
+        }
+        if ($status !== '') {
+            $where .= " AND po.status = ?";
+            $params[] = $status;
+        }
+        if ($currency !== '') {
+            $where .= " AND po.currency = ?";
+            $params[] = $currency;
+        }
+        if ($search !== '') {
+            $where .= " AND (po.po_no LIKE ? OR p.name LIKE ? OR po.supplier_ref LIKE ?)";
+            $like = '%' . $search . '%';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+
+        $orders = $this->db->fetchAll(
+            "SELECT po.*, p.name as supplier_name, p.party_code,
+                    pur.invoice_no as converted_invoice_no,
+                    (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.po_id = po.id) as item_count,
+                    (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.po_id = po.id) as total_qty
+             FROM purchase_orders po
+             JOIN parties p ON p.id = po.party_id
+             LEFT JOIN purchases pur ON pur.id = po.converted_to
+             {$where}
+             ORDER BY po.date DESC, po.id DESC",
+            $params
+        );
+
+        $statusCounts = ['draft' => 0, 'paid' => 0, 'converted' => 0, 'cancelled' => 0];
+        $totalKwd     = 0.0;
+        $totalPaidKwd = 0.0;
+        $byCurrency   = [];
+
+        foreach ($orders as $o) {
+            $st = (string) ($o['status'] ?? '');
+            if (isset($statusCounts[$st])) {
+                $statusCounts[$st]++;
+            }
+
+            if ($st === 'cancelled') {
+                continue;
+            }
+
+            $kwdTotal = (float) $o['subtotal_kwd'] + (float) ($o['other_charges_kwd'] ?? 0);
+            $totalKwd += $kwdTotal;
+            $totalPaidKwd += (float) ($o['paid_kwd'] ?? 0);
+
+            $cur = (string) ($o['currency'] ?? 'KWD');
+            if (!isset($byCurrency[$cur])) {
+                $byCurrency[$cur] = ['currency' => $cur, 'count' => 0, 'foreign_total' => 0.0, 'kwd_total' => 0.0];
+            }
+            $byCurrency[$cur]['count']++;
+            $byCurrency[$cur]['foreign_total'] += (float) ($o['subtotal_foreign'] ?? 0);
+            $byCurrency[$cur]['kwd_total'] += $kwdTotal;
+        }
+
+        usort($byCurrency, fn($a, $b) => (float) $b['kwd_total'] <=> (float) $a['kwd_total']);
+
+        return [
+            'orders'  => $orders,
+            'summary' => [
+                'count'        => count($orders),
+                'statusCounts' => $statusCounts,
+                'totalKwd'     => $totalKwd,
+                'totalPaidKwd' => $totalPaidKwd,
+                'byCurrency'   => array_values($byCurrency),
+            ],
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchPurchaseImeiRecords(int $supplierId, string $fromDate, string $toDate, string $invoiceNo): array {
+        $where  = "WHERE pur.party_id = ? AND pur.warehouse_id = ? AND pur.status != 'cancelled' AND ir.purchase_id IS NOT NULL";
+        $params = [$supplierId, $this->reportWarehouseId()];
+
+        if ($fromDate !== '') {
+            $where .= " AND pur.date >= ?";
+            $params[] = $fromDate;
+        }
+        if ($toDate !== '') {
+            $where .= " AND pur.date <= ?";
+            $params[] = $toDate;
+        }
+        if ($invoiceNo !== '') {
+            $where .= " AND pur.invoice_no LIKE ?";
+            $params[] = '%' . $invoiceNo . '%';
+        }
+
+        return $this->db->fetchAll(
+            "SELECT ir.imei, ir.imei2, i.name as item_name, i.brand, i.model,
+                    pur.invoice_no, pur.date, pur.id as purchase_id,
+                    par.name as party_name, par.phone as party_phone, par.party_code
+             FROM imei_records ir
+             JOIN purchases pur ON pur.id = ir.purchase_id
+             JOIN items i ON i.id = ir.item_id
+             JOIN parties par ON par.id = pur.party_id
+             {$where}
+             ORDER BY pur.date DESC, pur.id DESC, i.name ASC, ir.imei ASC",
+            $params
+        );
+    }
+
+    public function partnerProfit(): void {
+        $this->authorizeReport('rpt_partner_profit');
+
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-t'), 'get');
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $status   = $this->input('status', '', 'get');
+
+        $report   = $this->fetchPartnerProfitReport($fromDate, $toDate, $partyId, $status);
+        $rows     = $report['rows'];
+        $payments = $report['payments'];
+        $partners = $report['partners'];
+        $summary  = $report['summary'];
+
+        $pageTitle = 'Partner Profit Report';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/partner_profit.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function partnerProfitPrint(): void {
+        $this->authorizeReport('rpt_partner_profit');
+
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-t'), 'get');
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $status   = $this->input('status', '', 'get');
+
+        $report   = $this->fetchPartnerProfitReport($fromDate, $toDate, $partyId, $status);
+        $rows     = $report['rows'];
+        $payments = $report['payments'];
+        $summary  = $report['summary'];
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/partner_profit_print.php';
+    }
+
+    /**
+     * @return array{
+     *   rows: list<array<string, mixed>>,
+     *   payments: list<array<string, mixed>>,
+     *   partners: list<array<string, mixed>>,
+     *   summary: array<string, float|int>
+     * }
+     */
+    private function fetchPartnerProfitReport(string $fromDate, string $toDate, int $partyId, string $status): array {
+        $wh       = $this->reportWarehouseId();
+        $whClause = 'AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)';
+
+        $where  = "WHERE ipa.leg = 'partner' AND ipa.status != 'cancelled'
+                   AND ipa.date BETWEEN ? AND ? {$whClause}";
+        $params = [$fromDate, $toDate, $wh, $wh];
+
+        if ($partyId > 0) {
+            $where .= ' AND ipa.party_id = ?';
+            $params[] = $partyId;
+        }
+        if ($status === 'open' || $status === 'paid') {
+            $where .= ' AND ipa.status = ?';
+            $params[] = $status;
+        }
+
+        $rows = $this->db->fetchAll(
+            "SELECT ipa.id, ipa.accrual_no, ipa.date, ipa.amount, ipa.status,
+                    ipa.shipment_id, ipa.shipment_item_charge_id,
+                    s.shipment_no, s.received_date,
+                    p.id as partner_party_id, p.name as partner_name,
+                    sic.partner_profit_per_pc, sic.quantity,
+                    i.name as item_name, po.po_no,
+                    pay.payment_no, pay.date as payment_date
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             JOIN shipment_item_charges sic ON sic.id = ipa.shipment_item_charge_id
+             JOIN items i ON i.id = sic.item_id
+             JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+             JOIN purchase_orders po ON po.id = poi.po_id
+             JOIN parties p ON p.id = ipa.party_id
+             LEFT JOIN payments pay ON pay.id = ipa.payment_id AND pay.status = 'active'
+             {$where}
+             ORDER BY ipa.date DESC, ipa.id DESC",
+            $params
+        );
+
+        $payWhere  = "WHERE p.ref_type = 'shipment_partner' AND p.status = 'active' AND p.payment_type = 'out'
+                      AND p.date BETWEEN ? AND ? AND p.warehouse_id = ?";
+        $payParams = [$fromDate, $toDate, $wh];
+        if ($partyId > 0) {
+            $payWhere .= ' AND p.party_id = ?';
+            $payParams[] = $partyId;
+        }
+
+        $payments = $this->db->fetchAll(
+            "SELECT p.id, p.payment_no, p.date, p.amount, p.notes, p.ref_id,
+                    pa.name as partner_name, pa.id as partner_party_id,
+                    sic.quantity, sic.partner_profit_per_pc,
+                    s.shipment_no, po.po_no, i.name as item_name
+             FROM payments p
+             JOIN parties pa ON pa.id = p.party_id
+             LEFT JOIN shipment_item_charges sic ON sic.id = p.ref_id
+             LEFT JOIN shipments s ON s.id = sic.shipment_id
+             LEFT JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+             LEFT JOIN purchase_orders po ON po.id = poi.po_id
+             LEFT JOIN items i ON i.id = sic.item_id
+             {$payWhere}
+             ORDER BY p.date DESC, p.id DESC",
+            $payParams
+        );
+
+        $openWhere  = "WHERE ipa.leg = 'partner' AND ipa.status = 'open' {$whClause}";
+        $openParams = [$wh, $wh];
+        if ($partyId > 0) {
+            $openWhere .= ' AND ipa.party_id = ?';
+            $openParams[] = $partyId;
+        }
+
+        $totalOpen = (float) ($this->db->fetchOne(
+            "SELECT COALESCE(SUM(ipa.amount), 0) as total
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             {$openWhere}",
+            $openParams
+        )['total'] ?? 0);
+
+        $partners = $this->db->fetchAll(
+            "SELECT DISTINCT p.id, p.name
+             FROM parties p
+             JOIN import_payable_accruals ipa ON ipa.party_id = p.id AND ipa.leg = 'partner'
+             JOIN shipments s ON s.id = ipa.shipment_id
+             WHERE ipa.status != 'cancelled' {$whClause}
+             ORDER BY p.name",
+            [$wh, $wh]
+        );
+
+        $totalAccrued     = 0.0;
+        $totalPaidAccrual = 0.0;
+        $totalOpenPeriod  = 0.0;
+        $totalQty         = 0;
+        foreach ($rows as $row) {
+            $amt = (float) $row['amount'];
+            $totalAccrued += $amt;
+            $totalQty += (int) ($row['quantity'] ?? 0);
+            if (($row['status'] ?? '') === 'paid') {
+                $totalPaidAccrual += $amt;
+            } elseif (($row['status'] ?? '') === 'open') {
+                $totalOpenPeriod += $amt;
+            }
+        }
+
+        $totalPaidCash = (float) array_sum(array_column($payments, 'amount'));
+
+        return [
+            'rows'     => $rows,
+            'payments' => $payments,
+            'partners' => $partners,
+            'summary'  => [
+                'totalAccrued'     => $totalAccrued,
+                'totalPaidAccrual' => $totalPaidAccrual,
+                'totalOpenPeriod'  => $totalOpenPeriod,
+                'totalPaidCash'    => $totalPaidCash,
+                'totalOpenAllTime' => $totalOpen,
+                'totalQty'         => $totalQty,
+                'lineCount'        => count($rows),
+                'paymentCount'     => count($payments),
+            ],
+        ];
     }
 
 }

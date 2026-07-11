@@ -1,3 +1,7 @@
+<?php
+// Form page — no Select2/DataTables (same as sales/create).
+$skipListAssets = true;
+?>
 <style>
 .ai-page { max-width: 1100px; }
 .ai-head { display:flex;align-items:center;gap:14px;margin-bottom:18px; }
@@ -40,6 +44,8 @@
 .ai-drop { position:absolute;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:280px;overflow-y:auto;min-width:380px; }
 .ai-drop-item { padding:9px 14px;cursor:pointer;font-size:.85rem;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:12px; }
 .ai-drop-item:hover { background:#f0f4ff; }
+.ai-drop-item.active,
+.ai-drop-item.active:hover { background:#eff6ff;box-shadow:inset 3px 0 0 #6366f1; }
 
 /* IMEI Modal (reused from create.php) */
 .imei-modal-overlay { position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px); }
@@ -203,16 +209,44 @@ function removeRow(rid) {
 // ITEM SEARCH
 var searchTimers = {};
 var itemStore = {};
+var itemHighlightIdx = {};
+
+function updateItemHighlight(rid, scrollActive) {
+    var drop = document.getElementById('drop_' + rid);
+    if (!drop) return;
+    var hi = itemHighlightIdx[rid] ?? -1;
+    drop.querySelectorAll('.ai-drop-item').forEach(function(el) {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === hi);
+    });
+    if (!scrollActive) return;
+    var active = drop.querySelector('.ai-drop-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function bindItemDropdown(rid, drop) {
+    itemHighlightIdx[rid] = -1;
+    drop.querySelectorAll('.ai-drop-item').forEach(function(el) {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectItem(el.dataset.rid, itemStore[el.dataset.rid][parseInt(el.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            itemHighlightIdx[rid] = parseInt(this.dataset.idx, 10);
+            updateItemHighlight(rid, false);
+        });
+    });
+}
+
 function searchItem(input, rid) {
     clearTimeout(searchTimers[rid]);
     var q = input.value.trim();
     var drop = document.getElementById('drop_' + rid);
-    if (q.length < 1) { drop.style.display = 'none'; return; }
+    if (q.length < 1) { drop.style.display = 'none'; itemHighlightIdx[rid] = -1; return; }
     searchTimers[rid] = setTimeout(function() {
         fetch('?page=sales&action=searchItems&q=' + encodeURIComponent(q) + '&warehouse_id=' + warehouseId)
             .then(function(r) { return r.json(); })
             .then(function(items) {
-                if (!items.length) { drop.style.display = 'none'; return; }
+                if (!items.length) { drop.style.display = 'none'; itemHighlightIdx[rid] = -1; return; }
                 itemStore[rid] = items;
                 drop.innerHTML = items.map(function(it, idx) {
                     return '<div class="ai-drop-item" data-rid="' + rid + '" data-idx="' + idx + '">' +
@@ -220,12 +254,7 @@ function searchItem(input, rid) {
                            '<small style="color:#94a3b8;">' + (it.sku || '') + (it.has_imei ? ' · <span style="color:#059669;font-weight:600;">IMEI</span>' : '') + '</small></div>' +
                            '<div style="text-align:right;white-space:nowrap;flex-shrink:0;"><span style="font-weight:700;color:#4338ca;">' + it.sale_price + '</span><br><small style="color:#3b82f6;font-weight:600;">Stock: ' + it.stock + '</small></div></div>';
                 }).join('');
-                drop.querySelectorAll('.ai-drop-item').forEach(function(el) {
-                    el.addEventListener('mousedown', function(e) {
-                        e.preventDefault();
-                        selectItem(el.dataset.rid, itemStore[el.dataset.rid][parseInt(el.dataset.idx)]);
-                    });
-                });
+                bindItemDropdown(rid, drop);
                 var rect = input.getBoundingClientRect();
                 drop.style.position = 'fixed';
                 drop.style.top  = (rect.bottom + 4) + 'px';
@@ -243,6 +272,7 @@ function selectItem(rid, item) {
     document.getElementById('imeiOpt_' + rid).value = item.imei_optional || 0;
     document.getElementById('price_'   + rid).value = parseFloat(item.sale_price).toFixed(3);
     document.getElementById('drop_'    + rid).style.display = 'none';
+    itemHighlightIdx[rid] = -1;
 
     var qtyEl = document.getElementById('qty_' + rid);
     if (qtyEl && !qtyEl.value) qtyEl.value = 1;
@@ -269,6 +299,42 @@ function selectItem(rid, item) {
 document.addEventListener('click', function(e) {
     if (!e.target.closest('td') && !e.target.closest('.ai-drop')) {
         document.querySelectorAll('.ai-drop').forEach(function(d) { d.style.display = 'none'; });
+        Object.keys(itemHighlightIdx).forEach(function(rid) { itemHighlightIdx[rid] = -1; });
+    }
+});
+
+document.getElementById('itemsBody').addEventListener('keydown', function(e) {
+    if (!e.target.classList.contains('ai-item-search')) return;
+    var rid = e.target.dataset.row;
+    if (!rid) return;
+    var drop = document.getElementById('drop_' + rid);
+    if (!drop) return;
+    var visible = drop.style.display !== 'none';
+    var items = itemStore[rid] || [];
+
+    if (e.key === 'ArrowDown') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        var cur = itemHighlightIdx[rid] ?? -1;
+        itemHighlightIdx[rid] = cur < items.length - 1 ? cur + 1 : 0;
+        updateItemHighlight(rid, true);
+    } else if (e.key === 'ArrowUp') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        var cur = itemHighlightIdx[rid] ?? -1;
+        itemHighlightIdx[rid] = cur > 0 ? cur - 1 : items.length - 1;
+        updateItemHighlight(rid, true);
+    } else if (e.key === 'Enter') {
+        if (!visible || !items.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var cur = itemHighlightIdx[rid] ?? -1;
+        selectItem(rid, items[cur >= 0 ? cur : 0]);
+    } else if (e.key === 'Escape') {
+        if (!visible) return;
+        e.preventDefault();
+        drop.style.display = 'none';
+        itemHighlightIdx[rid] = -1;
     }
 });
 

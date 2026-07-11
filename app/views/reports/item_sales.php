@@ -4,11 +4,16 @@
         <h1 class="page-title">Item Sales Report</h1>
         <p class="page-subtitle">See exactly who bought an item and how much</p>
     </div>
-    <?php if ($item && !empty($rows)): ?>
+    <?php if ($item && !empty($rows)):
+        $itemSalesPrintUrl = '?page=reports&action=itemSalesPrint'
+            . '&item_id=' . (int) $itemId
+            . '&from_date=' . urlencode((string) $fromDate)
+            . '&to_date=' . urlencode((string) $toDate);
+    ?>
     <div class="d-flex gap-2">
-        <button onclick="exportReportCSV('itemSalesRptTable','Item_Sales_Report')" class="btn btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <a href="?page=reports&action=itemSalesPrint&item_id=<?= $itemId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+        <button type="button" class="btn btn-success js-export-report-csv" data-table-id="itemSalesRptTable" data-title="Item_Sales_Report"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($itemSalesPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($itemSalesPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
     <?php endif; ?>
 </div>
@@ -96,7 +101,7 @@
                     <?php foreach ($partyBreakdown as $i => $pb): ?>
                     <tr style="background:<?= $i % 2 === 0 ? 'transparent' : 'rgba(99,102,241,0.03)' ?>;border-bottom:1px solid var(--border-color);">
                         <td style="padding:8px 14px;color:var(--text-muted);font-size:0.75rem;"><?= $i + 1 ?></td>
-                        <td style="padding:8px 14px;font-weight:600;color:var(--text-main);"><?= htmlspecialchars($pb['name']) ?></td>
+                        <td style="padding:8px 14px;"><strong><?= htmlspecialchars($pb['name']) ?></strong></td>
                         <td style="padding:8px 14px;text-align:center;">
                             <span style="background:rgba(99,102,241,0.1);color:#6366f1;border-radius:5px;padding:2px 8px;font-weight:700;"><?= $pb['qty'] ?></span>
                         </td>
@@ -187,7 +192,7 @@
                         <?= $r['invoice_no'] ?>
                     </a>
                 </td>
-                <td style="padding:8px 14px;font-weight:600;"><?= htmlspecialchars($r['party_name']) ?></td>
+                <td style="padding:8px 14px;"><strong><?= htmlspecialchars($r['party_name']) ?></strong></td>
                 <td style="padding:8px 14px;color:var(--text-muted);font-size:0.78rem;"><?= htmlspecialchars($r['warehouse_name'] ?? '—') ?></td>
                 <td style="padding:8px 14px;text-align:center;font-weight:700;color:#6366f1;"><?= $r['quantity'] ?></td>
                 <td style="padding:8px 14px;text-align:right;"><?= APP_CURRENCY ?> <?= number_format($r['unit_price'], DECIMAL_PLACES) ?></td>

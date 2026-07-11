@@ -2,10 +2,15 @@
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=reports" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0">Sales Report</h1>
+    <?php
+    $salesPrintUrl = '?page=reports&action=salesPrint'
+        . '&from_date=' . urlencode((string) $fromDate)
+        . '&to_date=' . urlencode((string) $toDate);
+    ?>
     <div class="ms-auto d-flex gap-2">
-        <button onclick="exportReportCSV('salesReportTable','Sales_Report')" class="btn btn-sm btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</button>
+        <button type="button" class="btn btn-sm btn-success js-export-report-csv" data-table-id="salesReportTable" data-title="Sales_Report"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($salesPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($salesPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
 </div>
 
@@ -49,7 +54,7 @@
                 <tr>
                     <td><a href="?page=sales&action=detail&id=<?= $s['id'] ?>" style="color:var(--primary);text-decoration:none;font-weight:600;"><?= $s['invoice_no'] ?></a></td>
                     <td><?= date('d M Y', strtotime($s['date'])) ?></td>
-                    <td><?= htmlspecialchars($s['party_name']) ?></td>
+                    <td><strong><?= htmlspecialchars($s['party_name']) ?></strong></td>
                     <td class="text-end fw-semibold"><?= APP_CURRENCY ?> <?= number_format($s['grand_total'], DECIMAL_PLACES) ?></td>
                     <td class="text-end" style="color:var(--success);"><?= APP_CURRENCY ?> <?= number_format($s['paid_amount'], DECIMAL_PLACES) ?></td>
                     <td class="text-end" style="color:<?= $s['balance'] > 0 ? 'var(--warning)' : 'var(--success)' ?>;"><?= APP_CURRENCY ?> <?= number_format($s['balance'], DECIMAL_PLACES) ?></td>

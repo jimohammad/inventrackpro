@@ -139,7 +139,7 @@ $sectionColors = [
 $categories = [
     'Overview' => [
         ['page' => 'reports', 'action' => 'daybook',      'perm' => 'rpt_daybook',       'icon' => 'bi-journal-text',   'color' => '#0d9488', 'bg' => 'rgba(13,148,136,0.1)',  'title' => 'Day Book',       'desc' => 'All transactions for a specific day'],
-        ['page' => 'reports', 'action' => 'balanceSheet',  'perm' => 'rpt_balance_sheet', 'icon' => 'bi-clipboard-data', 'color' => '#7c3aed', 'bg' => 'rgba(124,58,237,0.1)',  'title' => 'Balance Sheet',  'desc' => 'Assets, liabilities & net worth'],
+        ['page' => 'reports', 'action' => 'balanceSheet',  'perm' => 'rpt_balance_sheet', 'icon' => 'bi-clipboard-data', 'color' => '#7c3aed', 'bg' => 'rgba(124,58,237,0.1)',  'title' => 'Balance Sheet',  'desc' => 'Assets, liabilities & equity statement'],
         ['page' => 'reports', 'action' => 'profit',        'perm' => 'rpt_profit',        'icon' => 'bi-graph-up-arrow', 'color' => '#10b981', 'bg' => 'rgba(16,185,129,0.1)',  'title' => 'Profit & Loss',  'desc' => 'Revenue, COGS & net profit'],
     ],
     'Sales & Customers' => [
@@ -157,7 +157,10 @@ $categories = [
     ],
     'Purchases & Suppliers' => [
         ['page' => 'reports', 'action' => 'supplierStatement','perm' => 'rpt_supplier_stmt', 'icon' => 'bi-building',  'color' => '#f59e0b', 'bg' => 'rgba(245,158,11,0.1)', 'title' => 'Supplier Statement', 'desc' => 'Purchase & payment history'],
+        ['page' => 'reports', 'action' => 'purchaseOrders',   'perm' => 'rpt_purchase_orders','icon' => 'bi-file-earmark-text','color' => '#f97316', 'bg' => 'rgba(249,115,22,0.1)', 'title' => 'Purchase Orders',   'desc' => 'PO list by date, supplier & status'],
+        ['page' => 'reports', 'action' => 'purchaseImei',     'perm' => 'rpt_purchase_imei', 'icon' => 'bi-phone-fill', 'color' => '#ea580c', 'bg' => 'rgba(234,88,12,0.1)',  'title' => 'Purchase IMEI',      'desc' => 'IMEIs received per purchase invoice'],
         ['page' => 'reports', 'action' => 'expenses',         'perm' => 'rpt_expenses',      'icon' => 'bi-receipt',   'color' => '#d97706', 'bg' => 'rgba(217,119,6,0.1)',  'title' => 'Expenses Report',    'desc' => 'By date, category & account'],
+        ['page' => 'reports', 'action' => 'partnerProfit',    'perm' => 'rpt_partner_profit','icon' => 'bi-handshake','color' => '#b45309', 'bg' => 'rgba(180,83,9,0.1)',   'title' => 'Partner Profit',     'desc' => 'Import partner profit accrued & paid'],
     ],
     'Inventory' => [
         ['page' => 'reports', 'action' => 'stock', 'perm' => 'rpt_stock', 'icon' => 'bi-boxes', 'color' => '#10b981', 'bg' => 'rgba(16,185,129,0.1)', 'title' => 'Stock Valuation', 'desc' => 'Current levels & value'],

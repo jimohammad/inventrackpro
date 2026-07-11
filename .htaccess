@@ -58,6 +58,9 @@ RedirectMatch 403 ^/\.git(?:/|$)
     RewriteRule ^service/(\d{14,18})/?$ index.php?page=servicetrack&imei=$1 [L,QSA,NC]
     RewriteRule ^service/([a-fA-F0-9]{16,64})/?$ index.php?page=servicetrack&token=$1 [L,QSA,NC]
     RewriteRule ^service/?$ index.php?page=servicetrack [L,QSA,NC]
+
+    # Short URL for public customer statements (legacy 32-char hex or new base64url tokens)
+    RewriteRule ^s/([A-Za-z0-9_-]{8,64})/?$ statement.php?token=$1 [L,QSA,NC]
 </IfModule>
 
 <FilesMatch "^\.env|^\.ht|^\.user\.ini$|^user\.ini$|^\.user$|\.sql$|\.php\.bak$|\.php\.old$|\.php\.swp$|\.php~$|\.log$|\.bak$|\.old$|\.swp$|~$|\.(md|markdown|code-workspace|yml|yaml|toml|lock)$|^(composer\.json|composer\.lock|package\.json|package-lock\.json|yarn\.lock)$">

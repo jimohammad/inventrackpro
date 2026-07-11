@@ -144,8 +144,7 @@
         <input type="hidden" name="page" value="imei">
         <input type="hidden" name="action" value="lifecycle">
         <input type="text" name="imei" class="lc-search-input" value="<?= htmlspecialchars($imei) ?>"
-               placeholder="Scan or type IMEI number..." autofocus
-               onkeydown="if(event.key==='Enter'){this.form.submit();}">
+               placeholder="Scan or type IMEI number..." autofocus>
         <button type="submit" class="lc-search-btn"><i class="bi bi-search"></i> Track</button>
     </form>
 
@@ -186,14 +185,14 @@
         <div class="lc-event" style="--lc-event-color: <?= htmlspecialchars((string)($event['color'] ?? '#6366f1'), ENT_QUOTES, 'UTF-8') ?>;">
             <div class="lc-dot" aria-hidden="true"></div>
             <div class="lc-event-head">
-                <span class="lc-event-title" style="color:<?= $event['color'] ?>;">
-                    <i class="bi <?= $event['icon'] ?>"></i> <?= $event['title'] ?>
+                <span class="lc-event-title" style="color:<?= htmlspecialchars($event['color']) ?>;">
+                    <i class="bi <?= htmlspecialchars($event['icon']) ?>"></i> <?= htmlspecialchars($event['title']) ?>
                 </span>
                 <span class="lc-event-date"><?= date('d M Y', strtotime($event['date'])) ?></span>
             </div>
             <div class="lc-event-desc"><?= $event['desc'] ?></div>
             <?php if ($event['link']): ?>
-            <a href="<?= $event['link'] ?>" class="lc-event-link"><i class="bi bi-box-arrow-up-right"></i> View</a>
+            <a href="<?= htmlspecialchars($event['link']) ?>" class="lc-event-link"><i class="bi bi-box-arrow-up-right"></i> View</a>
             <?php endif; ?>
         </div>
         <?php endforeach; ?>

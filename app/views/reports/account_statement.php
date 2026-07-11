@@ -2,7 +2,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title">Account Statement</h1>
-        <p class="page-subtitle">Full transaction history per account</p>
+        <p class="page-subtitle">Full transaction history per account<?php if (!empty($statementScopeLabel)): ?> · <?= htmlspecialchars($statementScopeLabel) ?><?php endif; ?></p>
     </div>
     <?php if ($account && !empty($transactions)): ?>
     <div class="d-flex gap-2">
@@ -25,7 +25,7 @@
                     <option value="">-- Select Account --</option>
                     <?php foreach ($accounts as $acc): ?>
                     <option value="<?= $acc['id'] ?>" <?= $accountId == $acc['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($acc['name']) ?> — <?= number_format($acc['current_balance'], DECIMAL_PLACES) ?> <?= APP_CURRENCY ?>
+                        <?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -42,6 +42,15 @@
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-search me-1"></i> View
                 </button>
+            </div>
+            <div class="col-12">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="scope" value="all" id="acctStmtScopeAll"
+                        <?= !empty($scopeAll) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="acctStmtScopeAll" style="font-size:0.88rem;">
+                        Company-wide (all branches) — default is current branch plus legacy unassigned payments
+                    </label>
+                </div>
             </div>
         </form>
     </div>
@@ -66,7 +75,7 @@
                     <p style="margin:4px 0 0;color:#64748b;font-size:0.9rem;">Account Statement</p>
                 </div>
                 <div style="text-align:right;">
-                    <p style="margin:0;font-weight:700;font-size:1rem;color:#1e293b;"><?= htmlspecialchars($account['name']) ?></p>
+                    <p style="margin:0;font-weight:700;font-size:1rem;color:#1e293b;"><span style="font-family:monospace;color:#6366f1;">#<?= (int)$account['id'] ?></span> <?= htmlspecialchars($account['name']) ?></p>
                     <p style="margin:2px 0 0;color:#64748b;font-size:0.82rem;"><?= date('d M Y', strtotime($fromDate)) ?> — <?= date('d M Y', strtotime($toDate)) ?></p>
                 </div>
             </div>

@@ -13,7 +13,7 @@ class ItemController extends BaseController {
 
     public function index(): void {
         Auth::authorize('inventory', 'view');
-        $items      = $this->itemModel->getAllWithStock();
+        $items      = $this->itemModel->getAllWithStock(Auth::warehouseId(), true);
         $categories = $this->itemModel->getCategories();
         $pageTitle  = 'Items';
         $page       = 'items';
@@ -38,41 +38,58 @@ class ItemController extends BaseController {
 
     public function store(): void {
         Auth::authorize('inventory', 'add');
-        if (!$this->isPost()) { $this->redirect('?page=items&action=create'); }
+        if (!$this->isPost()) { $this->redirect('?page=items&action=create'); return; }
 
-        $id = $this->itemModel->create([
-            'name'           => $this->input('name'),
-            'sku'            => $this->input('sku'),
-            'barcode'        => $this->input('barcode'),
-            'category_id'    => $this->inputInt('category_id') ?: null,
-            'brand'          => $this->input('brand'),
-            'model'          => $this->input('model'),
-            'unit'           => $this->input('unit'),
-            'has_imei'       => $this->inputInt('has_imei'),
-            'imei_optional'  => $this->inputInt('imei_optional'),
-            'purchase_price' => $this->inputFloat('purchase_price'),
-            'price_aed'      => $this->inputFloat('price_aed'),
-            'price_usd'      => $this->inputFloat('price_usd'),
-            'sale_price'     => $this->inputFloat('sale_price'),
-            'min_stock'      => $this->inputInt('min_stock'),
-            'description'    => $this->input('description'),
-        ]);
+        $name = $this->input('name');
+        if ($name === '') {
+            $this->flash('error', 'Item name is required.');
+            $this->redirect('?page=items&action=create');
+            return;
+        }
+
+        try {
+            $id = $this->itemModel->create([
+                'name'           => $name,
+                'sku'            => $this->input('sku'),
+                'barcode'        => $this->input('barcode'),
+                'category_id'    => $this->inputInt('category_id') ?: null,
+                'brand'          => $this->input('brand'),
+                'model'          => $this->input('model'),
+                'unit'           => $this->input('unit'),
+                'has_imei'       => $this->inputInt('has_imei'),
+                'imei_optional'  => $this->inputInt('imei_optional'),
+                'purchase_price' => $this->inputFloat('purchase_price'),
+                'price_aed'      => $this->inputFloat('price_aed'),
+                'price_usd'      => $this->inputFloat('price_usd'),
+                'sale_price'     => $this->inputFloat('sale_price'),
+                'min_stock'      => $this->inputInt('min_stock'),
+                'description'    => $this->input('description'),
+            ]);
+        } catch (Exception $e) {
+            error_log('ItemController::store failed: ' . $e->getMessage());
+            $this->flash('error', 'Failed to create item. Please try again.');
+            $this->redirect('?page=items&action=create');
+            return;
+        }
 
         if ($id) {
-            $this->logActivity('create_item', 'inventory', (int)$id, $this->input('name'));
+            $this->logActivity('create_item', 'inventory', (int)$id, $name);
             $this->flash('success', 'Item created.');
             $this->redirect('?page=items');
-        } else {
-            $this->flash('error', 'Failed to create item.');
-            $this->redirect('?page=items&action=create');
+            return;
         }
+        $this->flash('error', 'Failed to create item.');
+        $this->redirect('?page=items&action=create');
     }
 
     public function edit(): void {
         Auth::authorize('inventory', 'edit');
         $id   = $this->inputInt('id', 0, 'get');
         $item = $this->itemModel->find($id);
-        if (!$item) { $this->flash('error', 'Item not found.'); $this->redirect('?page=items'); }
+        if (!$item) { $this->flash('error', 'Item not found.'); $this->redirect('?page=items'); return; }
+
+        require_once __DIR__ . '/../services/ItemCostService.php';
+        $latestCost = ItemCostService::latestRealUnitCost(Database::getInstance(), $id);
 
         $categories = $this->itemModel->getCategories();
         $pageTitle  = 'Edit Item';
@@ -87,30 +104,72 @@ class ItemController extends BaseController {
 
     public function update(): void {
         Auth::authorize('inventory', 'edit');
-        if (!$this->isPost()) { $this->redirect('?page=items'); }
+        if (!$this->isPost()) { $this->redirect('?page=items'); return; }
 
-        $id = $this->inputInt('id');
-        $this->itemModel->update($id, [
-            'name'           => $this->input('name'),
-            'sku'            => $this->input('sku'),
-            'barcode'        => $this->input('barcode'),
-            'category_id'    => $this->inputInt('category_id') ?: null,
-            'brand'          => $this->input('brand'),
-            'model'          => $this->input('model'),
-            'unit'           => $this->input('unit'),
-            'has_imei'       => $this->inputInt('has_imei'),
-            'imei_optional'  => $this->inputInt('imei_optional'),
-            'purchase_price' => $this->inputFloat('purchase_price'),
-            'price_aed'      => $this->inputFloat('price_aed'),
-            'price_usd'      => $this->inputFloat('price_usd'),
-            'sale_price'     => $this->inputFloat('sale_price'),
-            'min_stock'      => $this->inputInt('min_stock'),
-            'description'    => $this->input('description'),
-            'is_active'      => $this->inputInt('is_active'),
-        ]);
+        $id   = $this->inputInt('id');
+        $name = $this->input('name');
+        if ($name === '') {
+            $this->flash('error', 'Item name is required.');
+            $this->redirect('?page=items&action=edit&id=' . $id);
+            return;
+        }
+
+        try {
+            $affected = $this->itemModel->update($id, [
+                'name'           => $name,
+                'sku'            => $this->input('sku'),
+                'barcode'        => $this->input('barcode'),
+                'category_id'    => $this->inputInt('category_id') ?: null,
+                'brand'          => $this->input('brand'),
+                'model'          => $this->input('model'),
+                'unit'           => $this->input('unit'),
+                'has_imei'       => $this->inputInt('has_imei'),
+                'imei_optional'  => $this->inputInt('imei_optional'),
+                'purchase_price' => $this->inputFloat('purchase_price'),
+                'price_aed'      => $this->inputFloat('price_aed'),
+                'price_usd'      => $this->inputFloat('price_usd'),
+                'sale_price'     => $this->inputFloat('sale_price'),
+                'min_stock'      => $this->inputInt('min_stock'),
+                'description'    => $this->input('description'),
+                'is_active'      => $this->inputInt('is_active'),
+            ]);
+        } catch (Exception $e) {
+            error_log('ItemController::update failed: ' . $e->getMessage());
+            $this->flash('error', 'Failed to update item. Please try again.');
+            $this->redirect('?page=items&action=edit&id=' . $id);
+            return;
+        }
+
+        if ($affected === 0) {
+            $this->flash('error', 'Item not found or could not be updated.');
+            $this->redirect('?page=items&action=edit&id=' . $id);
+            return;
+        }
 
         $this->logActivity('update_item', 'inventory', $id);
         $this->flash('success', 'Item updated.');
+        $this->redirect('?page=items');
+    }
+
+    /** Admin: rebuild item master costs from latest purchase lines (incl. landed logistics). */
+    public function syncCosts(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=items');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=items');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/ItemCostService.php';
+        $result = ItemCostService::syncAllFromPurchases(Database::getInstance());
+        $this->logActivity('sync_item_costs', 'inventory', 0, 'Updated ' . $result['updated'] . ' item(s)');
+        $this->flash(
+            'success',
+            'Real costs synced from latest purchases. Updated ' . (int) $result['updated'] . ' item(s).'
+        );
         $this->redirect('?page=items');
     }
 
@@ -121,10 +180,11 @@ class ItemController extends BaseController {
         $db         = Database::getInstance();
         $warehouses = self::getWarehouses();
         // Always filter by session warehouse — strict separation
-        $whId       = Auth::warehouseId();
-
-        $warehouseClause = $whId ? "AND s.warehouse_id = ?" : '';
-        $params = $whId ? [$whId] : [];
+        $whId = Auth::warehouseId();
+        if (!$whId) {
+            $this->redirect('/?page=warehouse');
+            return;
+        }
 
         $stockList = $db->fetchAll(
             "SELECT i.name, i.sku, i.brand, i.model, i.has_imei, i.min_stock, i.sale_price,
@@ -132,9 +192,9 @@ class ItemController extends BaseController {
              FROM stock s
              JOIN items i ON i.id = s.item_id
              JOIN warehouses w ON w.id = s.warehouse_id
-             WHERE i.is_active = 1 {$warehouseClause}
+             WHERE i.is_active = 1 AND s.warehouse_id = ?
              ORDER BY w.name, i.name",
-            $params
+            [$whId]
         );
 
         $pageTitle = 'Stock List';

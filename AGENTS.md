@@ -15,10 +15,8 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
   - `php -l app/controllers/SalesController.php`
 - Syntax check all PHP files:
   - `Get-ChildItem -Recurse -Filter *.php | ForEach-Object { php -l $_.FullName }`
-- Initialize database schema:
+- Initialize database schema (includes performance indexes):
   - `mysql -u <user> -p <database> < database/schema.sql`
-- Apply performance indexes after schema import:
-  - `mysql -u <user> -p <database> < database/add_indexes.sql`
 
 ## Testing status
 - No automated PHPUnit/composer/npm test suite is configured in this repository.

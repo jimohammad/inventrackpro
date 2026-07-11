@@ -4,11 +4,17 @@
         <h1 class="page-title">Sales Returns Report</h1>
         <p class="page-subtitle">All sale returns by date range, customer, or reference</p>
     </div>
-    <?php if (!empty($returns)): ?>
+    <?php if (!empty($returns)):
+        $salesReturnsPrintUrl = '?page=reports&action=salesReturnsPrint'
+            . '&from_date=' . urlencode((string) $fromDate)
+            . '&to_date=' . urlencode((string) $toDate)
+            . ($partyId ? '&party_id=' . (int) $partyId : '')
+            . ($search !== '' ? '&search=' . urlencode($search) : '');
+    ?>
     <div class="d-flex gap-2">
-        <button onclick="exportReportCSV('salesReturnsRptTable','Sales_Returns_Report')" class="btn btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <button onclick="window.print()" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</button>
+        <button type="button" class="btn btn-success js-export-report-csv" data-table-id="salesReturnsRptTable" data-title="Sales_Returns_Report"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($salesReturnsPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($salesReturnsPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
     <?php endif; ?>
 </div>
@@ -68,10 +74,10 @@
             <div class="col-md-6">
                 <div class="d-flex justify-content-between mb-1" style="font-size:0.82rem;">
                     <span style="font-weight:600;color:#1e293b;"><?= htmlspecialchars($cs['party_name']) ?></span>
-                    <span style="color:#f43f5e;font-weight:700;"><?= number_format($cs['total'], DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></span>
+                    <span style="color:#0e7490;font-weight:700;"><?= number_format($cs['total'], DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></span>
                 </div>
                 <div style="height:6px;background:#f1f5f9;border-radius:3px;">
-                    <div style="height:6px;background:linear-gradient(90deg,#f43f5e,#fb7185);border-radius:3px;width:<?= round($pct) ?>%;"></div>
+                    <div style="height:6px;background:linear-gradient(90deg,#0e7490,#06b6d4);border-radius:3px;width:<?= round($pct) ?>%;"></div>
                 </div>
                 <div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;"><?= $cs['count'] ?> returns · <?= number_format($pct, 1) ?>%</div>
             </div>
@@ -85,21 +91,7 @@
 <div class="card">
     <div class="card-body p-0">
 
-        <!-- Print header -->
-        <div class="print-only" style="padding:20px 24px 10px;border-bottom:2px solid #e2e8f0;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
-                    <h2 style="margin:0;font-size:1.3rem;color:#1e293b;"><?= APP_NAME ?? 'Sales Returns Report' ?></h2>
-                    <p style="margin:4px 0 0;color:#64748b;font-size:0.9rem;">Sales Returns Report</p>
-                </div>
-                <div style="text-align:right;">
-                    <p style="margin:0;font-weight:700;font-size:1rem;color:#f43f5e;">Total: <?= number_format($totalAmount, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></p>
-                    <p style="margin:2px 0 0;color:#64748b;font-size:0.82rem;"><?= date('d M Y', strtotime($fromDate)) ?> — <?= date('d M Y', strtotime($toDate)) ?></p>
-                </div>
-            </div>
-        </div>
-
-        <table id="salesReturnsRptTable" style="width:100%;border-collapse:collapse;font-size:0.83rem;">
+        <table id="salesReturnsRptTable" class="sales-returns-table" style="width:100%;border-collapse:collapse;font-size:0.83rem;">
             <thead>
                 <tr>
                     <th style="padding:10px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;">#</th>
@@ -115,15 +107,17 @@
             </thead>
             <tbody>
                 <?php $n = 1; foreach ($returns as $ret):
-                    $items = $itemsByReturn[$ret['id']] ?? [];
+                    $items    = $itemsByReturn[$ret['id']] ?? [];
+                    $itemQty  = array_sum(array_column($items, 'quantity'));
+                    $itemCnt  = count($items);
                 ?>
-                <tr style="background:#fff;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background='#fff'">
+                <tr class="sr-row">
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#94a3b8;"><?= $n++ ?></td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($ret['date'])) ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;white-space:nowrap;">
-                        <a href="?page=returns&action=detail&id=<?= $ret['id'] ?>" style="color:#f43f5e;font-weight:700;text-decoration:none;">
+                        <a href="?page=returns&action=detail&id=<?= $ret['id'] ?>" style="color:#0e7490;font-weight:700;text-decoration:none;">
                             <?= htmlspecialchars($ret['return_no']) ?>
                         </a>
                     </td>
@@ -133,11 +127,22 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#6366f1;">
                         <?= $ret['original_invoice'] ? htmlspecialchars($ret['original_invoice']) : '<span style="color:#cbd5e1;">—</span>' ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:0.8rem;max-width:180px;">
-                        <?php foreach ($items as $item): ?>
-                        <div><?= htmlspecialchars($item['item_name']) ?> <span style="color:#94a3b8;">×<?= $item['quantity'] ?></span></div>
-                        <?php endforeach; ?>
-                        <?php if (empty($items)): ?><span style="color:#cbd5e1;">—</span><?php endif; ?>
+                    <td class="sr-items-cell" style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:0.8rem;">
+                        <?php if (empty($items)): ?>
+                        <span style="color:#cbd5e1;">—</span>
+                        <?php else: ?>
+                        <div class="sr-items-head">
+                            <span class="sr-items-badge"><?= $itemCnt ?> line<?= $itemCnt === 1 ? '' : 's' ?> · <?= (int) $itemQty ?> units</span>
+                        </div>
+                        <div class="sr-items-grid">
+                            <?php foreach ($items as $item): ?>
+                            <div class="sr-item-line">
+                                <span class="sr-item-name"><?= htmlspecialchars($item['item_name']) ?></span>
+                                <span class="sr-item-qty">×<?= (int) $item['quantity'] ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#64748b;font-size:0.8rem;max-width:140px;">
                         <?= htmlspecialchars($ret['reason'] ?? '—') ?>
@@ -145,18 +150,18 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#94a3b8;font-size:0.78rem;white-space:nowrap;">
                         <?= htmlspecialchars($ret['created_by_name'] ?? '—') ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:700;color:#f43f5e;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:700;color:#0e7490;">
                         <?= number_format($ret['grand_total'], DECIMAL_PLACES) ?> <?= APP_CURRENCY ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
             <tfoot>
-                <tr style="background:linear-gradient(135deg,#fff5f5,#fee2e2);">
-                    <td colspan="8" style="padding:12px 14px;font-weight:700;color:#991b1b;">
+                <tr style="background:linear-gradient(135deg,#ecfeff,#ccfbf1);">
+                    <td colspan="8" style="padding:12px 14px;font-weight:700;color:#0f766e;">
                         Total — <?= count($returns) ?> returns · <?= $totalQty ?> items
                     </td>
-                    <td style="padding:12px 14px;text-align:right;font-size:1.05rem;font-weight:800;color:#f43f5e;">
+                    <td style="padding:12px 14px;text-align:right;font-size:1.05rem;font-weight:800;color:#0e7490;">
                         <?= number_format($totalAmount, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?>
                     </td>
                 </tr>
@@ -175,17 +180,56 @@
 <?php endif; ?>
 
 <script>$(document).ready(function(){
-    if($('#salesReturnsRptTable tbody tr').length){
-        $('#salesReturnsRptTable').DataTable({ pageLength:50, order:[[1,'desc']], language:{search:'',searchPlaceholder:'Search...'}, pageLength:50, order:[[1,'desc']] });
+    if ($('#salesReturnsRptTable tbody tr').length) {
+        $('#salesReturnsRptTable').DataTable({
+            pageLength: 50,
+            order: [[1, 'desc']],
+            language: { search: '', searchPlaceholder: 'Search...' },
+            columnDefs: [{ orderable: false, targets: 5 }]
+        });
     }
 });</script>
 <style>
-@media print {
-    .no-print, .sidebar, nav, .topbar { display:none !important; }
-    .print-only { display:block !important; }
-    body { background:#fff !important; }
-    .card { box-shadow:none !important; border:none !important; }
-    .stat-card { border:1px solid #e2e8f0 !important; box-shadow:none !important; }
+.sr-row:hover { background: #ecfeff !important; }
+.sr-items-cell { min-width: 280px; }
+.sr-items-head { margin-bottom: 4px; }
+.sr-items-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #0f766e;
+    background: #ccfbf1;
+    border: 1px solid #99f6e4;
+    border-radius: 4px;
+    padding: 2px 6px;
 }
-.print-only { display:none; }
+.sr-items-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 14px;
+}
+.sr-item-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+.sr-item-name {
+    flex: 1;
+    min-width: 0;
+    color: #334155;
+}
+.sr-item-qty {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: #0e7490;
+    font-variant-numeric: tabular-nums;
+}
+@media (max-width: 992px) {
+    .sr-items-grid { grid-template-columns: 1fr; }
+}
 </style>

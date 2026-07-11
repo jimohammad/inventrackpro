@@ -10,9 +10,24 @@
 .customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #e0e7ff;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
 .customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
-.items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:hidden;}
-.items-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#f8faff,#f0f4ff);border-bottom:1px solid #e0e7ff;}
-.items-card-header span{font-size:0.8rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px;}
+.supplier-currency-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:320px;max-width:660px;}
+.supplier-currency-wrap .customer-search-wrap{min-width:0;}
+.customer-search-wrap.meta{flex:0 0 auto;min-width:0;}
+.customer-search-wrap.meta .search-icon{font-size:0.92rem;left:10px;}
+.customer-search-wrap.meta input,
+.customer-search-wrap.meta select{
+    width:100%;
+    padding:7px 10px 7px 34px;
+    min-height:36px;
+    border-width:1.5px;
+    border-radius:9px;
+    font-size:0.92rem;
+}
+.customer-search-wrap.meta input:focus,
+.customer-search-wrap.meta select:focus{box-shadow:0 0 0 3px rgba(99,102,241,0.10);}
+.customer-search-wrap.currency-mini{max-width:92px;flex:0 0 92px;}
+.customer-search-wrap.currency-mini select{cursor:pointer;}
+.items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:visible;}
 table.items-tbl{width:100%;border-collapse:collapse;font-size:0.83rem;}
 table.items-tbl th{padding:9px 10px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
 table.items-tbl td{border-bottom:1px solid #cbd5e1;padding:5px 6px;vertical-align:middle;}
@@ -24,36 +39,70 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .col-num{width:32px;text-align:center;color:#cbd5e1;}
 .col-item{min-width:200px;position:relative;}
 .col-qty{width:75px;text-align:center;}
+.col-fprice{width:120px;text-align:right;}
 .col-price{width:130px;text-align:right;}
 .col-ktotal{width:130px;text-align:right;}
 .col-act{width:32px;text-align:center;}
-.add-row-strip{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;cursor:pointer;border-top:2px dashed #c7d2fe;color:#94a3b8;font-size:0.82rem;font-weight:600;transition:all 0.15s;background:#fff;}
-.add-row-strip:hover{background:#f5f7ff;color:#6366f1;border-top-color:#6366f1;}
-.add-row-strip .plus-c{width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.12);display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;color:#6366f1;flex-shrink:0;}
-.sale-bottom{display:flex;gap:0;border:1px solid #e5e7eb;border-top:none;background:#fff;border-radius:0 0 12px 12px;overflow:hidden;flex-wrap:wrap;}
-.sale-bottom-left{flex:1;min-width:260px;padding:16px 20px;border-right:1px solid #f1f5f9;}
-.sale-totals{min-width:320px;padding:16px 20px;background:linear-gradient(135deg,#f8faff,#f5f7ff);}
-.totals-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e8edf5;font-size:0.85rem;color:#64748b;}
-.totals-row:last-child{border-bottom:none;}
-.totals-row.grand{font-size:1.05rem;font-weight:800;color:#1e293b;border-top:2px solid #c7d2fe;padding-top:10px;margin-top:4px;border-bottom:none;}
-.totals-row.grand span:last-child{color:#6366f1;}
-.totals-row input{width:130px;text-align:right;border:1.5px solid #e0e7ff;border-radius:7px;padding:3px 8px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;}
-.totals-row input:focus{border-color:#6366f1;}
+.sale-bottom{display:flex;justify-content:space-between;gap:0;border:1px solid #e5e7eb;border-top:none;background:linear-gradient(135deg,#f8faff,#f5f7ff);border-radius:0 0 12px 12px;overflow:hidden;flex-wrap:wrap;}
+.sale-bottom-left{flex:1;min-width:260px;padding:20px 24px;border-right:1px solid #e0e7ff;}
+.sale-bottom-left label{font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:8px;}
+.sale-bottom-left textarea{width:100%;border:1.5px solid #dbe2f0;border-radius:10px;padding:10px 14px;font-size:0.88rem;resize:vertical;outline:none;color:#475569;background:#fff;min-height:80px;transition:border-color 0.15s,box-shadow 0.15s;}
+.sale-bottom-left textarea:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
+.po-summary-panel{min-width:380px;max-width:440px;background:#fff;box-shadow:-4px 0 24px rgba(30,58,95,0.06);}
+.po-summary-head{display:flex;align-items:center;gap:8px;padding:12px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);color:#fff;font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
+.po-summary-head i{font-size:0.95rem;opacity:0.85;}
+.po-summary-body{padding:4px 0 8px;}
+.po-sum-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 20px;font-size:0.88rem;color:#475569;border-bottom:1px solid #f1f5f9;}
+.po-sum-row:last-child{border-bottom:none;}
+.po-sum-row .sum-label{display:flex;align-items:center;gap:6px;font-weight:600;color:#64748b;white-space:nowrap;}
+.po-sum-row .sum-label i{color:#6366f1;font-size:0.9rem;}
+.po-sum-row .sum-val{font-weight:700;color:#1e293b;font-variant-numeric:tabular-nums;min-width:90px;text-align:right;}
+.po-sum-row .sum-input{width:130px;text-align:right;border:1.5px solid #dbe2f0;border-radius:8px;padding:7px 10px;font-size:0.9rem;font-weight:700;color:#1e293b;background:#fafbff;outline:none;transition:border-color 0.15s,box-shadow 0.15s;}
+.po-sum-row .sum-input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
+.po-sum-row .sum-select{width:100%;max-width:200px;border:1.5px solid #dbe2f0;border-radius:8px;padding:7px 10px;font-size:0.85rem;font-weight:600;color:#1e293b;background:#fafbff;outline:none;cursor:pointer;transition:border-color 0.15s,box-shadow 0.15s;}
+.po-sum-row .sum-select:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
+.po-sum-row.subtotal .sum-val{color:#6366f1;}
+.po-sum-row.grand{background:linear-gradient(135deg,#f0f4ff,#eef2ff);padding:14px 20px;margin-top:2px;}
+.po-sum-row.grand .sum-label{font-size:0.92rem;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.3px;}
+.po-sum-row.grand .sum-val{font-size:1.35rem;font-weight:800;color:#1e3a5f;}
+.po-sum-row.payment{background:#fafbff;}
+.po-sum-row.payment .sum-control{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:1;max-width:200px;}
+.po-sum-row.payment .sum-control .sum-select,.po-sum-row.payment .sum-control .sum-input{width:100%;max-width:200px;}
+.po-sum-divider{height:1px;background:linear-gradient(90deg,transparent,#c7d2fe,transparent);margin:6px 20px;}
+.po-balance-wrap{padding:6px 16px 14px;}
+.po-balance-box{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-radius:10px;border:1.5px solid transparent;transition:background 0.2s,border-color 0.2s,box-shadow 0.2s;}
+.po-balance-left{display:flex;align-items:center;gap:11px;min-width:0;}
+.po-balance-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0;}
+.po-balance-text{display:flex;flex-direction:column;gap:1px;}
+.po-balance-label{font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.45px;line-height:1.2;}
+.po-balance-hint{font-size:0.72rem;font-weight:600;line-height:1.2;}
+.po-balance-amt{font-size:1.28rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:0.3px;flex-shrink:0;}
+.po-balance-box.zero{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;box-shadow:0 2px 8px rgba(5,150,105,0.08);}
+.po-balance-box.zero .po-balance-icon{background:rgba(5,150,105,0.14);color:#059669;}
+.po-balance-box.zero .po-balance-label,.po-balance-box.zero .po-balance-amt{color:#065f46;}
+.po-balance-box.zero .po-balance-hint{color:#059669;}
+.po-balance-box.due{background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fcd34d;box-shadow:0 2px 8px rgba(180,83,9,0.08);}
+.po-balance-box.due .po-balance-icon{background:rgba(180,83,9,0.12);color:#b45309;}
+.po-balance-box.due .po-balance-label,.po-balance-box.due .po-balance-amt{color:#92400e;}
+.po-balance-box.due .po-balance-hint{color:#b45309;}
+@media(max-width:760px){.po-summary-panel{max-width:none;width:100%;box-shadow:none;border-top:1px solid #e0e7ff;}}
 .save-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:2px solid #e0e7ff;border-radius:0 0 12px 12px;position:sticky;bottom:0;z-index:90;box-shadow:0 -4px 12px rgba(0,0,0,0.06);margin-top:-1px;}
 .btn-save-sale{padding:8px 28px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
 .btn-save-sale:hover{transform:translateY(-1px);}
-.autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;margin-top:4px;}
+.autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;margin-top:4px;}
+.autocomplete-box.item-dropdown{position:fixed;margin-top:0;min-width:380px;width:auto;right:auto;}
 .autocomplete-item{padding:9px 14px;cursor:pointer;font-size:0.83rem;border-bottom:1px solid #f8fafc;color:#1e293b;}
 .autocomplete-item:last-child{border-bottom:none;}
 .autocomplete-item:hover{background:#f8faff;}
+.autocomplete-item.active,.autocomplete-item.active:hover{background:#eff6ff;box-shadow:inset 3px 0 0 #6366f1;outline:none;}
 </style>
 
 <form method="POST" action="?page=purchaseorders&action=update" id="poForm">
     <?= Auth::csrfField() ?>
     <input type="hidden" name="id" value="<?= $po['id'] ?>">
     <input type="hidden" name="party_id" id="partyIdInput" value="<?= $po['party_id'] ?>">
-    <input type="hidden" name="currency" value="KWD">
     <input type="hidden" name="exchange_rate" value="1">
+    <?php $poCur = in_array(($po['currency'] ?? ''), ['AED','USD','KWD'], true) ? $po['currency'] : 'AED'; ?>
 
 <div class="sale-wrap">
 
@@ -78,22 +127,32 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 
     <!-- SUPPLIER + META -->
     <div class="customer-bar">
-        <div class="customer-search-wrap">
-            <i class="bi bi-building search-icon"></i>
-            <input type="text" id="supplierSearch" value="<?= htmlspecialchars($po['supplier_name']) ?>" readonly
-                style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;cursor:default;">
-            <div class="autocomplete-box" id="supplierDrop" style="display:none;"></div>
+        <div class="supplier-currency-wrap">
+            <div class="customer-search-wrap">
+                <i class="bi bi-building search-icon"></i>
+                <input type="text" id="supplierSearch" value="<?= htmlspecialchars($po['supplier_name']) ?>" readonly
+                    style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;cursor:default;">
+                <div class="autocomplete-box" id="supplierDrop" style="display:none;"></div>
+            </div>
+            <div class="customer-search-wrap meta currency-mini">
+                <i class="bi bi-currency-exchange search-icon" style="color:#1d4ed8;"></i>
+                <select name="currency" id="poCurrency" style="padding-left:34px;" title="Foreign currency for the supplier price (record only)">
+                    <option value="AED" <?= $poCur === 'AED' ? 'selected' : '' ?>>AED</option>
+                    <option value="USD" <?= $poCur === 'USD' ? 'selected' : '' ?>>USD</option>
+                    <option value="KWD" <?= $poCur === 'KWD' ? 'selected' : '' ?>>KWD</option>
+                </select>
+            </div>
         </div>
-        <div class="customer-search-wrap" style="max-width:260px;">
+        <div class="customer-search-wrap meta" style="max-width:220px;">
             <i class="bi bi-file-earmark-text search-icon" style="color:#f59e0b;"></i>
-            <input type="text" name="supplier_ref" placeholder="Proforma / Ref No" style="padding-left:36px;" value="<?= htmlspecialchars($po['supplier_ref'] ?? '') ?>">
+            <input type="text" name="supplier_ref" placeholder="Proforma / Ref No" style="padding-left:34px;" value="<?= htmlspecialchars($po['supplier_ref'] ?? '') ?>">
         </div>
-        <div class="customer-search-wrap" style="max-width:180px;margin-left:auto;">
+        <div class="customer-search-wrap meta" style="max-width:160px;margin-left:auto;">
             <i class="bi bi-hash search-icon" style="color:#6366f1;"></i>
             <input type="text" value="<?= $po['po_no'] ?>" readonly
                 style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#6366f1;font-weight:700;letter-spacing:0.5px;cursor:default;">
         </div>
-        <div class="customer-search-wrap" style="max-width:180px;">
+        <div class="customer-search-wrap meta" style="max-width:165px;">
             <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
             <input type="date" name="date" value="<?= $po['date'] ?>" style="padding-left:36px;">
         </div>
@@ -101,16 +160,13 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 
     <!-- ITEMS TABLE -->
     <div class="items-card">
-        <div class="items-card-header">
-            <span><i class="bi bi-list-ul"></i> Order Items</span>
-            <span id="poQtyBadge" style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:20px;font-weight:700;font-size:0.78rem;">0 rows</span>
-        </div>
         <table class="items-tbl">
             <thead>
                 <tr>
                     <th class="col-num">#</th>
                     <th class="col-item">Item</th>
                     <th class="col-qty" style="text-align:center;">Qty</th>
+                    <th class="col-fprice" style="text-align:right;">Price (<span id="fcurLabel"><?= htmlspecialchars($poCur) ?></span>)</th>
                     <th class="col-price" style="text-align:right;">Price (KWD)</th>
                     <th class="col-ktotal" style="text-align:right;">Total (KWD)</th>
                     <th class="col-act"></th>
@@ -120,50 +176,72 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
             <tfoot>
                 <tr>
                     <td colspan="3"></td>
+                    <td style="text-align:right;font-weight:600;color:#b45309;padding:8px 6px;" id="subtotalForeign">0.000</td>
                     <td style="padding:8px 6px;font-size:0.7rem;color:#94a3b8;text-align:right;">SUBTOTAL</td>
                     <td style="text-align:right;font-weight:700;color:#6366f1;padding:8px 6px;" id="subtotalKwd">0.000</td>
                     <td></td>
                 </tr>
             </tfoot>
         </table>
-        <div class="add-row-strip" onclick="addRow()">
-            <span class="plus-c"><i class="bi bi-plus"></i></span>
-            Click to add another item row
-        </div>
     </div>
 
     <!-- BOTTOM -->
     <div class="sale-bottom">
         <div class="sale-bottom-left">
-            <label style="font-size:0.75rem;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">Notes</label>
-            <textarea name="notes" rows="3"
-                style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:0.83rem;resize:none;outline:none;color:#475569;"
-                placeholder="Any notes about this order..."><?= htmlspecialchars($po['notes'] ?? '') ?></textarea>
+            <label>Notes</label>
+            <textarea name="notes" rows="3" placeholder="Any notes about this order..."><?= htmlspecialchars($po['notes'] ?? '') ?></textarea>
         </div>
-        <div class="sale-totals">
-            <div class="totals-row">
-                <span>Subtotal (KWD)</span>
-                <span id="totalKwd2" style="font-weight:600;">0.000</span>
+        <div class="po-summary-panel">
+            <div class="po-summary-head">
+                <i class="bi bi-calculator"></i> Payment &amp; Summary
             </div>
-            <div class="totals-row">
-                <span>Pay From Account</span>
-                <select name="account_id" style="width:160px;padding:4px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.82rem;font-weight:600;color:#1e293b;outline:none;">
-                    <option value="">— None / On Credit —</option>
-                    <?php foreach ($accounts as $acc): ?>
-                    <option value="<?= $acc['id'] ?>" <?= ($po['account_id'] ?? 0) == $acc['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($acc['name']) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
+            <div class="po-summary-body">
+                <div class="po-sum-row subtotal">
+                    <span class="sum-label">Items Subtotal (KWD)</span>
+                    <span class="sum-val" id="subtotalKwdDisplay">0.000</span>
+                </div>
+                <div class="po-sum-row">
+                    <span class="sum-label"><i class="bi bi-truck"></i> Other Charges</span>
+                    <input type="number" name="other_charges_kwd" id="otherChargesKwd" class="sum-input" step="0.001" min="0"
+                        value="<?= number_format((float)($po['other_charges_kwd'] ?? 0), 3, '.', '') ?>"
+                        title="Delivery or other supplier charges">
+                </div>
+                <div class="po-sum-row grand">
+                    <span class="sum-label">Total Amount</span>
+                    <span class="sum-val" id="grandKwd">0.000</span>
+                </div>
+                <div class="po-sum-divider"></div>
+                <div class="po-sum-row payment">
+                    <span class="sum-label"><i class="bi bi-bank"></i> Pay From Account</span>
+                    <div class="sum-control">
+                        <select name="account_id" id="payAccount" class="sum-select">
+                            <option value="">— None / On Credit —</option>
+                            <?php foreach ($accounts as $acc): ?>
+                            <option value="<?= $acc['id'] ?>" <?= ($po['account_id'] ?? 0) == $acc['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="po-sum-row payment">
+                    <span class="sum-label"><i class="bi bi-cash-coin"></i> Amount Paid</span>
+                    <div class="sum-control">
+                        <input type="number" name="paid_kwd" id="paidKwd" class="sum-input" step="0.001" min="0" value="0">
+                    </div>
+                </div>
             </div>
-            <div class="totals-row">
-                <span>Amount Paid (KWD)</span>
-                <input type="number" name="paid_kwd" id="paidKwd" step="0.001" min="0" value="0"
-                    oninput="recalcTotals();">
-            </div>
-            <div class="totals-row grand">
-                <span>Total in KWD</span>
-                <span id="grandKwd">0.000 KWD</span>
+            <div class="po-balance-wrap">
+                <div class="po-balance-box zero" id="balanceRow">
+                    <div class="po-balance-left">
+                        <span class="po-balance-icon" id="balanceIcon"><i class="bi bi-check-circle-fill"></i></span>
+                        <div class="po-balance-text">
+                            <span class="po-balance-label">Balance Due</span>
+                            <span class="po-balance-hint" id="balanceHint">Fully paid</span>
+                        </div>
+                    </div>
+                    <span class="po-balance-amt" id="balanceKwd">0.000</span>
+                </div>
             </div>
         </div>
     </div>
@@ -189,19 +267,75 @@ const itemStore    = {};
 const searchTimers = {};
 
 // ── Supplier autocomplete ────────────────────────────────────────────────────
-const suppliers = <?= json_encode($suppliers) ?>;
+const suppliers = <?= json_encode($suppliers ?? []) ?>;
+let supplierMatches = [];
+let supplierHighlightIdx = -1;
+
+function updateSupplierHighlight() {
+    const drop = document.getElementById('supplierDrop');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.idx, 10) === supplierHighlightIdx);
+    });
+    const active = drop.querySelector('.autocomplete-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function renderSupplierDropdown(matches) {
+    const drop = document.getElementById('supplierDrop');
+    if (!matches.length) { drop.style.display = 'none'; supplierHighlightIdx = -1; return; }
+    supplierMatches = matches;
+    supplierHighlightIdx = -1;
+    drop.innerHTML = matches.map((s, idx) =>
+        `<div class="autocomplete-item" data-idx="${idx}">${s.name}</div>`
+    ).join('');
+    drop.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            const s = supplierMatches[parseInt(this.dataset.idx, 10)];
+            selectSupplier(s.id, s.name);
+        });
+        el.addEventListener('mouseenter', function() {
+            supplierHighlightIdx = parseInt(this.dataset.idx, 10);
+            updateSupplierHighlight();
+        });
+    });
+    drop.style.display = 'block';
+}
 
 document.getElementById('supplierSearch').addEventListener('input', function() {
-    const q    = this.value.trim().toLowerCase();
-    const drop = document.getElementById('supplierDrop');
-    if (!q) { drop.style.display = 'none'; return; }
-    const matches = suppliers.filter(s => s.name.toLowerCase().includes(q)).slice(0, 10);
-    if (!matches.length) { drop.style.display = 'none'; return; }
-    drop.innerHTML = matches.map(s =>
-        `<div class="autocomplete-item" onmousedown="selectSupplier(${s.id},'${s.name.replace(/'/g,"\\'")}')"> ${s.name}</div>`
-    ).join('');
-    drop.style.display = 'block';
+    const q = this.value.trim().toLowerCase();
+    if (!q) {
+        document.getElementById('supplierDrop').style.display = 'none';
+        supplierHighlightIdx = -1;
+        return;
+    }
+    renderSupplierDropdown(suppliers.filter(s => s.name.toLowerCase().includes(q)).slice(0, 10));
 });
+document.getElementById('supplierSearch').addEventListener('keydown', function(e) {
+    const drop = document.getElementById('supplierDrop');
+    const visible = drop.style.display !== 'none';
+    if (!visible || !supplierMatches.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        supplierHighlightIdx = supplierHighlightIdx < supplierMatches.length - 1 ? supplierHighlightIdx + 1 : 0;
+        updateSupplierHighlight();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        supplierHighlightIdx = supplierHighlightIdx > 0 ? supplierHighlightIdx - 1 : supplierMatches.length - 1;
+        updateSupplierHighlight();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = supplierHighlightIdx >= 0 ? supplierHighlightIdx : 0;
+        const s = supplierMatches[idx];
+        selectSupplier(s.id, s.name);
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        drop.style.display = 'none';
+        supplierHighlightIdx = -1;
+    }
+}, true);
 document.getElementById('supplierSearch').addEventListener('blur', () => {
     setTimeout(() => document.getElementById('supplierDrop').style.display = 'none', 200);
 });
@@ -211,6 +345,7 @@ function selectSupplier(id, name) {
     const inp = document.getElementById('supplierSearch');
     inp.value = name; inp.className = 'selected';
     document.getElementById('supplierDrop').style.display = 'none';
+    supplierHighlightIdx = -1;
     checkSaveBtn();
 }
 
@@ -224,15 +359,20 @@ function addRow() {
         <td class="col-num">${rowCount}</td>
         <td class="col-item" style="position:relative;">
             <input type="text" class="item-search" placeholder="Search item..."
-                autocomplete="off"
-                oninput="searchItem(this,'${rid}')"
-                onblur="hideItemDrop('${rid}')">
+                autocomplete="off" data-row="${rid}"
+                oninput="searchItem(this,'${rid}')">
             <input type="hidden" name="items[${rowCount}][item_id]" id="itemId_${rid}">
-            <div class="autocomplete-box" id="itemDrop_${rid}" style="display:none;"></div>
+            <input type="hidden" name="items[${rowCount}][unit_price]" value="0">
+            <div class="autocomplete-box item-dropdown" id="itemDrop_${rid}" style="display:none;"></div>
         </td>
         <td class="col-qty">
             <input type="number" name="items[${rowCount}][quantity]" id="qty_${rid}"
                 value="1" min="1" style="text-align:center;" oninput="calcFromPrice('${rid}')">
+        </td>
+        <td class="col-fprice">
+            <input type="number" name="items[${rowCount}][foreign_price]" id="fprice_${rid}"
+                value="" step="0.001" min="0" placeholder="Foreign" style="text-align:right;font-weight:600;color:#b45309;"
+                oninput="calcForeign('${rid}')">
         </td>
         <td class="col-price">
             <input type="number" name="items[${rowCount}][kwd_price]" id="kwdprice_${rid}"
@@ -249,7 +389,6 @@ function addRow() {
                 style="background:none;border:none;color:#c7d2fe;cursor:pointer;font-size:1.1rem;"
                 onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#c7d2fe'">×</button>
         </td>
-        <input type="hidden" name="items[${rowCount}][unit_price]" value="0">
     `;
     document.getElementById('poTbody').appendChild(tr);
     tr.querySelector('.item-search').focus();
@@ -263,9 +402,24 @@ function removeRow(rid) {
 }
 function renumber() {
     let i = 1;
-    document.querySelectorAll('#poTbody tr').forEach(tr => {
-        tr.querySelector('.col-num').textContent = i++;
+    document.querySelectorAll('#poTbody tr[id^="porow_"]').forEach(tr => {
+        const col = tr.querySelector('.col-num');
+        if (col) col.textContent = i++;
     });
+}
+
+function positionPoItemDrop(input, drop) {
+    const rect = input.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    drop.style.left = rect.left + 'px';
+    drop.style.width = Math.max(380, rect.width) + 'px';
+    if (spaceBelow < 240) {
+        drop.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+        drop.style.top = 'auto';
+    } else {
+        drop.style.top = (rect.bottom + 4) + 'px';
+        drop.style.bottom = 'auto';
+    }
 }
 
 // ── Item search per row ──────────────────────────────────────────────────────
@@ -273,6 +427,7 @@ function searchItem(input, rid) {
     clearTimeout(searchTimers[rid]);
     const q    = input.value.trim();
     const drop = document.getElementById('itemDrop_' + rid);
+    if (!drop) return;
     if (q.length < 1) { drop.style.display = 'none'; return; }
     const whId = document.getElementById('whSelect').value;
     searchTimers[rid] = setTimeout(() => {
@@ -300,19 +455,27 @@ function searchItem(input, rid) {
                 drop.querySelectorAll('.autocomplete-item').forEach(el => {
                     el.addEventListener('mousedown', function(e) {
                         e.preventDefault();
-                        selectItem(this.dataset.rid, itemStore[this.dataset.rid][parseInt(this.dataset.idx)]);
+                        selectItem(this.dataset.rid, itemStore[this.dataset.rid][parseInt(this.dataset.idx, 10)]);
                     });
                 });
+                positionPoItemDrop(input, drop);
                 drop.style.display = 'block';
-            });
+            })
+            .catch(() => { drop.style.display = 'none'; });
     }, 250);
 }
 
-function hideItemDrop(rid) {
-    setTimeout(() => {
-        const d = document.getElementById('itemDrop_' + rid);
-        if (d) d.style.display = 'none';
-    }, 200);
+// Prefill the row's foreign-price box from the item's stored AED/USD reference
+// price (matching the PO currency). Purely a reminder/record — editable, no conversion.
+function prefillForeign(rid, item) {
+    const fEl = document.getElementById('fprice_' + rid);
+    if (!fEl) return;
+    const cur = document.getElementById('poCurrency').value;
+    const ref = cur === 'USD' ? parseFloat(item.price_usd || 0)
+              : cur === 'KWD' ? parseFloat(item.purchase_price || 0)
+              : parseFloat(item.price_aed || 0);
+    fEl.value = ref > 0 ? ref.toFixed(3) : '';
+    calcForeign(rid);
 }
 
 function selectItem(rid, item) {
@@ -321,8 +484,9 @@ function selectItem(rid, item) {
     document.getElementById('itemId_'   + rid).value = item.id;
     document.getElementById('kwdprice_' + rid).value = kwd.toFixed(3);
     document.getElementById('itemDrop_' + rid).style.display = 'none';
+    prefillForeign(rid, item);
     calcFromPrice(rid);
-    const rows = document.querySelectorAll('#poTbody tr');
+    const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
     if (rows[rows.length - 1]?.id === rid) addRow();
     // Load price history for this item
     loadPriceHistory(rid, item.id, item.name);
@@ -345,7 +509,10 @@ function loadPriceHistory(rid, itemId, itemName) {
             histTr.style.cssText = 'background:linear-gradient(135deg,#f0f9ff,#e0f2fe);';
 
             const tableRows = rows.map(r => {
-                const price = parseFloat(r.unit_price_kwd||0).toFixed(3);
+                const price  = parseFloat(r.unit_price_kwd||0).toFixed(3);
+                const fprice = parseFloat(r.unit_price_foreign||0);
+                const cur    = (r.currency && r.currency !== 'KWD') ? r.currency : '';
+                const foreignCell = (cur && fprice > 0) ? `${cur} ${fprice.toFixed(3)}` : '—';
                 const qty   = r.quantity;
                 const date  = r.date;
                 const sup   = r.supplier;
@@ -355,6 +522,7 @@ function loadPriceHistory(rid, itemId, itemName) {
                     <td style="padding:3px 8px;color:#64748b;font-size:0.75rem;">${pono}</td>
                     <td style="padding:3px 8px;color:#334155;font-size:0.75rem;font-weight:600;">${sup}</td>
                     <td style="padding:3px 8px;text-align:center;color:#475569;font-size:0.75rem;">${qty}</td>
+                    <td style="padding:3px 8px;text-align:right;color:#b45309;font-weight:700;font-size:0.75rem;">${foreignCell}</td>
                     <td style="padding:3px 8px;text-align:right;color:#1e3a5f;font-weight:700;font-size:0.75rem;">${price} KWD</td>
                 </tr>`;
             }).join('');
@@ -371,6 +539,7 @@ function loadPriceHistory(rid, itemId, itemName) {
                                 <th style="padding:2px 8px;font-size:0.68rem;color:#64748b;font-weight:600;text-align:left;">PO No</th>
                                 <th style="padding:2px 8px;font-size:0.68rem;color:#64748b;font-weight:600;text-align:left;">Supplier</th>
                                 <th style="padding:2px 8px;font-size:0.68rem;color:#64748b;font-weight:600;text-align:center;">Qty</th>
+                                <th style="padding:2px 8px;font-size:0.68rem;color:#64748b;font-weight:600;text-align:right;">Foreign</th>
                                 <th style="padding:2px 8px;font-size:0.68rem;color:#64748b;font-weight:600;text-align:right;">Unit Price</th>
                             </tr>
                         </thead>
@@ -400,23 +569,61 @@ function calcFromTotal(rid) {
     recalcTotals();
 }
 
+// Foreign price is a manual record only (no KWD conversion); just keep the subtotal in sync.
+function calcForeign(rid) {
+    recalcTotals();
+}
+
 function recalcTotals() {
     let sumK = 0;
     document.querySelectorAll('[id^="kwdtotal_porow_"]').forEach(el => {
         sumK += parseFloat(el.value || 0);
     });
+    let sumF = 0;
+    document.querySelectorAll('[id^="fprice_porow_"]').forEach(el => {
+        const rid = el.id.replace('fprice_', '');
+        const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
+        sumF += (parseFloat(el.value || 0) * qty);
+    });
+    const subF = document.getElementById('subtotalForeign');
+    if (subF) subF.textContent = sumF.toFixed(3);
+    const otherCharges = parseFloat(document.getElementById('otherChargesKwd')?.value || 0);
+    const grand = sumK + otherCharges;
     document.getElementById('subtotalKwd').textContent = sumK.toFixed(3);
-    document.getElementById('totalKwd2').textContent   = sumK.toFixed(3);
-    document.getElementById('grandKwd').textContent    = sumK.toFixed(3) + ' KWD';
-    const totalRows = document.querySelectorAll('#poTbody tr').length;
-    document.getElementById('poQtyBadge').textContent = totalRows + ' row' + (totalRows !== 1 ? 's' : '');
+    document.getElementById('subtotalKwdDisplay').textContent = sumK.toFixed(3);
+    document.getElementById('grandKwd').textContent = grand.toFixed(3);
+    updateBalanceDisplay(grand);
     checkSaveBtn();
+}
+
+function updateBalanceDisplay(grand) {
+    const paid = parseFloat(document.getElementById('paidKwd')?.value || 0);
+    const balance = Math.max(0, grand - paid);
+    const isPaid = balance <= 0.0005;
+    const balanceEl = document.getElementById('balanceKwd');
+    const balanceRow = document.getElementById('balanceRow');
+    const balanceHint = document.getElementById('balanceHint');
+    const balanceIcon = document.getElementById('balanceIcon');
+    if (balanceEl) balanceEl.textContent = balance.toFixed(3);
+    if (balanceRow) {
+        balanceRow.classList.toggle('zero', isPaid);
+        balanceRow.classList.toggle('due', !isPaid);
+    }
+    if (balanceHint) balanceHint.textContent = isPaid ? 'Fully paid' : 'Outstanding amount';
+    if (balanceIcon) {
+        balanceIcon.innerHTML = isPaid
+            ? '<i class="bi bi-check-circle-fill"></i>'
+            : '<i class="bi bi-wallet2"></i>';
+    }
 }
 
 function checkSaveBtn() {
     const hasItems = [...document.querySelectorAll('[id^="itemId_porow_"]')].some(el => el.value !== '');
     document.getElementById('poSaveBtn').disabled = !hasItems || !supplierId;
 }
+
+document.getElementById('otherChargesKwd')?.addEventListener('input', recalcTotals);
+document.getElementById('paidKwd')?.addEventListener('input', recalcTotals);
 
 // Pre-load existing items
 document.addEventListener('DOMContentLoaded', function() {
@@ -426,7 +633,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <?php foreach ($po['items'] as $item): ?>
     addRow();
     (function() {
-        const rows = document.querySelectorAll('#poTbody tr');
+        const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
         const tr = rows[rows.length - 1];
         const rid = tr.id;
         tr.querySelector('.item-search').value = '<?= addslashes($item['item_name']) ?>';
@@ -434,11 +641,18 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('qty_' + rid).value = '<?= $item['quantity'] ?>';
         document.getElementById('kwdprice_' + rid).value = '<?= number_format((float)$item['unit_price_kwd'], 3, '.', '') ?>';
         document.getElementById('kwdtotal_' + rid).value = '<?= number_format((float)$item['total_kwd'], 3, '.', '') ?>';
+        <?php $fp = (float)($item['unit_price_foreign'] ?? 0); ?>
+        document.getElementById('fprice_' + rid).value = '<?= $fp > 0 ? number_format($fp, 3, '.', '') : '' ?>';
         calcFromPrice(rid);
     })();
     <?php endforeach; ?>
 
     addRow(); // one empty row at the end
     recalcTotals();
+});
+
+// Keep the foreign-price column header label in sync with the chosen currency.
+document.getElementById('poCurrency').addEventListener('change', function() {
+    document.getElementById('fcurLabel').textContent = this.value;
 });
 </script>

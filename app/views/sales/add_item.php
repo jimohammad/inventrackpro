@@ -85,6 +85,7 @@ $skipListAssets = true;
 
     <form method="POST" action="?page=sales&action=addItemStore" id="addItemForm">
         <?= Auth::csrfField() ?>
+        <input type="hidden" name="sale_add_item_nonce" value="<?= htmlspecialchars($saleAddItemNonce ?? '') ?>">
         <input type="hidden" name="id" value="<?= $sale['id'] ?>">
 
         <div class="ai-card">

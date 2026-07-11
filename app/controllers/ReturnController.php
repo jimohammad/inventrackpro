@@ -101,21 +101,22 @@ class ReturnController extends BaseController {
     }
 
     /**
-     * Branch from form/AJAX (warehouse_id), validated against active warehouses.
-     * Falls back to the logged-in session branch when omitted.
+     * Always use the logged-in session branch. Posted warehouse_id is ignored when it mismatches.
      */
     private function resolveReturnWarehouseId(string $via = 'post'): ?int {
-        $whId = $this->inputInt('warehouse_id', 0, $via);
-        if ($whId <= 0) {
-            $whId = (int) (Auth::warehouseId() ?: 0);
+        $sessionWh = (int) (Auth::warehouseId() ?: 0);
+        if ($sessionWh <= 0) {
+            return null;
         }
-        if ($whId <= 0) {
+
+        $posted = $this->inputInt('warehouse_id', 0, $via);
+        if ($posted > 0 && $posted !== $sessionWh) {
             return null;
         }
 
         foreach (self::getWarehouses() as $w) {
-            if ((int) ($w['id'] ?? 0) === $whId) {
-                return $whId;
+            if ((int) ($w['id'] ?? 0) === $sessionWh) {
+                return $sessionWh;
             }
         }
 
@@ -154,7 +155,7 @@ class ReturnController extends BaseController {
         return [
             'party_id'     => (int) ($_POST['party_id'] ?? 0),
             'ref_id'       => (int) ($_POST['ref_id'] ?? 0),
-            'warehouse_id' => (int) ($_POST['warehouse_id'] ?? 0),
+            'warehouse_id' => (int) (Auth::warehouseId() ?: 0),
             'date'         => (string) ($_POST['date'] ?? date('Y-m-d')),
             'items'        => $items,
         ];
@@ -340,7 +341,7 @@ class ReturnController extends BaseController {
                     [$imei]
                 );
                 if (!$row) {
-                    continue;
+                    return "IMEI {$imei} is not a sold unit. Scan a serial that was sold to this customer.";
                 }
                 if ((int) $row['warehouse_id'] !== $warehouseId) {
                     return "IMEI {$imei} belongs to another branch.";
@@ -504,7 +505,12 @@ class ReturnController extends BaseController {
 
             $warehouseId = $this->resolveReturnWarehouseId('post');
             if ($warehouseId === null) {
-                $this->redirectReturnCreateWithDraft('error', 'Select a valid branch for this return.');
+                $postedWh = $this->inputInt('warehouse_id');
+                $sessionWh = (int) Auth::warehouseId();
+                $msg = ($postedWh > 0 && $sessionWh > 0 && $postedWh !== $sessionWh)
+                    ? 'Warehouse mismatch. Return must use the active branch.'
+                    : 'Select a valid branch for this return.';
+                $this->redirectReturnCreateWithDraft('error', $msg);
                 return;
             }
 
@@ -1502,9 +1508,8 @@ class ReturnController extends BaseController {
             }
             $sumReturnItems = $newSubtotal;
 
-            if (!empty($return['ref_id'])) {
-                $this->saleModel->recomputeBalanceAfterReturns((int) $return['ref_id']);
-            }
+            // Sale return totals change party ledger only (grand_total on returns row).
+            // Invoice sales.balance is not adjusted.
 
             $db->commit();
             unset($_SESSION['return_edit_nonce'][$id]);

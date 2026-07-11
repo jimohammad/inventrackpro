@@ -556,9 +556,8 @@ class PaymentController extends BaseController {
                     $sale = $db->fetchOne("SELECT grand_total FROM sales WHERE id = ? AND warehouse_id = ?", [$payment['ref_id'], $whId]);
                     if ($sale) {
                         $totalPaid = (float)($db->fetchOne("SELECT SUM(amount) as tot FROM payments WHERE ref_type = 'sale' AND ref_id = ? AND status = 'active'", [$payment['ref_id']])['tot'] ?? 0);
-                        $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$payment['ref_id']])['tot'] ?? 0);
-                        
-                        $newBalance = max(0, (float)$sale['grand_total'] - $totalPaid - $returnsTot);
+                        // Invoice AR = grand − paid (returns are party ledger credits only)
+                        $newBalance = max(0, (float)$sale['grand_total'] - $totalPaid);
                         $newStatus  = $newBalance < 0.001 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'confirmed');
                         
                         $db->execute(

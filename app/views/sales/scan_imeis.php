@@ -103,6 +103,7 @@ $pct       = $qty > 0 ? round(($existing / $qty) * 100) : 0;
 
     <form method="POST" action="?page=sales&action=scanItemImeisStore" id="siForm">
         <?= Auth::csrfField() ?>
+        <input type="hidden" name="sale_scan_nonce" value="<?= htmlspecialchars($saleScanNonce ?? '') ?>">
         <input type="hidden" name="id" value="<?= $sale['id'] ?>">
         <input type="hidden" name="sale_item_id" value="<?= $line['id'] ?>">
         <input type="hidden" name="imeis" id="siImeisField" value="">

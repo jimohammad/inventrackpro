@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/BaseModel.php';
 require_once __DIR__ . '/Payment.php';
+require_once __DIR__ . '/../services/SaleValidator.php';
 
 class Sale extends BaseModel {
     protected string $table = 'sales';
@@ -200,9 +201,10 @@ class Sale extends BaseModel {
     }
 
     /**
-     * Recalculate sales.balance and sales.status from grand_total, paid_amount,
-     * and all approved sale_return rows. Use after creating/editing returns so
-     * status never stays "paid" while balance > 0 (see SaleReturn::create legacy CASE ELSE status).
+     * Recalculate sales.balance and sales.status from grand_total and paid_amount only.
+     *
+     * Sale returns are party ledger credits (see Party balance / returns table) — they do
+     * NOT reduce this invoice's balance. Optional ref_id on a return is for IMEI/audit only.
      */
     public function recomputeBalanceAfterReturns(int $saleId): void {
         if ($saleId <= 0) {
@@ -215,11 +217,7 @@ class Sale extends BaseModel {
         if (!$saleData) {
             return;
         }
-        $returnsTot = (float) ($this->db->fetchOne(
-            "SELECT COALESCE(SUM(grand_total), 0) AS tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'",
-            [$saleId]
-        )['tot'] ?? 0);
-        $newBalance = max(0, round((float) $saleData['grand_total'] - (float) $saleData['paid_amount'] - $returnsTot, 3));
+        $newBalance = max(0, round((float) $saleData['grand_total'] - (float) $saleData['paid_amount'], 3));
         if ($newBalance < 0.001) {
             $newStatus  = 'paid';
             $newBalance = 0;
@@ -335,6 +333,11 @@ class Sale extends BaseModel {
                 $status = 'confirmed';
             }
 
+            // Serialize credit checks for the same party (closes TOCTOU vs concurrent createFull)
+            $partyId = (int) ($data['party_id'] ?? 0);
+            $this->db->fetchOne('SELECT id FROM parties WHERE id = ? FOR UPDATE', [$partyId]);
+            SaleValidator::enforceCreditLimit($this->db, $partyId, max(0.0, $grandTotal - $paid));
+
             // Insert sale header
             $saleId = $this->db->insert(
                 "INSERT INTO sales (invoice_no, party_id, warehouse_id, date, subtotal, discount, tax,
@@ -415,20 +418,17 @@ class Sale extends BaseModel {
                         );
 
                         if (!$imeiRow) {
-                            $imeiId = $this->db->insert(
-                                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, sale_id)
-                                 VALUES (?,?,?,'sold',?)",
-                                [$imei, $item['item_id'], $data['warehouse_id'], $saleId]
+                            throw new Exception(
+                                "IMEI {$imei} is not in stock. Receive it via purchase (or return) before selling."
                             );
-                        } else {
-                            $imeiId = $imeiRow['id'];
-                            $affected = $this->db->execute(
-                                "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
-                                [$saleId, $data['warehouse_id'], $imeiId]
-                            );
-                            if ($affected === 0) {
-                                throw new Exception("IMEI {$imei} is not available for sale (already sold or scrapped).");
-                            }
+                        }
+                        $imeiId = $imeiRow['id'];
+                        $affected = $this->db->execute(
+                            "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
+                            [$saleId, $data['warehouse_id'], $imeiId]
+                        );
+                        if ($affected === 0) {
+                            throw new Exception("IMEI {$imei} is not available for sale (already sold or scrapped).");
                         }
 
                         $this->db->insert(
@@ -533,22 +533,26 @@ class Sale extends BaseModel {
                 $this->db->rollback();
                 return 'Cannot add payment to a cancelled invoice.';
             }
-            $currentBalance = (float)$sale['balance'];
+            $currentBalance = max(0.0, round((float)$sale['grand_total'] - (float)$sale['paid_amount'], 3));
+            // Keep sales.balance aligned with credit-note policy (grand − paid) before capping.
+            if (abs($currentBalance - (float)$sale['balance']) > 0.001) {
+                $this->db->execute(
+                    'UPDATE sales SET balance = ? WHERE id = ?',
+                    [$currentBalance, $saleId]
+                );
+            }
             if ($amount > $currentBalance + 0.001) {
                 $this->db->rollback();
                 return 'Payment amount (' . number_format($amount, 3) . ') exceeds remaining balance (' . number_format($currentBalance, 3) . ').';
             }
 
             $newPaid    = (float)$sale['paid_amount'] + $amount;
-            
-            $returnsTot = (float)($this->db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$saleId])['tot'] ?? 0);
-            $newBalance = (float)$sale['grand_total'] - $newPaid - $returnsTot;
-            
+            $newBalance = max(0.0, round((float)$sale['grand_total'] - $newPaid, 3));
             $newStatus  = $newBalance < 0.001 ? 'paid' : 'partial';
 
             $this->db->execute(
                 "UPDATE sales SET paid_amount=?, balance=?, status=? WHERE id=?",
-                [$newPaid, max(0, $newBalance), $newStatus, $saleId]
+                [$newPaid, $newBalance, $newStatus, $saleId]
             );
 
             $this->recordPayment($saleId, [
@@ -585,12 +589,27 @@ class Sale extends BaseModel {
 
         $this->db->beginTransaction();
         try {
-            // Restore stock
+            // Lock sale + stock rows before restore (avoids races with concurrent sales)
+            $this->db->fetchOne('SELECT id FROM sales WHERE id = ? FOR UPDATE', [$id]);
             foreach ($sale['items'] as $item) {
-                $this->db->execute(
-                    "UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?",
-                    [$item['quantity'], $item['item_id'], $sale['warehouse_id']]
+                $itemId = (int) $item['item_id'];
+                $whId   = (int) $sale['warehouse_id'];
+                $qty    = (int) $item['quantity'];
+                $stock  = $this->db->fetchOne(
+                    'SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE',
+                    [$itemId, $whId]
                 );
+                if ($stock) {
+                    $this->db->execute(
+                        'UPDATE stock SET quantity = quantity + ? WHERE item_id = ? AND warehouse_id = ?',
+                        [$qty, $itemId, $whId]
+                    );
+                } else {
+                    $this->db->execute(
+                        'INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?, ?, ?)',
+                        [$itemId, $whId, $qty]
+                    );
+                }
             }
 
             // Reset IMEI status
@@ -750,13 +769,9 @@ class Sale extends BaseModel {
                 );
             }
 
-            $grand      = (float) $sale['grand_total'];
-            $returnsTot = (float) ($this->db->fetchOne(
-                "SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'",
-                [$id]
-            )['tot'] ?? 0);
-            $newBal     = max(0.0, $grand - $newPaid - $returnsTot);
-            $newStatus  = $newBal < 0.001 ? 'paid' : ($newPaid > 0.001 ? 'partial' : 'confirmed');
+            $grand     = (float) $sale['grand_total'];
+            $newBal    = max(0.0, round($grand - $newPaid, 3));
+            $newStatus = $newBal < 0.001 ? 'paid' : ($newPaid > 0.001 ? 'partial' : 'confirmed');
 
             $this->db->execute(
                 "UPDATE sales SET paid_amount = ?, balance = ?, status = ? WHERE id = ? AND status = 'cancelled'",

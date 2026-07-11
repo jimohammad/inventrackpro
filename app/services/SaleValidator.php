@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/IMEI.php';
+require_once __DIR__ . '/../models/Party.php';
 
 final class SaleValidator {
     /**
@@ -118,20 +119,13 @@ final class SaleValidator {
     }
 
     /**
-     * Compute current outstanding balance for a party (same formula as party statement).
+     * Branch-scoped receivable outstanding (positive balance only) for credit checks.
+     * Uses Party::currentNetBalance — same ledger as Party Master / statements.
+     * $db kept for call-site compatibility.
      */
     public static function partyOutstanding(Database $db, int $partyId): float {
-        $balRow = $db->fetchOne(
-            "SELECT
-                p.opening_balance
-                + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                as net_balance
-             FROM parties p WHERE p.id = ?",
-            [$partyId]
-        );
-        return max(0, (float) ($balRow['net_balance'] ?? 0));
+        unset($db);
+        return max(0.0, (new Party())->currentNetBalance($partyId));
     }
 
     /**

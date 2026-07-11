@@ -37,9 +37,17 @@ Purchase-side / outbound payments in balance union: non-blank `ref_type`, exclud
 
 - `SaleValidator::enforceCreditLimit()` uses outstanding balance before allowing new sale.
 
+### Sale returns (credit notes)
+
+- An approved **sale return** is a **party ledger credit** (`returns.grand_total` for that `party_id` / branch).
+- It does **not** reduce `sales.balance` on a linked invoice. Invoice AR stays `grand_total − paid_amount`.
+- Optional `ref_id` (source invoice) is for IMEI / qty checks and audit only — not for allocating money against that invoice.
+- Party statement already lists returns as credit lines; Party Master balance already subtracts sale returns.
+
 ### Legacy data
 
 - `warehouse_id IS NULL` on old payments is treated as Main operational branch in balance clauses.
+- Older invoices may still show a lower `balance` if returns were applied to the invoice before 2026-07-11. Opening/editing the sale recomputes invoice balance as `grand − paid` only; the party ledger remains the source of truth for what the customer owes.
 
 ## Code map
 
@@ -65,6 +73,10 @@ ORDER BY date DESC LIMIT 50;
 
 ## History
 
+- **2026-07-11 (security):** Credit limit re-checked inside `Sale::createFull` (party `FOR UPDATE`); double-submit nonces on sale edit/add-item/IMEI-scan; cancel locks stock rows; CSRF failure redirect same-host only.
+- **2026-07-11 (security):** Sale payments/reopen/FIFO reverse use invoice AR = grand − paid only (aligned with credit-note returns). Sale/return IMEI auto-create blocked; return prices capped to sold/catalog; returns forced to session warehouse; sales AJAX endpoints permission-gated; credit limit re-checked on edit/add-item.
+- **2026-07-11:** Sale returns are party ledger credit notes only — no longer reduce `sales.balance` on the linked invoice (`Return::create` / void / edit; `Sale::recomputeBalanceAfterReturns` = grand − paid).
+- **2026-07-11 (fix):** Sale credit check and create-draft balance now use `Party::currentNetBalance()` (branch-scoped ledger). `SalesController::store` forces `Auth::warehouseId()`; detail/print/pay/cancel/reopen/edit/add-item/scan assert session warehouse.
 - **2026-07-02 (fix):** Public statement hardening — field statement (`FieldStatementController`) Balance card now uses `computeBalanceAsOf(today)` like `statement.php` (previously `net_balance` with no date cap, so future-dated entries made the two public pages disagree). `invoiceDetail` verifies tokens via `findByStatementToken()` and the sale-items query is warehouse-scoped like the sale query. Both public statement entry points now have IP rate limiting (60 hits / 5 min, shared temp-dir budget), `X-Frame-Options`/`nosniff` headers, escaped `ref_no`/modal output in `statement.php`, and SRI on the CDN stylesheet.
 - **2026-06-11:** Party Statement opening balance now uses `Party::computeStatementOpeningBalance()` (same debit/credit rules as Party Master). Outbound supplier payments in `batchBalanceUnionSql()` use `payment_type = 'out'` (not a fixed `ref_type` list). Import payables on statements use `status = 'open'` only, matching balance SQL.
 - **2026-06-11:** Inbound payments (`payment_type = 'in'`, excluding discount/expense) now count in batch balance (matches statement). Party Master **Suppliers** tab shows **payable** balance (positive = we owe them) via `Party::displayBalanceDue()`. Supplier Statement report uses the same unified ledger as Party Master.

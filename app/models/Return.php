@@ -179,12 +179,80 @@ class SaleReturn extends BaseModel {
         throw new Exception("IMEI {$imeiLabel} is not in a returnable sold state (status: {$row['status']}).");
     }
 
+    /**
+     * Cap return unit_price to sold / catalog price so clients cannot inflate party credits.
+     * @param array{ref_id?:int, items:array} $data
+     */
+    private function assertSaleReturnPrices(array $data): void {
+        $refId = (int) ($data['ref_id'] ?? 0);
+        foreach ($data['items'] as $item) {
+            $itemId  = (int) ($item['item_id'] ?? 0);
+            $posted  = (float) ($item['unit_price'] ?? 0);
+            $qty     = (int) ($item['quantity'] ?? 0);
+            if ($itemId <= 0 || $qty <= 0) {
+                continue;
+            }
+            if ($posted <= 0) {
+                throw new Exception('Return unit price must be greater than zero.');
+            }
+
+            $maxPrice = null;
+            $nameRow  = $this->db->fetchOne('SELECT name, sale_price FROM items WHERE id = ?', [$itemId]);
+            $itemName = (string) ($nameRow['name'] ?? ('item #' . $itemId));
+
+            if ($refId > 0) {
+                $row = $this->db->fetchOne(
+                    'SELECT MAX(unit_price) AS mx FROM sale_items WHERE sale_id = ? AND item_id = ?',
+                    [$refId, $itemId]
+                );
+                if ($row && $row['mx'] !== null) {
+                    $maxPrice = (float) $row['mx'];
+                }
+            }
+
+            if ($maxPrice === null && !empty($item['imeis'])) {
+                foreach ($item['imeis'] as $imei) {
+                    $imei = trim((string) $imei);
+                    if ($imei === '') {
+                        continue;
+                    }
+                    $line = $this->db->fetchOne(
+                        "SELECT si.unit_price
+                         FROM imei_records ir
+                         JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
+                         WHERE ir.imei = ? AND ir.status = 'sold' AND ir.item_id = ?
+                         ORDER BY ir.id DESC
+                         LIMIT 1",
+                        [$imei, $itemId]
+                    );
+                    if ($line) {
+                        $p = (float) $line['unit_price'];
+                        $maxPrice = $maxPrice === null ? $p : max($maxPrice, $p);
+                    }
+                }
+            }
+
+            if ($maxPrice === null) {
+                $catalog = (float) ($nameRow['sale_price'] ?? 0);
+                if ($catalog > 0) {
+                    $maxPrice = $catalog;
+                }
+            }
+
+            if ($maxPrice !== null && $posted > $maxPrice + 0.001) {
+                throw new Exception(
+                    "Return price for \"{$itemName}\" (" . number_format($posted, 3) .
+                    ") exceeds sold/catalog price (" . number_format($maxPrice, 3) . ")."
+                );
+            }
+        }
+    }
+
     public function create(array $data): array {
         $this->db->beginTransaction();
         try {
             $returnNo  = $this->nextReturnNo();
             $subtotal  = 0;
-            $affectedSaleIds = [];
 
             // Validate return quantities against original sale if linked (bulk, single-invoice path)
             if (!empty($data['ref_id'])) {
@@ -236,6 +304,8 @@ class SaleReturn extends BaseModel {
             foreach ($data['items'] as $item) {
                 $subtotal += (float)$item['unit_price'] * (int)$item['quantity'];
             }
+
+            $this->assertSaleReturnPrices($data);
 
             $saleRefId = !empty($data['ref_id']) ? (int) $data['ref_id'] : 0;
 
@@ -327,30 +397,27 @@ class SaleReturn extends BaseModel {
                                 (int) $data['warehouse_id'],
                                 $markSaleId
                             );
-                            if ($markSaleId !== null && $markSaleId > 0) {
-                                $affectedSaleIds[$markSaleId] = true;
-                            }
                             $this->db->insert(
                                 "INSERT INTO return_item_imei (return_item_id, imei_id) VALUES (?,?)",
                                 [$retItemId, (int) $imeiRow['id']]
                             );
                         } else {
-                            // IMEI not in system — create it now so it can be re-sold via scan bar
-                            $newImeiId = $this->db->insert(
-                                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at)
-                                 VALUES (?, ?, ?, 'in_stock', 'Auto-created via sale return', NOW())",
-                                [$imei, $item['item_id'], $data['warehouse_id']]
-                            );
-                            $this->db->insert(
-                                "INSERT INTO return_item_imei (return_item_id, imei_id) VALUES (?,?)",
-                                [$retItemId, $newImeiId]
+                            throw new Exception(
+                                "IMEI {$imei} is not a sold unit in the system. Scan a serial that was sold to this customer."
                             );
                         }
                     }
                 } elseif (!empty($data['ref_id'])) {
-                    // No IMEIs scanned — auto-restore by sale+item so phones can be re-sold.
-                    // Restores exactly the returned quantity, oldest records first.
-                    // H2 fix: also align warehouse_id with the return's warehouse to avoid drift.
+                    // No IMEIs scanned — only auto-restore non-IMEI (or optional) lines.
+                    $meta = $this->db->fetchOne(
+                        'SELECT has_imei, COALESCE(imei_optional,0) AS imei_optional, name FROM items WHERE id = ?',
+                        [$item['item_id']]
+                    );
+                    if ($meta && !empty($meta['has_imei']) && empty($meta['imei_optional'])) {
+                        throw new Exception(
+                            "Item \"{$meta['name']}\" requires IMEI scan on return. Do not use bulk restore for serial-tracked goods."
+                        );
+                    }
                     $this->db->execute(
                         "UPDATE imei_records
                          SET status='in_stock', sale_id=NULL, warehouse_id=?
@@ -362,17 +429,9 @@ class SaleReturn extends BaseModel {
                 }
             }
 
-            // Balance + status from grand_total, paid_amount, and all approved returns (no stale "paid")
-            if ($saleRefId > 0) {
-                $affectedSaleIds[$saleRefId] = true;
-            }
-            if (!empty($affectedSaleIds)) {
-                require_once __DIR__ . '/Sale.php';
-                $saleModel = new Sale();
-                foreach (array_keys($affectedSaleIds) as $saleId) {
-                    $saleModel->recomputeBalanceAfterReturns((int) $saleId);
-                }
-            }
+            // Sale returns credit the party ledger (Party balance uses returns.grand_total).
+            // Do NOT reduce sales.balance — invoice AR stays grand_total - paid; return is a
+            // separate credit note. Optional ref_id is for IMEI / qty validation / audit only.
 
             $this->db->commit();
             return ['success' => true, 'id' => (int)$returnId, 'return_no' => $returnNo];
@@ -596,7 +655,9 @@ class SaleReturn extends BaseModel {
     }
 
     /**
-     * Void an approved return — reverse stock/IMEI and exclude from invoice balances.
+     * Void an approved return — reverse stock/IMEI.
+     * Sale returns: party ledger credit is removed by status=cancelled (invoice balance untouched).
+     * Purchase returns: purchase invoice balance is recomputed.
      *
      * @return array{success:bool, error?:string}
      */
@@ -619,24 +680,6 @@ class SaleReturn extends BaseModel {
 
         $this->db->beginTransaction();
         try {
-            $affectedSaleIds = $refId > 0 ? [$refId => true] : [];
-            if ($type === 'sale_return') {
-                $noteRows = $this->db->fetchAll(
-                    "SELECT ir.notes
-                     FROM return_item_imei rii
-                     JOIN return_items ri ON ri.id = rii.return_item_id
-                     JOIN imei_records ir ON ir.id = rii.imei_id
-                     WHERE ri.return_id = ?",
-                    [$id]
-                );
-                foreach ($noteRows as $noteRow) {
-                    $srcSale = $this->parseReturnSourceSaleIdFromNotes((string) ($noteRow['notes'] ?? ''));
-                    if ($srcSale !== null && $srcSale > 0) {
-                        $affectedSaleIds[$srcSale] = true;
-                    }
-                }
-            }
-
             foreach ($ret['items'] as $item) {
                 $retItemId = (int) ($item['id'] ?? 0);
                 $itemId    = (int) ($item['item_id'] ?? 0);
@@ -663,13 +706,9 @@ class SaleReturn extends BaseModel {
             if ($type === 'purchase_return' && $refId > 0) {
                 require_once __DIR__ . '/Purchase.php';
                 (new Purchase())->recomputeBalanceAfterReturns($refId);
-            } elseif ($type === 'sale_return' && !empty($affectedSaleIds)) {
-                require_once __DIR__ . '/Sale.php';
-                $saleModel = new Sale();
-                foreach (array_keys($affectedSaleIds) as $saleId) {
-                    $saleModel->recomputeBalanceAfterReturns((int) $saleId);
-                }
             }
+            // Sale returns are party ledger credits only — voiding removes them from the
+            // party balance via status=cancelled; do not touch sales.balance.
 
             $this->db->commit();
             return ['success' => true];

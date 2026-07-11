@@ -104,11 +104,39 @@ class SalesController extends BaseController {
 
         $_SESSION['sale_create_draft'] = [
             'party_id'     => (int)($_POST['party_id'] ?? 0),
-            'warehouse_id' => (int)($_POST['warehouse_id'] ?? 0),
+            'warehouse_id' => (int) Auth::warehouseId(),
             'date'         => (string)($_POST['date'] ?? date('Y-m-d')),
             'discount'     => (float)($_POST['discount'] ?? 0),
             'items'        => $items,
         ];
+    }
+
+    /**
+     * Block cross-branch access to a sale. Returns false after flash/JSON response.
+     */
+    private function assertSaleWarehouseAccess(?array $sale, bool $asJson = false): bool {
+        if (!$sale) {
+            if ($asJson) {
+                echo json_encode(['success' => false, 'error' => 'Sale not found.']);
+                return false;
+            }
+            $this->flash('error', 'Sale not found.');
+            $this->redirect('?page=sales');
+            return false;
+        }
+
+        $sessionWh = (int) Auth::warehouseId();
+        if ($sessionWh > 0 && (int) ($sale['warehouse_id'] ?? 0) !== $sessionWh) {
+            if ($asJson) {
+                echo json_encode(['success' => false, 'error' => 'This sale belongs to a different warehouse.']);
+                return false;
+            }
+            $this->flash('error', 'This sale belongs to a different warehouse.');
+            $this->redirect('?page=sales');
+            return false;
+        }
+
+        return true;
     }
 
     private function consumeSaleDraft(): ?array {
@@ -127,17 +155,8 @@ class SalesController extends BaseController {
             );
             if ($party) {
                 $draft['party'] = $party;
-                $bal = $db->fetchOne(
-                    "SELECT
-                        p.opening_balance
-                        + COALESCE((SELECT SUM(grand_total) FROM sales WHERE party_id = p.id AND status != 'cancelled'), 0)
-                        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND ref_type IN ('sale','discount')), 0)
-                        - COALESCE((SELECT SUM(grand_total) FROM returns WHERE party_id = p.id AND type = 'sale_return' AND status = 'approved'), 0)
-                        as net_balance
-                     FROM parties p WHERE p.id = ?",
-                    [$partyId]
-                );
-                $draft['party']['balance'] = (float)($bal['net_balance'] ?? 0);
+                // Branch-scoped ledger (same as Party Master / credit check)
+                $draft['party']['balance'] = $this->partyModel->currentNetBalance($partyId);
             }
         }
 
@@ -178,15 +197,44 @@ class SalesController extends BaseController {
         }
         unset($_SESSION['sale_form_nonce']);
 
+        $warehouseId = (int) Auth::warehouseId();
+        if ($warehouseId <= 0) {
+            $this->saveSaleDraftFromPost();
+            $this->flash('error', 'Select a warehouse before creating a sale.');
+            $this->redirect('?page=sales&action=create');
+            return;
+        }
+        $postedWh = $this->inputInt('warehouse_id');
+        if ($postedWh > 0 && $postedWh !== $warehouseId) {
+            $this->saveSaleDraftFromPost();
+            $this->flash('error', 'Warehouse mismatch. Sale must use the active branch.');
+            $this->redirect('?page=sales&action=create');
+            return;
+        }
+
         $db = Database::getInstance();
         try {
             $rawItems = $_POST['items'] ?? [];
             $priceFloorMode = in_array(Auth::role(), ['cashier', 'viewer'], true) ? 'clamp' : 'none';
-            $norm = SaleValidator::normalizeItems($db, $this->imeiModel, $rawItems, (int) $this->inputInt('warehouse_id'), $priceFloorMode);
+            $norm = SaleValidator::normalizeItems($db, $this->imeiModel, $rawItems, $warehouseId, $priceFloorMode);
             $items = $norm['items'];
 
-            // Credit limit check (if set)
+            // Credit limit check (if set) — party must be active customer visible on this branch
             $partyId = $this->inputInt('party_id');
+            $partyRow = $db->fetchOne(
+                "SELECT id, type, is_active FROM parties WHERE id = ?",
+                [$partyId]
+            );
+            if (!$partyRow || !(int) ($partyRow['is_active'] ?? 0)) {
+                throw new Exception('Customer is inactive or does not exist.');
+            }
+            $ptype = (string) ($partyRow['type'] ?? '');
+            if (!in_array($ptype, ['customer', 'both'], true)) {
+                throw new Exception('Selected party is not a customer.');
+            }
+            if (!$this->partyModel->isVisibleInCurrentWarehouse($partyId)) {
+                throw new Exception('Customer is not available on this branch.');
+            }
             $headerDisc = $this->inputFloat('discount');
             $newInvoiceTotal = (float) $norm['subtotal'] - (float) $headerDisc;
             SaleValidator::enforceCreditLimit($db, $partyId, $newInvoiceTotal);
@@ -199,7 +247,7 @@ class SalesController extends BaseController {
 
         $result = $this->saleModel->createFull([
             'party_id'       => $this->inputInt('party_id'),
-            'warehouse_id'   => $this->inputInt('warehouse_id'),
+            'warehouse_id'   => $warehouseId,
             'date'           => $this->input('date'),
             'discount'       => $this->inputFloat('discount'),
             'tax'            => 0,
@@ -211,7 +259,7 @@ class SalesController extends BaseController {
         ]);
 
         if ($result['success']) {
-            self::clearDashboardCache($this->inputInt('warehouse_id'));
+            self::clearDashboardCache($warehouseId);
             $this->logActivity('create_sale', 'sales', $result['id'], "Invoice {$result['invoice_no']}");
             $this->flash('success', "Sale {$result['invoice_no']} saved successfully.");
 
@@ -219,13 +267,12 @@ class SalesController extends BaseController {
             $partyName  = '';
             $branchName = '';
             $partyIdVal = $this->inputInt('party_id');
-            $whIdVal    = $this->inputInt('warehouse_id');
             if ($partyIdVal) {
                 $db = Database::getInstance();
                 $partyName  = $db->fetchOne("SELECT name FROM parties WHERE id=?", [$partyIdVal])['name'] ?? '—';
             }
             foreach (self::getWarehouses() as $wh) {
-                if ((int)$wh['id'] === $whIdVal) { $branchName = $wh['name']; break; }
+                if ((int)$wh['id'] === $warehouseId) { $branchName = $wh['name']; break; }
             }
             WhatsApp::sale([
                 'invoice_no' => $result['invoice_no'],
@@ -266,14 +313,15 @@ class SalesController extends BaseController {
             $this->redirect('?page=sales');
             return;
         }
+        if (!$this->assertSaleWarehouseAccess($sale)) {
+            return;
+        }
 
-        // Fix inconsistent rows: status "paid" while balance still > 0 after sale returns (legacy Return CASE ELSE status).
+        // Fix inconsistent rows: status "paid" while balance still > 0 (legacy data).
         if (($sale['status'] ?? '') === 'paid' && (float) ($sale['balance'] ?? 0) > 0.001) {
             $this->saleModel->recomputeBalanceAfterReturns($id);
             $sale = $this->saleModel->findFull($id);
-            if (!$sale) {
-                $this->flash('error', 'Sale not found.');
-                $this->redirect('?page=sales');
+            if (!$sale || !$this->assertSaleWarehouseAccess($sale)) {
                 return;
             }
         }
@@ -322,6 +370,9 @@ class SalesController extends BaseController {
         $sale = $this->saleModel->findForPrint($id);
 
         if (!$sale) die('Invoice not found.');
+        if (!$this->assertSaleWarehouseAccess($sale)) {
+            return;
+        }
 
         $settings = self::getSettings();
         $partyBalance = $this->partyModel->findWithBalance((int)$sale['party_id']);
@@ -394,9 +445,12 @@ class SalesController extends BaseController {
 
         $id   = $this->inputInt('sale_id');
         $sale = $this->saleModel->find($id);
+        if (!$this->assertSaleWarehouseAccess($sale ?: null, true)) {
+            return;
+        }
 
         // Lock paid invoices
-        if ($sale && $sale['status'] === 'paid') {
+        if ($sale['status'] === 'paid') {
             echo json_encode(['success' => false, 'error' => 'This invoice is already fully paid.']);
             return;
         }
@@ -422,6 +476,33 @@ class SalesController extends BaseController {
         }
     }
 
+    /**
+     * One-time form nonce — prevents double-submit on admin edit / add-item / scan paths.
+     */
+    private function consumeSaleActionNonce(string $bucket, int $key, string $postField, string $failUrl): bool {
+        if (!isset($_SESSION[$bucket]) || !is_array($_SESSION[$bucket])) {
+            $_SESSION[$bucket] = [];
+        }
+        $posted = isset($_POST[$postField]) ? trim((string) $_POST[$postField]) : '';
+        $sess   = (string) ($_SESSION[$bucket][$key] ?? '');
+        unset($_SESSION[$bucket][$key]);
+        if ($sess === '' || $posted === '' || !hash_equals($sess, $posted)) {
+            $this->flash('warning', 'This form was already submitted or expired. Please try again.');
+            $this->redirect($failUrl);
+            return false;
+        }
+        return true;
+    }
+
+    private function issueSaleActionNonce(string $bucket, int $key): string {
+        if (!isset($_SESSION[$bucket]) || !is_array($_SESSION[$bucket])) {
+            $_SESSION[$bucket] = [];
+        }
+        $nonce = bin2hex(random_bytes(16));
+        $_SESSION[$bucket][$key] = $nonce;
+        return $nonce;
+    }
+
     // Edit sale form (admin only)
     public function edit(): void {
         if (!Auth::isAdmin()) {
@@ -439,9 +520,7 @@ class SalesController extends BaseController {
             return;
         }
 
-        if ((int)$editSale['warehouse_id'] !== Auth::warehouseId()) {
-            $this->flash('error', 'This sale belongs to a different warehouse.');
-            $this->redirect('?page=sales');
+        if (!$this->assertSaleWarehouseAccess($editSale)) {
             return;
         }
 
@@ -451,6 +530,7 @@ class SalesController extends BaseController {
             return;
         }
 
+        $saleEditNonce = $this->issueSaleActionNonce('sale_edit_nonce', $id);
         $pageTitle = 'Edit: ' . $editSale['invoice_no'];
         $page      = 'sales';
 
@@ -482,15 +562,17 @@ class SalesController extends BaseController {
             return;
         }
 
-        if ((int)$sale['warehouse_id'] !== Auth::warehouseId()) {
-            $this->flash('error', 'This sale belongs to a different warehouse.');
-            $this->redirect('?page=sales');
+        if (!$this->assertSaleWarehouseAccess($sale)) {
             return;
         }
 
         if ($sale['status'] === 'cancelled') {
             $this->flash('error', 'Cancelled invoices cannot be edited.');
             $this->redirect('?page=sales');
+            return;
+        }
+
+        if (!$this->consumeSaleActionNonce('sale_edit_nonce', $id, 'sale_edit_nonce', "?page=sales&action=edit&id={$id}")) {
             return;
         }
 
@@ -507,6 +589,10 @@ class SalesController extends BaseController {
 
         $db->beginTransaction();
         try {
+            $locked = $db->fetchOne('SELECT id FROM sales WHERE id = ? FOR UPDATE', [$id]);
+            if (!$locked) {
+                throw new Exception('Sale not found.');
+            }
             if (!empty($rawItems)) {
                 foreach ($rawItems as $saleItemId => $row) {
                     $saleItemId = (int)$saleItemId;
@@ -591,6 +677,19 @@ class SalesController extends BaseController {
                 $newTotal = round($newQty * $newPrice, 3);
                 if (!$itemId || $newPrice <= 0) continue;
 
+                $itemMeta = $db->fetchOne(
+                    "SELECT name, has_imei, COALESCE(imei_optional,0) AS imei_optional FROM items WHERE id = ?",
+                    [$itemId]
+                );
+                if (!$itemMeta) {
+                    throw new Exception("Invalid item #{$itemId}.");
+                }
+                if (!empty($itemMeta['has_imei']) && empty($itemMeta['imei_optional'])) {
+                    throw new Exception(
+                        "Item \"{$itemMeta['name']}\" requires IMEI scanning. Use Add Item on the sale to add it with serials."
+                    );
+                }
+
                 $db->insert(
                     "INSERT INTO sale_items (sale_id, item_id, quantity, unit_price, discount, tax, total)
                      VALUES (?,?,?,?,0,0,?)",
@@ -611,12 +710,16 @@ class SalesController extends BaseController {
                 $newSubtotal += $newTotal;
             }
 
-            // Recalculate grand_total and balance
+            // Recalculate grand_total and balance (invoice AR = grand - paid; returns are party credits)
             $paidAmount    = (float)$sale['paid_amount'];
             $newGrandTotal = $newSubtotal - $newDiscount;
-            
-            $returnsTot = (float)($db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$id])['tot'] ?? 0);
-            $newBalance = max(0, $newGrandTotal - $paidAmount - $returnsTot);
+            $newBalance = max(0, $newGrandTotal - $paidAmount);
+
+            $oldGrand = (float) $sale['grand_total'];
+            $deltaExposure = $newGrandTotal - $oldGrand;
+            if ($deltaExposure > 0.001) {
+                SaleValidator::enforceCreditLimit($db, (int) $sale['party_id'], $deltaExposure);
+            }
 
             // Determine new status
             if ($newBalance < 0.001) {
@@ -685,6 +788,9 @@ class SalesController extends BaseController {
             $this->redirect('?page=sales');
             return;
         }
+        if (!$this->assertSaleWarehouseAccess($sale)) {
+            return;
+        }
 
         $line = $db->fetchOne(
             "SELECT si.*, i.name as item_name, i.sku, i.has_imei,
@@ -713,6 +819,7 @@ class SalesController extends BaseController {
             [$saleItemId]
         );
 
+        $saleScanNonce = $this->issueSaleActionNonce('sale_scan_imei_nonce', $saleItemId);
         $pageTitle = 'Scan IMEIs — ' . $sale['invoice_no'];
         $page      = 'sales';
 
@@ -732,9 +839,21 @@ class SalesController extends BaseController {
         $saleId     = $this->inputInt('id');
         $saleItemId = $this->inputInt('sale_item_id');
 
+        if (!$this->consumeSaleActionNonce(
+            'sale_scan_imei_nonce',
+            $saleItemId,
+            'sale_scan_nonce',
+            "?page=sales&action=scanItemImeis&id={$saleId}&sale_item_id={$saleItemId}"
+        )) {
+            return;
+        }
+
         $db = Database::getInstance();
         $sale = $this->saleModel->find($saleId);
         if (!$sale || $sale['status'] === 'cancelled') { $this->flash('error', 'Sale not available.'); $this->redirect('?page=sales'); return; }
+        if (!$this->assertSaleWarehouseAccess($sale)) {
+            return;
+        }
 
         $line = $db->fetchOne(
             "SELECT si.*, i.has_imei FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.id = ? AND si.sale_id = ?",
@@ -791,20 +910,16 @@ class SalesController extends BaseController {
                     [$imei, $whId, $whId]
                 );
                 if (!$rec) {
-                    // IMEI not in system — create it as sold for this sale
-                    $imeiId = $db->insert(
-                        "INSERT INTO imei_records (imei, item_id, warehouse_id, status, sale_id, notes)
-                         VALUES (?,?,?,'sold',?,?)",
-                        [$imei, $line['item_id'], $whId, $saleId, "Auto-registered during retro IMEI scan for sale_item #{$saleItemId}"]
+                    throw new Exception(
+                        "IMEI {$imei} is not in stock. Receive it via purchase (or return) before linking."
                     );
-                } else {
-                    $imeiId = (int)$rec['id'];
-                    $aff = $db->execute(
-                        "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
-                        [$saleId, $whId, $imeiId]
-                    );
-                    if ($aff === 0) throw new Exception("IMEI {$imei} not available for sale.");
                 }
+                $imeiId = (int)$rec['id'];
+                $aff = $db->execute(
+                    "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
+                    [$saleId, $whId, $imeiId]
+                );
+                if ($aff === 0) throw new Exception("IMEI {$imei} not available for sale.");
                 $db->insert("INSERT INTO sale_item_imei (sale_item_id, imei_id) VALUES (?,?)", [$saleItemId, $imeiId]);
             }
 
@@ -835,8 +950,10 @@ class SalesController extends BaseController {
         $sale = $this->saleModel->findFull($id);
 
         if (!$sale)                              { $this->flash('error', 'Sale not found.');                $this->redirect('?page=sales');                                     return; }
+        if (!$this->assertSaleWarehouseAccess($sale)) { return; }
         if ($sale['status'] === 'cancelled')     { $this->flash('error', 'Cancelled invoices cannot be edited.'); $this->redirect("?page=sales&action=detail&id={$id}");          return; }
 
+        $saleAddItemNonce = $this->issueSaleActionNonce('sale_add_item_nonce', $id);
         $pageTitle = 'Add Item to ' . $sale['invoice_no'];
         $page      = 'sales';
 
@@ -858,10 +975,17 @@ class SalesController extends BaseController {
         if (!$this->isPost()) { $this->redirect('?page=sales'); return; }
 
         $id   = $this->inputInt('id');
+        if (!$this->consumeSaleActionNonce('sale_add_item_nonce', $id, 'sale_add_item_nonce', "?page=sales&action=addItem&id={$id}")) {
+            return;
+        }
+
         $sale = $this->saleModel->find($id);
         if (!$sale || $sale['status'] === 'cancelled') {
             $this->flash('error', 'Invalid sale.');
             $this->redirect('?page=sales');
+            return;
+        }
+        if (!$this->assertSaleWarehouseAccess($sale)) {
             return;
         }
 
@@ -914,6 +1038,10 @@ class SalesController extends BaseController {
 
         $db->beginTransaction();
         try {
+            $locked = $db->fetchOne('SELECT id FROM sales WHERE id = ? FOR UPDATE', [$id]);
+            if (!$locked) {
+                throw new Exception('Sale not found.');
+            }
             $addedSubtotal = 0;
 
             foreach ($items as $it) {
@@ -955,17 +1083,17 @@ class SalesController extends BaseController {
                         [$imei, $whId, $whId]
                     );
                     if (!$rec) {
-                        $imeiId = $db->insert(
-                            "INSERT INTO imei_records (imei, item_id, warehouse_id, status, sale_id) VALUES (?,?,?,'sold',?)",
-                            [$imei, $it['itemId'], $whId, $id]
+                        throw new Exception(
+                            "IMEI {$imei} is not in stock. Receive it via purchase (or return) before selling."
                         );
-                    } else {
-                        $imeiId = (int)$rec['id'];
-                        $aff = $db->execute(
-                            "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
-                            [$id, $whId, $imeiId]
-                        );
-                        if ($aff === 0) throw new Exception("IMEI {$imei} not available for sale.");
+                    }
+                    $imeiId = (int)$rec['id'];
+                    $aff = $db->execute(
+                        "UPDATE imei_records SET status='sold', sale_id=?, warehouse_id=? WHERE id=? AND status IN ('in_stock','returned')",
+                        [$id, $whId, $imeiId]
+                    );
+                    if ($aff === 0) {
+                        throw new Exception("IMEI {$imei} not available for sale.");
                     }
                     $db->insert("INSERT INTO sale_item_imei (sale_item_id, imei_id) VALUES (?,?)", [$saleItemId, $imeiId]);
                 }
@@ -973,12 +1101,16 @@ class SalesController extends BaseController {
                 $addedSubtotal += $lineTotal;
             }
 
-            // Recalculate sale totals
+            // Recalculate sale totals (invoice AR = grand - paid; returns are party credits)
             $newSubtotal   = (float)$sale['subtotal'] + $addedSubtotal;
             $discount      = (float)$sale['discount'];
             $newGrandTotal = $newSubtotal - $discount;
             $paid          = (float)$sale['paid_amount'];
             $newBalance    = max(0, $newGrandTotal - $paid);
+
+            if ($addedSubtotal > 0.001) {
+                SaleValidator::enforceCreditLimit($db, (int) $sale['party_id'], $addedSubtotal);
+            }
 
             if ($newBalance < 0.001)      { $newStatus = 'paid'; $newBalance = 0; }
             elseif ($paid > 0)            { $newStatus = 'partial'; }
@@ -1014,9 +1146,12 @@ class SalesController extends BaseController {
 
         $id   = $this->inputInt('id');
         $sale = $this->saleModel->find($id);
+        if (!$this->assertSaleWarehouseAccess($sale ?: null)) {
+            return;
+        }
 
         // Lock paid invoices
-        if ($sale && $sale['status'] === 'paid') {
+        if ($sale['status'] === 'paid') {
             $this->flash('error', 'Paid invoices cannot be cancelled. Contact admin to unlock.');
             $this->redirect('?page=sales&action=detail&id=' . $id);
             return;
@@ -1056,6 +1191,10 @@ class SalesController extends BaseController {
         }
 
         $sale = $this->saleModel->find($id);
+        if (!$this->assertSaleWarehouseAccess($sale ?: null)) {
+            return;
+        }
+
         $result = $this->saleModel->reopenCancelled($id);
 
         if (!empty($result['success'])) {
@@ -1073,8 +1212,14 @@ class SalesController extends BaseController {
     // AJAX: search items for autocomplete
     public function searchItems(): void {
         header('Content-Type: application/json');
+        if (!Auth::can('sales', 'view') && !Auth::can('returns', 'view') && !Auth::can('purchases', 'view')) {
+            http_response_code(403);
+            echo json_encode([]);
+            return;
+        }
         $q    = trim($_GET['q'] ?? '');
-        $whId = (int) ($_GET['warehouse_id'] ?? 0);
+        // Always scope to the active session branch (ignore client-posted warehouse_id)
+        $whId = (int) Auth::warehouseId();
 
         if (strlen($q) < 1) {
             echo json_encode([]);
@@ -1088,6 +1233,11 @@ class SalesController extends BaseController {
     // AJAX: search parties
     public function searchParties(): void {
         header('Content-Type: application/json');
+        if (!Auth::can('sales', 'view') && !Auth::can('returns', 'view') && !Auth::can('purchases', 'view')) {
+            http_response_code(403);
+            echo json_encode([]);
+            return;
+        }
         $q = trim($_GET['q'] ?? '');
         $type = trim((string)($_GET['type'] ?? 'customer'));
 
@@ -1109,6 +1259,11 @@ class SalesController extends BaseController {
     // AJAX: validate IMEI
     public function checkImei(): void {
         header('Content-Type: application/json');
+        if (!Auth::can('sales', 'view') && !Auth::can('sales', 'add')) {
+            http_response_code(403);
+            echo json_encode(['valid' => false, 'message' => 'Forbidden.']);
+            return;
+        }
         $imei   = trim($_GET['imei'] ?? '');
         $itemId = (int) ($_GET['item_id'] ?? 0);
 
@@ -1130,7 +1285,7 @@ class SalesController extends BaseController {
         );
 
         if (!$row) {
-            echo json_encode(['valid' => true, 'message' => 'New IMEI — will be registered.']);
+            echo json_encode(['valid' => false, 'message' => 'IMEI not in stock — receive via purchase first.']);
             return;
         }
 
@@ -1159,12 +1314,22 @@ class SalesController extends BaseController {
             return;
         }
 
+        if (!in_array((string) ($row['status'] ?? ''), ['in_stock', 'returned'], true)) {
+            echo json_encode(['valid' => false, 'message' => 'IMEI is not available for sale.']);
+            return;
+        }
+
         echo json_encode(['valid' => true, 'message' => "In stock: {$row['item_name']}."]);
     }
 
     // AJAX: get items for a sale (pre-fill return form)
     public function getSaleItems(): void {
         header('Content-Type: application/json');
+        if (!Auth::can('sales', 'view') && !Auth::can('returns', 'view')) {
+            http_response_code(403);
+            echo json_encode([]);
+            return;
+        }
         $id = (int) ($_GET['sale_id'] ?? 0);
 
         $items = Database::getInstance()->fetchAll(

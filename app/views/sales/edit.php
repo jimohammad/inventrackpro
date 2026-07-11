@@ -310,6 +310,7 @@ $itemCount = count($editSale['items']);
 <div class="se-wrap">
 <form method="POST" action="?page=sales&action=update&id=<?= $editSale['id'] ?>" id="editSaleForm">
     <?= Auth::csrfField() ?>
+    <input type="hidden" name="sale_edit_nonce" value="<?= htmlspecialchars($saleEditNonce ?? '') ?>">
     <input type="hidden" name="id" value="<?= $editSale['id'] ?>">
     <input type="hidden" name="print_after_save" id="printAfterSave" value="0">
     <input type="hidden" name="print_mode" id="editPrintMode" value="0">

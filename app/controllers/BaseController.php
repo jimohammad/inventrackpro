@@ -133,10 +133,27 @@ abstract class BaseController {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!Auth::verifyCsrf()) {
                 $this->flash('error', 'Invalid request. Please try again.');
-                header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? APP_URL));
+                header('Location: ' . self::safePostRedirectUrl());
                 exit;
             }
         }
+    }
+
+    /**
+     * Redirect after CSRF failure — same-host Referer only (no open redirect).
+     */
+    protected static function safePostRedirectUrl(): string {
+        $fallback = defined('APP_URL') ? (string) APP_URL : '/';
+        $ref      = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+        if ($ref === '') {
+            return $fallback;
+        }
+        $refHost = parse_url($ref, PHP_URL_HOST);
+        $appHost = parse_url($fallback, PHP_URL_HOST);
+        if ($refHost && $appHost && strcasecmp((string) $refHost, (string) $appHost) === 0) {
+            return $ref;
+        }
+        return $fallback;
     }
 
     // Render a view file and pass data to it

@@ -57,6 +57,8 @@ UNION ALL SELECT 'stock', COUNT(*) FROM stock WHERE warehouse_id = @inactive_wh;
 
 ## History
 
+- **2026-07-11 (security):** Sale returns force session `warehouse_id` (posted branch ignored if mismatched).
+- **2026-07-11 (fix):** `SalesController` forces session `warehouse_id` on create; detail/print/pay/cancel/reopen/edit/add-item/IMEI-scan assert active branch; item search ignores client-posted warehouse.
 - **2026-07-02 (fix):** Expenses branch-scoping — `ExpenseController::edit()/update()` and `Expense::delete()` now require `warehouse_id = Auth::warehouseId()` on the expense lookup (previously id-only, allowing cross-branch edit/delete and wrong-branch account balance reversal). `Expense::getSummaryByCategory()` now filters by session warehouse like `getAll()`. Also made the multi-row expense save atomic (single transaction) and added `amount > 0` validation on update.
 
 _(Add dated notes when fixing branch-related bugs.)_

@@ -422,9 +422,8 @@ class Payment extends BaseModel {
                 continue;
             }
             $newPaid = round($paid - $take, 3);
-            
-            $returnsTot = (float)($this->db->fetchOne("SELECT SUM(grand_total) as tot FROM `returns` WHERE ref_id = ? AND type = 'sale_return' AND status = 'approved'", [$row['id']])['tot'] ?? 0);
-            $newBal  = max(0, round((float) $row['grand_total'] - $newPaid - $returnsTot, 3));
+            // Invoice AR = grand − paid (sale returns are party credits, not invoice deductions)
+            $newBal  = max(0, round((float) $row['grand_total'] - $newPaid, 3));
             
             $status  = 'confirmed';
             if ($newPaid > 0.001) {

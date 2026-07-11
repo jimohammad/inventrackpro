@@ -333,6 +333,7 @@ class IMEI extends BaseModel {
         foreach ($clean as $imei) {
             $imeiRows = $rowsByImei[$imei] ?? [];
             if (empty($imeiRows)) {
+                $errors[] = "IMEI {$imei} is not registered in stock. Receive it via purchase (or return) before selling.";
                 continue;
             }
 
@@ -384,7 +385,10 @@ class IMEI extends BaseModel {
 
             if ($hasDifferentItemOnly || !$hasSameItemRecord) {
                 $errors[] = "IMEI {$imei} belongs to a different product.";
+                continue;
             }
+
+            $errors[] = "IMEI {$imei} is not available for sale.";
         }
 
         return $errors;

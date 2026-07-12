@@ -35,9 +35,12 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
     <title>Warranty Check &middot; Iqbal Electronics Co. WLL</title>
+    <link rel="apple-touch-icon" href="/assets/pwa/apps/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/apps/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/assets/pwa/apps/icons/icon-512.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -67,6 +70,7 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
             align-items: center;
             justify-content: center;
             padding: 24px 16px;
+            padding-bottom: max(24px, env(safe-area-inset-bottom));
         }
         .track-card {
             width: 100%;
@@ -307,8 +311,7 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
             </div>
 
             <div class="track-body">
-                <form method="GET" action="" id="warranty-form">
-                    <input type="hidden" name="page" value="imeitrack">
+                <form method="GET" action="/imei" id="warranty-form">
                     <label class="field-label" for="imei-input">IMEI / Serial Number</label>
                     <div class="input-shell">
                         <span class="ico"><i class="bi bi-upc-scan"></i></span>
@@ -387,6 +390,7 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
 
         <div class="foot">
             Need help? WhatsApp <a href="https://wa.me/96560727170" target="_blank" rel="noopener"><i class="bi bi-whatsapp me-1"></i>+965 60727170</a>
+            <div style="margin-top:8px;"><a href="/apps">← Back to menu</a></div>
         </div>
     </div>
 </div>
@@ -577,5 +581,6 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
     });
 })();
 </script>
+<script src="/assets/pwa/apps/nav.js" defer></script>
 </body>
 </html>

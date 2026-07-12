@@ -29,14 +29,34 @@
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
     </FilesMatch>
+    # Override long-cache for PWA service worker + manifest (must stay fresh)
+    <FilesMatch "^(sw\.js|manifest\.webmanifest)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header unset Pragma
+    </FilesMatch>
+    # Each customer PWA SW may only control its declared scope
+    <IfModule mod_setenvif.c>
+        SetEnvIf Request_URI "^/assets/pwa/apps/sw\.js$" SW_SCOPE_APPS
+        SetEnvIf Request_URI "^/assets/pwa/imei/sw\.js$" SW_SCOPE_IMEI
+        SetEnvIf Request_URI "^/assets/pwa/pricelist/sw\.js$" SW_SCOPE_PRICELIST
+    </IfModule>
+    Header set Service-Worker-Allowed "/" env=SW_SCOPE_APPS
+    Header set Service-Worker-Allowed "/imei" env=SW_SCOPE_IMEI
+    Header set Service-Worker-Allowed "/pricelist" env=SW_SCOPE_PRICELIST
 
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # Camera allowed for public IMEI barcode scan PWA; mic/geo still blocked.
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(self)"
     # Enforcing CSP (Report-Only without report-uri is no-op). This app still relies on inline scripts/styles and some CDN libs.
-    Header set Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+    Header set Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+</IfModule>
+
+# Correct MIME for PWA manifest
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
 </IfModule>
 
 # Deny direct access to sensitive paths
@@ -50,9 +70,19 @@ RedirectMatch 403 ^/\.git(?:/|$)
     RewriteRule ^\.gitignore - [F,L]
     RewriteRule ^\.user(\.ini)?$ - [F,L]
 
+    # Unified customer apps hub (single PWA → Warranty / Service / Pricelist)
+    RewriteRule ^apps/?$ apps.php [L,QSA,NC]
+
     # Pretty URL for public IMEI warranty tracking
+    # Never rewrite real files/dirs under /imei/ (PWA leftovers or future static assets)
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^imei/ - [L]
     RewriteRule ^imei/?$ index.php?page=imeitrack [L,QSA,NC]
     RewriteRule ^imei/([^/]+)/?$ index.php?page=imeitrack&imei=$1 [L,QSA,NC]
+
+    # Pretty URL for public pricelist (same pattern as /imei)
+    RewriteRule ^pricelist/?$ pricelist.php [L,QSA,NC]
 
     # Short URL for service repair tracking (IMEI digits or hex token in path)
     RewriteRule ^service/(\d{14,18})/?$ index.php?page=servicetrack&imei=$1 [L,QSA,NC]

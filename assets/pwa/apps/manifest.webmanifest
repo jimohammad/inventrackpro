@@ -1,0 +1,35 @@
+{
+  "id": "/apps",
+  "name": "Iqbal Electronics",
+  "short_name": "Iqbal",
+  "description": "Warranty, Service tracking, and Pricelist — Iqbal Electronics Co. WLL",
+  "start_url": "/apps?utm_source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "utilities"],
+  "icons": [
+    {
+      "src": "/assets/pwa/apps/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/apps/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/apps/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

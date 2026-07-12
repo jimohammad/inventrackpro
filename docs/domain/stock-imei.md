@@ -43,10 +43,13 @@
 | Returns | `app/models/Return.php` |
 | IMEI | `app/models/IMEI.php`, `IMEIController.php` |
 | Sale validation | `app/services/SaleValidator.php` |
+| Public warranty page | `app/views/public/imei_track.php` (`/imei`, `?page=imeitrack`) |
+| Customer warranty PWA | `assets/pwa/imei/` (manifest, sw.js, icons); scope `/imei` only — do **not** put PWA files under `/imei/` (pretty-URL rewrite turns them into HTML) |
 
 ## Verify
 
 - Manual: create sale → stock decreases; cancel/return → stock restored.
+- Public PWA: open `https://iqbal.app/imei` on phone → Install / Add to Home Screen; lookups still hit the network (not stale cache).
 - SQL: no negative qty (add audit if needed):
 
 ```sql
@@ -55,6 +58,11 @@ SELECT item_id, warehouse_id, quantity FROM stock WHERE quantity < 0;
 
 ## History
 
+- **2026-07-12:** PWA assets moved to `/assets/pwa/imei/` — live `/imei/*.webmanifest` and `/imei/sw.js` were rewritten to the warranty HTML page (icons 404), so install showed name without icon.
+- **2026-07-12:** Public `/imei` PWA home-screen name set to **Warranty** (logo still iCARE artwork).
+- **2026-07-12:** Public `/imei` warranty PWA home-screen icon set to iCARE logo (`imei/icons/`); short_name was `iCARE`.
+- **2026-07-12:** Public `/imei` warranty page is a customer-only PWA (manifest + scoped service worker). Staff ERP is unchanged. Camera Permissions-Policy set to `(self)` so barcode scan works.
+- **2026-07-11:** Item master form redesigned with ui-ux-pro-max Flat Design (slate + stock-green CTA, no shadows/gradients); Real Cost / Sale Price / Min stock one row; serial toggles side-by-side. Removed AED/USD reference price fields from UI; create/update no longer write `price_aed`/`price_usd` (existing DB values preserved for PO prefill). Sections: Identity / Pricing & stock / Serial tracking.
 - **2026-07-11 (security):** Sale/return paths reject unknown IMEIs (no auto-register on sell/return). Mandatory IMEI items require scanned serials on return (no blind LIMIT restore).
 - **2026-07-11:** Sale return — stock/IMEI restore unchanged; money side is party ledger credit only (does not recompute source invoice balance). See [party-balance-payments.md](party-balance-payments.md).
 - **2026-07-09:** New sale invoice — bulk **Paste IMEIs** on the scan bar (same flow as edit invoice): validate list, then lookup each IMEI and auto-add/group line items.

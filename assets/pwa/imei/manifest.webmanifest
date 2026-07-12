@@ -1,0 +1,35 @@
+{
+  "id": "/imei",
+  "name": "Iqbal Warranty Check",
+  "short_name": "Warranty",
+  "description": "Check device warranty by IMEI or serial number — Iqbal Electronics Co. WLL",
+  "start_url": "/imei?utm_source=pwa",
+  "scope": "/imei",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "utilities"],
+  "icons": [
+    {
+      "src": "/assets/pwa/imei/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/imei/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/imei/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

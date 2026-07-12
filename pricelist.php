@@ -2,11 +2,23 @@
 /**
  * Public Price List — No login required
  * Prices controlled by admin toggle from ERP backend
- * URL: https://iqbal.app/pricelist.php
+ * URL: https://iqbal.app/pricelist (also /pricelist.php)
  */
 
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/config/database.php';
+
+// Prefer pretty URL so the PWA scope (/pricelist) matches install/start_url
+$requestUri = $_SERVER['REQUEST_URI'] ?? '';
+if (
+    !isset($_GET['check_prices'])
+    && stripos($requestUri, 'pricelist.php') !== false
+) {
+    $query = $_GET;
+    $qs = http_build_query($query);
+    header('Location: /pricelist' . ($qs !== '' ? '?' . $qs : ''), true, 302);
+    exit;
+}
 
 $db = Database::getInstance();
 
@@ -75,8 +87,11 @@ $companyPhone = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'comp
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2e7d32">
 <title>Price List — <?= htmlspecialchars($companyName) ?></title>
+<link rel="apple-touch-icon" href="/assets/pwa/apps/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/apps/icons/icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -550,7 +565,7 @@ if (priceActive && priceRemaining > 0) {
 
 // Layer 5: Server poll every 5 seconds for admin toggle
 setInterval(function() {
-    fetch('pricelist.php?check_prices=1&_=' + Date.now())
+    fetch('/pricelist?check_prices=1&_=' + Date.now())
         .then(function(r) { return r.json(); })
         .then(function(res) {
             if (res.show && !priceActive) {
@@ -568,5 +583,6 @@ setInterval(function() {
         .catch(function() {});
 }, 5000);
 </script>
+<script src="/assets/pwa/apps/nav.js" defer></script>
 </body>
 </html>

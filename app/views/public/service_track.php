@@ -6,8 +6,11 @@ $currentStage = $record ? (int)$record['device_stage'] : -1;
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
 <title>Track Your Device — <?= htmlspecialchars(PDF_COMPANY_NAME, ENT_QUOTES, 'UTF-8') ?></title>
+<link rel="apple-touch-icon" href="/assets/pwa/apps/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/apps/icons/icon-192.png">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 <style>
 * { box-sizing:border-box;margin:0;padding:0; }
@@ -163,8 +166,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgr
 
     <div class="pt-footer">
         <p>Need help? Contact us at the shop.</p>
-        <p style="margin-top:6px;"><a href="/">← Back to Home</a></p>
+        <p style="margin-top:6px;"><a href="/apps">← Back to menu</a></p>
     </div>
 </div>
+<script src="/assets/pwa/apps/nav.js" defer></script>
 </body>
 </html>

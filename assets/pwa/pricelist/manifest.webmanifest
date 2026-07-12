@@ -1,0 +1,35 @@
+{
+  "id": "/pricelist",
+  "name": "Iqbal Pricelist",
+  "short_name": "Pricelist",
+  "description": "Iqbal Electronics Co. WLL — public product pricelist",
+  "start_url": "/pricelist?utm_source=pwa",
+  "scope": "/pricelist",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#2e7d32",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "shopping"],
+  "icons": [
+    {
+      "src": "/assets/pwa/pricelist/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/pricelist/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/pricelist/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

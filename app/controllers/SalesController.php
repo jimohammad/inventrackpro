@@ -52,7 +52,7 @@ class SalesController extends BaseController {
         $listLimit     = $listPage['limit'];
         $datesDefaulted = $dateRange['dates_defaulted'];
         $stats     = $this->saleModel->getStats('month');
-        $pageTitle = $viewVoided ? 'Sales — voided invoices' : 'Sales';
+        $pageTitle = $viewVoided ? 'Sales ΓÇö voided invoices' : 'Sales';
         $page      = 'sales';
 
         ob_start();
@@ -219,7 +219,7 @@ class SalesController extends BaseController {
             $norm = SaleValidator::normalizeItems($db, $this->imeiModel, $rawItems, $warehouseId, $priceFloorMode);
             $items = $norm['items'];
 
-            // Credit limit check (if set) — party must be active customer visible on this branch
+            // Credit limit check (if set) ΓÇö party must be active customer visible on this branch
             $partyId = $this->inputInt('party_id');
             $partyRow = $db->fetchOne(
                 "SELECT id, type, is_active FROM parties WHERE id = ?",
@@ -263,21 +263,21 @@ class SalesController extends BaseController {
             $this->logActivity('create_sale', 'sales', $result['id'], "Invoice {$result['invoice_no']}");
             $this->flash('success', "Sale {$result['invoice_no']} saved successfully.");
 
-            // Build WhatsApp payload from already-known data — no extra DB query
+            // Build WhatsApp payload from already-known data ΓÇö no extra DB query
             $partyName  = '';
             $branchName = '';
             $partyIdVal = $this->inputInt('party_id');
             if ($partyIdVal) {
                 $db = Database::getInstance();
-                $partyName  = $db->fetchOne("SELECT name FROM parties WHERE id=?", [$partyIdVal])['name'] ?? '—';
+                $partyName  = $db->fetchOne("SELECT name FROM parties WHERE id=?", [$partyIdVal])['name'] ?? 'ΓÇö';
             }
             foreach (self::getWarehouses() as $wh) {
                 if ((int)$wh['id'] === $warehouseId) { $branchName = $wh['name']; break; }
             }
             WhatsApp::sale([
                 'invoice_no' => $result['invoice_no'],
-                'party'      => $partyName ?: '—',
-                'branch'     => $branchName ?: '—',
+                'party'      => $partyName ?: 'ΓÇö',
+                'branch'     => $branchName ?: 'ΓÇö',
                 'total'      => number_format($result['grand_total'] ?? 0, 3),
                 'paid'       => number_format(0, 3),
                 'currency'   => APP_CURRENCY,
@@ -353,7 +353,7 @@ class SalesController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
-    // Print/PDF invoice — thermal when `thermal` appears in query (same rule as print.php / payment receipts).
+    // Print/PDF invoice ΓÇö thermal when `thermal` appears in query (same rule as print.php / payment receipts).
     public function print(): void {
         $this->renderInvoicePrint(isset($_GET['thermal']));
     }
@@ -477,7 +477,7 @@ class SalesController extends BaseController {
     }
 
     /**
-     * One-time form nonce — prevents double-submit on admin edit / add-item / scan paths.
+     * One-time form nonce ΓÇö prevents double-submit on admin edit / add-item / scan paths.
      */
     private function consumeSaleActionNonce(string $bucket, int $key, string $postField, string $failUrl): bool {
         if (!isset($_SESSION[$bucket]) || !is_array($_SESSION[$bucket])) {
@@ -540,7 +540,7 @@ class SalesController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
-    // Update sale (admin only — date, discount, notes)
+    // Update sale (admin only ΓÇö date, discount, notes)
     public function update(): void {
         if (!Auth::isAdmin()) {
             $this->flash('error', 'Admin access required.');
@@ -583,7 +583,7 @@ class SalesController extends BaseController {
         $newNotes    = $this->input('notes');
         $warehouseId = (int)$sale['warehouse_id'];
 
-        // ── Handle item changes (qty/price) ──
+        // ΓöÇΓöÇ Handle item changes (qty/price) ΓöÇΓöÇ
         $rawItems    = $_POST['items'] ?? [];
         $newSubtotal = 0;
 
@@ -609,7 +609,7 @@ class SalesController extends BaseController {
 
                     // Handle deletion
                     if (!empty($row['deleted'])) {
-                        // Release serials tied to this line — otherwise imei_records stays sold/sale_id
+                        // Release serials tied to this line ΓÇö otherwise imei_records stays sold/sale_id
                         // (CASCADE removes sale_item_imei rows on DELETE, so we must update IMEIs first.)
                         $linkedImeiIds = $db->fetchAll(
                             'SELECT imei_id FROM sale_item_imei WHERE sale_item_id = ?',
@@ -668,7 +668,7 @@ class SalesController extends BaseController {
                 $newSubtotal = (float)$sale['subtotal'];
             }
 
-            // ── Handle new items added during edit ────────────────────────────
+            // ΓöÇΓöÇ Handle new items added during edit ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
             $newItems = $_POST['new_items'] ?? [];
             foreach ($newItems as $row) {
                 $itemId   = (int)($row['item_id'] ?? 0);
@@ -820,7 +820,7 @@ class SalesController extends BaseController {
         );
 
         $saleScanNonce = $this->issueSaleActionNonce('sale_scan_imei_nonce', $saleItemId);
-        $pageTitle = 'Scan IMEIs — ' . $sale['invoice_no'];
+        $pageTitle = 'Scan IMEIs ΓÇö ' . $sale['invoice_no'];
         $page      = 'sales';
 
         ob_start();
@@ -964,7 +964,7 @@ class SalesController extends BaseController {
     }
 
     /**
-     * Process new item additions (admin only) — same IMEI/stock logic as create.
+     * Process new item additions (admin only) ΓÇö same IMEI/stock logic as create.
      */
     public function addItemStore(): void {
         if (!Auth::isAdmin()) {
@@ -1168,7 +1168,7 @@ class SalesController extends BaseController {
 
     /**
      * Admin-only: reverse a voided invoice (Sale::reopenCancelled).
-     * Transactional stock + IMEI; payments are NOT recreated — full balance due unless re-recorded.
+     * Transactional stock + IMEI; payments are NOT recreated ΓÇö full balance due unless re-recorded.
      */
     public function reopen(): void {
         if (!Auth::isAdmin()) {
@@ -1200,7 +1200,7 @@ class SalesController extends BaseController {
         if (!empty($result['success'])) {
             self::clearDashboardCache((int) ($sale['warehouse_id'] ?? 0));
             $this->logActivity('reopen_sale', 'sales', $id, 'Reinstated voided invoice (stock/IMEI); payments must be re-entered if applicable');
-            $this->flash('success', 'Invoice reinstated: stock deducted and serials marked sold again. Payment rows were not restored — record receipts in Payments if the customer paid.');
+            $this->flash('success', 'Invoice reinstated: stock deducted and serials marked sold again. Payment rows were not restored ΓÇö record receipts in Payments if the customer paid.');
             $this->redirect('?page=sales&action=detail&id=' . $id);
             return;
         }
@@ -1233,7 +1233,15 @@ class SalesController extends BaseController {
     // AJAX: search parties
     public function searchParties(): void {
         header('Content-Type: application/json');
-        if (!Auth::can('sales', 'view') && !Auth::can('returns', 'view') && !Auth::can('purchases', 'view')) {
+        if (
+            !Auth::can('sales', 'view')
+            && !Auth::can('returns', 'view')
+            && !Auth::can('purchases', 'view')
+            && !Auth::can('payments', 'view')
+            && !Auth::can('payments', 'add')
+            && !Auth::can('payments_out', 'view')
+            && !Auth::can('payments_out', 'add')
+        ) {
             http_response_code(403);
             echo json_encode([]);
             return;
@@ -1246,8 +1254,9 @@ class SalesController extends BaseController {
             return;
         }
 
-        // Allow supplier/customer searches from other modules (purchase/returns/sales).
-        $allowedTypes = ['all', 'customer', 'supplier', 'both'];
+        // Allow supplier/customer/freight searches from other modules (purchase/returns/sales/payments).
+        // payment_out → suppliers + both + freight_forwarders (Party::search).
+        $allowedTypes = ['all', 'customer', 'supplier', 'both', 'freight_forwarder', 'payment_out'];
         if (!in_array($type, $allowedTypes, true)) {
             $type = 'customer';
         }
@@ -1285,7 +1294,7 @@ class SalesController extends BaseController {
         );
 
         if (!$row) {
-            echo json_encode(['valid' => false, 'message' => 'IMEI not in stock — receive via purchase first.']);
+            echo json_encode(['valid' => false, 'message' => 'IMEI not in stock ΓÇö receive via purchase first.']);
             return;
         }
 

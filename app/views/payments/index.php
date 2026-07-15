@@ -1,44 +1,56 @@
-<!-- Payments List -->
+<?php
+    $paymentsListMode   = $paymentsListMode ?? 'in';
+    $isOutList          = $paymentsListMode === 'out';
+    $paymentsListBase   = $paymentsListBase ?? ($isOutList ? '?page=payments&action=out' : '?page=payments');
+    $paymentsPermModule = $paymentsPermModule ?? ($isOutList ? 'payments_out' : 'payments');
+    $pageHeading        = $isOutList ? 'Payment Out' : 'Payment In';
+?>
+<!-- Payments List (In or Out — same engine, filtered) -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="page-title">Payments</h1>
+        <h1 class="page-title"><?= htmlspecialchars($pageHeading) ?></h1>
     </div>
-    <?php if (Auth::can('payments','add')): ?>
+    <?php if (Auth::can($paymentsPermModule, 'add')): ?>
     <div style="display:flex;gap:8px;">
-        <a href="?page=payments&action=receive"
-           style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(16,185,129,.35);">
-            <i class="bi bi-arrow-down-circle-fill"></i> Receive Payment
-        </a>
+        <?php if ($isOutList): ?>
         <a href="?page=payments&action=pay"
            style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(239,68,68,.35);">
             <i class="bi bi-arrow-up-circle-fill"></i> Make Payment
         </a>
+        <?php else: ?>
+        <a href="?page=payments&action=receive"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(16,185,129,.35);">
+            <i class="bi bi-arrow-down-circle-fill"></i> Receive Payment
+        </a>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 </div>
 
 
 <!-- Filters -->
-<form method="GET" action="" style="background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
+<form method="GET" action="" style="background:linear-gradient(135deg,<?= $isOutList ? '#fef2f2,#fee2e2' : '#eef2ff,#e0e7ff' ?>);border:1px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
     <input type="hidden" name="page" value="payments">
+    <?php if ($isOutList): ?>
+    <input type="hidden" name="action" value="out">
+    <?php endif; ?>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
 
         <div style="flex:2;min-width:180px;">
-            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:<?= $isOutList ? '#dc2626' : '#6366f1' ?>;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-search me-1"></i>Search
             </label>
             <input type="text" name="search" placeholder="Payment no..."
                    value="<?= htmlspecialchars($filters['search']) ?>"
-                   style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
-                   onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                   style="width:100%;padding:8px 14px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;">
         </div>
 
         <div style="flex:2;min-width:180px;">
-            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:<?= $isOutList ? '#dc2626' : '#6366f1' ?>;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-person me-1"></i>Party
             </label>
             <select name="party_id" id="paymentPartyFilter"
-                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
+                    style="width:100%;padding:8px 14px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
                 <option value="">All parties</option>
                 <?php foreach (($parties ?? []) as $p): ?>
                 <option value="<?= (int) $p['id'] ?>" <?= ((int) ($filters['party_id'] ?? 0) === (int) $p['id']) ? 'selected' : '' ?>>
@@ -49,46 +61,44 @@
         </div>
 
         <div style="flex:1;min-width:140px;">
-            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:<?= $isOutList ? '#dc2626' : '#6366f1' ?>;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-funnel me-1"></i>Type
             </label>
             <select name="ref_type"
-                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
-                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                    style="width:100%;padding:8px 14px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
                 <option value="">All Types</option>
-                <option value="sale"     <?= $filters['ref_type']==='sale'?'selected':'' ?>>Sales</option>
+                <?php if ($isOutList): ?>
                 <option value="purchase" <?= $filters['ref_type']==='purchase'?'selected':'' ?>>Purchases</option>
                 <option value="expense"  <?= $filters['ref_type']==='expense'?'selected':'' ?>>Expenses</option>
+                <?php else: ?>
+                <option value="sale"     <?= $filters['ref_type']==='sale'?'selected':'' ?>>Sales</option>
+                <?php endif; ?>
             </select>
         </div>
 
         <div style="flex:1;min-width:130px;">
-            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:<?= $isOutList ? '#dc2626' : '#6366f1' ?>;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-calendar3 me-1"></i>From
             </label>
             <input type="date" name="from_date" value="<?= htmlspecialchars((string) $filters['from_date']) ?>"
-                   style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
-                   onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                   style="width:100%;padding:8px 14px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
         </div>
 
         <div style="flex:1;min-width:130px;">
-            <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:<?= $isOutList ? '#dc2626' : '#6366f1' ?>;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-calendar3 me-1"></i>To
             </label>
             <input type="date" name="to_date" value="<?= htmlspecialchars((string) ($filters['to_date'] ?? '')) ?>"
-                   style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
-                   onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                   style="width:100%;padding:8px 14px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;">
         </div>
 
         <div style="display:flex;gap:8px;flex-shrink:0;">
             <button type="submit"
-                    style="padding:8px 22px;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.85rem;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 3px 10px rgba(99,102,241,0.3);transition:all 0.15s;"
-                    onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+                    style="padding:8px 22px;background:linear-gradient(135deg,<?= $isOutList ? '#ef4444,#dc2626' : '#6366f1,#4f46e5' ?>);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:0.85rem;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 3px 10px rgba(0,0,0,0.15);">
                 <i class="bi bi-search"></i> Filter
             </button>
-            <a href="?page=payments"
-               style="padding:8px 16px;background:#fff;color:#64748b;border:1.5px solid #c7d2fe;border-radius:10px;font-weight:600;font-size:0.85rem;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all 0.15s;"
-               onmouseover="this.style.borderColor='#94a3b8'" onmouseout="this.style.borderColor='#c7d2fe'">
+            <a href="<?= htmlspecialchars($paymentsListBase) ?>"
+               style="padding:8px 16px;background:#fff;color:#64748b;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;font-weight:600;font-size:0.85rem;text-decoration:none;display:flex;align-items:center;gap:5px;">
                 <i class="bi bi-x-circle"></i> Clear
             </a>
         </div>
@@ -98,7 +108,7 @@
 
 <?php
 $listPageName = 'payments';
-$listPageExtra = [];
+$listPageExtra = $isOutList ? ['action' => 'out'] : [];
 if (($filters['ref_type'] ?? '') !== '') {
     $listPageExtra['ref_type'] = (string) $filters['ref_type'];
 }
@@ -184,13 +194,13 @@ include __DIR__ . '/../partials/list_page_alerts.php';
                                    class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                <?php if (Auth::can('payments','edit')): ?>
+                                <?php if (Auth::can($paymentsPermModule, 'edit')): ?>
                                 <a href="?page=payments&action=edit&id=<?= $p['id'] ?>"
                                    class="btn btn-sm pin-protect" style="background:rgba(245,158,11,0.15);color:#d97706;border:none;" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 <?php endif; ?>
-                                <?php if (Auth::can('payments','delete') && ($p['ref_type'] ?? '') !== 'discount'): ?>
+                                <?php if (Auth::can($paymentsPermModule, 'delete') && ($p['ref_type'] ?? '') !== 'discount'): ?>
                                 <form method="POST" action="?page=payments&action=delete" style="display:inline;"
                                       onsubmit="return confirm('Delete this payment permanently? Account and invoice balances will be reversed.');">
                                     <?= Auth::csrfField() ?>
@@ -214,7 +224,7 @@ include __DIR__ . '/../partials/list_page_alerts.php';
 <style>
 #paymentPartyFilter + .select2-container { width:100% !important; }
 #paymentPartyFilter + .select2-container .select2-selection--single {
-    min-height:38px;border:1.5px solid #c7d2fe;border-radius:10px;
+    min-height:38px;border:1.5px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:10px;
 }
 #paymentPartyFilter + .select2-container .select2-selection__rendered {
     line-height:36px;padding-left:12px;font-size:0.85rem;

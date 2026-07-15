@@ -1,7 +1,11 @@
-<?php $isIn = ($payment['payment_type'] ?? 'in') === 'in'; ?>
+<?php
+    $isIn = ($payment['payment_type'] ?? 'in') === 'in';
+    $paymentsListBase = $paymentsListBase ?? ($isIn ? '?page=payments' : '?page=payments&action=out');
+    $paymentsPermModule = $isIn ? 'payments' : 'payments_out';
+?>
 
 <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="?page=payments" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <a href="<?= htmlspecialchars($paymentsListBase) ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0"><?= $payment['payment_no'] ?></h1>
     <span class="badge px-3 py-1" style="border-radius:20px;font-size:0.78rem;font-weight:700;
         background:<?= $isIn ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' ?>;
@@ -15,12 +19,12 @@
         <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1&thermal=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success">
             <i class="bi bi-receipt me-1"></i> Thermal
         </a>
-        <?php if (Auth::can('payments','edit')): ?>
+        <?php if (Auth::can($paymentsPermModule, 'edit')): ?>
         <a href="?page=payments&action=edit&id=<?= $payment['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
         <?php endif; ?>
-        <?php if (Auth::can('payments','delete') && ($payment['ref_type'] ?? '') !== 'discount'): ?>
+        <?php if (Auth::can($paymentsPermModule, 'delete') && ($payment['ref_type'] ?? '') !== 'discount'): ?>
         <form method="POST" action="?page=payments&action=delete" style="display:inline;"
               onsubmit="return confirm('Delete this payment permanently? Account and invoice balances will be reversed.');">
             <?= Auth::csrfField() ?>

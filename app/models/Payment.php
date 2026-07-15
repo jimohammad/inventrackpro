@@ -9,7 +9,7 @@ class Payment extends BaseModel {
     public const STATUS_ACTIVE    = 'active';
     public const STATUS_CANCELLED = 'cancelled';
 
-    /** Import logistics payments — no sale/purchase FIFO allocation. */
+    /** Import logistics payments ΓÇö no sale/purchase FIFO allocation. */
     private const SHIPMENT_LEG_REFS = [
         'shipment_freight_hk',
         'shipment_packing_dxb',
@@ -25,7 +25,7 @@ class Payment extends BaseModel {
         return !in_array((string) ($pay['ref_type'] ?? ''), self::SHIPMENT_LEG_REFS, true);
     }
 
-    /** Generic supplier pay (not linked to a purchase invoice) — e.g. old partner profit lump sum. */
+    /** Generic supplier pay (not linked to a purchase invoice) ΓÇö e.g. old partner profit lump sum. */
     private function isStandaloneOutPayment(array $pay): bool {
         return ($pay['payment_type'] ?? '') === 'out'
             && (string) ($pay['ref_type'] ?? '') === 'purchase'
@@ -93,6 +93,11 @@ class Payment extends BaseModel {
             $params[] = $filters['ref_type'];
         } else {
             $where .= " AND py.ref_type != 'discount'";
+        }
+        $paymentType = strtolower(trim((string) ($filters['payment_type'] ?? '')));
+        if ($paymentType === 'in' || $paymentType === 'out') {
+            $where .= " AND py.payment_type = ?";
+            $params[] = $paymentType;
         }
         if (!empty($filters['party_id'])) {
             $where .= " AND py.party_id = ?";
@@ -213,7 +218,7 @@ class Payment extends BaseModel {
                 );
             }
 
-            // FIFO auto-allocation for SALE payments — apply to oldest unpaid sales first
+            // FIFO auto-allocation for SALE payments ΓÇö apply to oldest unpaid sales first
             if ($paymentType === 'in' && $partyId > 0) {
                 $remaining = $totalAmount;
                 $unpaidInvoices = $this->db->fetchAll(
@@ -236,7 +241,7 @@ class Payment extends BaseModel {
                 }
             }
 
-            // FIFO auto-allocation for PURCHASE payments — apply to oldest unpaid purchases first
+            // FIFO auto-allocation for PURCHASE payments ΓÇö apply to oldest unpaid purchases first
             if ($paymentType === 'out' && $partyId > 0) {
                 $remaining = $totalAmount;
                 $unpaidPurchases = $this->db->fetchAll(
@@ -273,7 +278,7 @@ class Payment extends BaseModel {
     /**
      * Delete a standalone payment and reverse its effects (account + FIFO invoice allocation).
      * Uses LIFO on purchases/sales to undo createStandalone FIFO. LIFO is only equivalent to FIFO
-     * reversal when no NEWER payments exist for the same party — otherwise this would reverse the
+     * reversal when no NEWER payments exist for the same party ΓÇö otherwise this would reverse the
      * wrong invoices. H1 fix: refuse the delete when newer payments exist; admin must delete the
      * newer ones first (or rebuild the allocation manually).
      */
@@ -422,7 +427,7 @@ class Payment extends BaseModel {
                 continue;
             }
             $newPaid = round($paid - $take, 3);
-            // Invoice AR = grand − paid (sale returns are party credits, not invoice deductions)
+            // Invoice AR = grand ΓêÆ paid (sale returns are party credits, not invoice deductions)
             $newBal  = max(0, round((float) $row['grand_total'] - $newPaid, 3));
             
             $status  = 'confirmed';

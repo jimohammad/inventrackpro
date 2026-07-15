@@ -57,6 +57,8 @@ Purchase-side / outbound payments in balance union: non-blank `ref_type`, exclud
 | Dashboard / Net worth / Balance sheet | `DashboardController`, `NetWorthService`, `ReportController::balanceSheet()` — all delegate to `Party` |
 | Credit check | `app/services/SaleValidator.php` — `partyOutstanding()` → `Party::currentNetBalance()` |
 | Payment create | `app/models/Payment.php`, `app/controllers/PaymentController.php` |
+| Payment In list | `?page=payments` — `payment_type=in`, perm module `payments` |
+| Payment Out list | `?page=payments&action=out` — `payment_type=out`, perm module `payments_out` (same store engine) |
 | Statements | `app/controllers/ReportController.php`, `statement.php` |
 
 ## Verify
@@ -73,6 +75,9 @@ ORDER BY date DESC LIMIT 50;
 
 ## History
 
+- **2026-07-14:** Split UI: **Payment In** (`payments`) vs **Payment Out** (`payments_out` menu + list). Same `payments` table / `store` engine; salesman/cashier without `payments_out` cannot open Make Payment or see OUT rows. Seed: `database/migrations/2026_07_14_payments_out_permission.sql`.
+- **2026-07-14:** Payment In/Out UX: Fill due, remember last account, notes on Receive, shared thermal shortcut, Escape → Payments list; Payment Out balance uses payable perspective consistently (`partyBalance&mode=out` + labels).
+- **2026-07-14:** Payment Out party search (`type=payment_out`) now allowed through `SalesController::searchParties` so suppliers **and freight forwarders** appear in the Make Payment field (was rejected and fell back to customers).
 - **2026-07-11 (security):** Credit limit re-checked inside `Sale::createFull` (party `FOR UPDATE`); double-submit nonces on sale edit/add-item/IMEI-scan; cancel locks stock rows; CSRF failure redirect same-host only.
 - **2026-07-11 (security):** Sale payments/reopen/FIFO reverse use invoice AR = grand − paid only (aligned with credit-note returns). Sale/return IMEI auto-create blocked; return prices capped to sold/catalog; returns forced to session warehouse; sales AJAX endpoints permission-gated; credit limit re-checked on edit/add-item.
 - **2026-07-11:** Sale returns are party ledger credit notes only — no longer reduce `sales.balance` on the linked invoice (`Return::create` / void / edit; `Sale::recomputeBalanceAfterReturns` = grand − paid).

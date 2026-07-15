@@ -77,13 +77,28 @@
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    <?php
+        $payNavAction = (string) ($_GET['action'] ?? '');
+        $isPayOutNav  = ($page ?? '') === 'payments' && in_array($payNavAction, ['out', 'pay'], true);
+        $isPayInNav   = ($page ?? '') === 'payments' && !$isPayOutNav;
+    ?>
     <?php if (Auth::can('payments', 'view')): ?>
     <div class="sidebar-link-wrap">
-        <a href="?page=payments" class="sidebar-link <?= ($page ?? '') === 'payments' ? 'active' : '' ?>">
-            <i class="bi bi-cash-stack"></i> Payments
+        <a href="?page=payments" class="sidebar-link <?= $isPayInNav ? 'active' : '' ?>">
+            <i class="bi bi-cash-stack"></i> Payment In
         </a>
         <?php if (Auth::can('payments', 'add')): ?>
         <a href="?page=payments&action=receive" class="quick-add-btn" title="Receive Payment">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php if (Auth::can('payments_out', 'view')): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=payments&action=out" class="sidebar-link <?= $isPayOutNav ? 'active' : '' ?>">
+            <i class="bi bi-arrow-up-circle"></i> Payment Out
+        </a>
+        <?php if (Auth::can('payments_out', 'add')): ?>
+        <a href="?page=payments&action=pay" class="quick-add-btn" title="Make Payment" style="background:linear-gradient(135deg,#ef4444,#dc2626);">+</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>

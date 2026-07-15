@@ -92,20 +92,36 @@ class PaymentController extends BaseController {
     }
 
     public function index(): void {
-        Auth::authorize('payments', 'view');
+        $this->renderPaymentList('in');
+    }
+
+    /** Payment Out list — same engine, filtered to payment_type=out (managers/admins). */
+    public function out(): void {
+        $this->renderPaymentList('out');
+    }
+
+    /**
+     * Shared list for Payment In / Payment Out pages (one payments table, filtered).
+     *
+     * @param 'in'|'out' $direction
+     */
+    private function renderPaymentList(string $direction): void {
+        $isOut = $direction === 'out';
+        Auth::authorize($isOut ? 'payments_out' : 'payments', 'view');
 
         $dateRange = ListPage::resolveDateFiltersFromGet();
 
         $filters = [
-            'search'    => $this->inputSearch('search', '', 'get'),
-            'party_id'  => $this->inputInt('party_id', 0, 'get'),
-            'ref_type'  => $this->input('ref_type', '', 'get'),
-            'from_date' => $dateRange['from_date'],
-            'to_date'   => $dateRange['to_date'],
-            'all_dates' => $dateRange['all_dates'],
+            'search'       => $this->inputSearch('search', '', 'get'),
+            'party_id'     => $this->inputInt('party_id', 0, 'get'),
+            'ref_type'     => $this->input('ref_type', '', 'get'),
+            'payment_type' => $isOut ? 'out' : 'in',
+            'from_date'    => $dateRange['from_date'],
+            'to_date'      => $dateRange['to_date'],
+            'all_dates'    => $dateRange['all_dates'],
         ];
 
-        $parties        = $this->partyModel->listForFilter('all');
+        $parties        = $this->partyModel->listForFilter($isOut ? 'payment_out' : 'customer');
         $listPage       = $this->paymentModel->getIndexPage($filters);
         $payments       = $listPage['items'];
         $listTruncated  = $listPage['truncated'];
@@ -114,13 +130,27 @@ class PaymentController extends BaseController {
 
         [$summaryFrom, $summaryTo] = ListPage::summaryDateRange($filters);
         $summary   = $this->paymentModel->getSummary($summaryFrom, $summaryTo);
-        $pageTitle = 'Payments';
+        $pageTitle = $isOut ? 'Payment Out' : 'Payment In';
         $page      = 'payments';
+        $paymentsListMode = $isOut ? 'out' : 'in';
+        $paymentsListBase = $isOut ? '?page=payments&action=out' : '?page=payments';
+        $paymentsPermModule = $isOut ? 'payments_out' : 'payments';
 
         ob_start();
         include __DIR__ . '/../views/payments/index.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /** @return 'payments'|'payments_out' */
+    private function paymentPermModule(array $payment): string {
+        return (($payment['payment_type'] ?? 'in') === 'out') ? 'payments_out' : 'payments';
+    }
+
+    private function paymentsListUrlFor(array $payment): string {
+        return $this->paymentPermModule($payment) === 'payments_out'
+            ? '?page=payments&action=out'
+            : '?page=payments';
     }
 
     // Back-compat: route /create (and old ?type=in/out links) to the new split pages
@@ -139,7 +169,7 @@ class PaymentController extends BaseController {
         $this->renderForm('in');
     }
 
-    /** Payment OUT — pay supplier */
+    /** Payment OUT — pay supplier / freight forwarder */
     public function pay(): void {
         $this->renderForm('out');
     }
@@ -149,7 +179,7 @@ class PaymentController extends BaseController {
      * Filters party list by type, picks color theme, sets next payment no, etc.
      */
     private function renderForm(string $mode): void {
-        Auth::authorize('payments', 'add');
+        Auth::authorize($mode === 'out' ? 'payments_out' : 'payments', 'add');
 
         $db = Database::getInstance();
 
@@ -283,21 +313,39 @@ class PaymentController extends BaseController {
     }
 
     // AJAX: Get party balance (scoped to current warehouse)
+    // mode=out → payable perspective (positive = we owe), matching Payment Out search/labels.
     public function partyBalance(): void {
         header('Content-Type: application/json');
         $id = (int)($_GET['id'] ?? 0);
-        if (!$id) { echo json_encode(['balance' => 0]); return; }
+        if (!$id) { echo json_encode(['balance' => 0, 'perspective' => 'receivable']); return; }
 
-        // Centralized balance logic (directional CASE WHEN rules) lives in Party::findWithBalance().
+        $mode = strtolower(trim((string) ($_GET['mode'] ?? 'in')));
         $partyModel = new Party();
         $party = $partyModel->findWithBalance($id);
-        echo json_encode(['balance' => (float)($party['net_balance'] ?? 0)]);
+        if (!$party) {
+            echo json_encode(['balance' => 0, 'perspective' => 'receivable']);
+            return;
+        }
+
+        $net = (float) ($party['net_balance'] ?? 0);
+        if ($mode === 'out') {
+            $due = Party::displayBalanceDue($party, $net, 'supplier');
+            echo json_encode([
+                'balance'     => (float) $due['amount'],
+                'perspective' => $due['perspective'],
+            ]);
+            return;
+        }
+
+        echo json_encode(['balance' => $net, 'perspective' => 'receivable']);
     }
 
     public function store(): void {
-        Auth::authorize('payments', 'add');
+        $payType = $this->input('payment_type') ?: 'in';
+        Auth::authorize($payType === 'out' ? 'payments_out' : 'payments', 'add');
 
-        $returnAction = $this->paymentFormReturnAction($this->input('payment_type') ?: 'in');
+        $returnAction = $this->paymentFormReturnAction($payType);
+        $listUrl = $payType === 'out' ? '?page=payments&action=out' : '?page=payments';
 
         if (!$this->isPost()) {
             $this->redirect('?page=payments&action=' . $returnAction);
@@ -311,9 +359,11 @@ class PaymentController extends BaseController {
             'date'       => 'required',
         ]);
 
+        $partyLabel = $payType === 'out' ? 'Supplier / freight forwarder' : 'Customer';
+
         if (!empty($errors) || $this->inputInt('party_id') <= 0) {
             if ($this->inputInt('party_id') <= 0 && empty($errors)) {
-                $errors[] = 'Customer is required.';
+                $errors[] = $partyLabel . ' is required.';
             }
             $this->flash('error', implode(' ', $errors));
             $this->redirect('?page=payments&action=' . $returnAction);
@@ -329,9 +379,11 @@ class PaymentController extends BaseController {
 
         $postedNonce = isset($_POST['payment_form_nonce']) ? trim((string) $_POST['payment_form_nonce']) : '';
         if (!$this->consumePaymentFormNonce($postedNonce)) {
+            $retryAction = $payType === 'out' ? 'Make Payment' : 'Receive Payment';
             $this->flash(
                 'warning',
-                'This payment form expired or was already used. Check Payments list first — if it is not there, open Receive Payment again and retry.'
+                'This payment form expired or was already used. Check Payments list first — if it is not there, open '
+                . $retryAction . ' again and retry.'
             );
             $this->redirect('?page=payments&action=' . $returnAction);
             return;
@@ -396,7 +448,37 @@ class PaymentController extends BaseController {
             if ($printMode === '2') {
                 $this->redirect("?page=payments&action=print&id={$id}&autoprint=1&thermal=1");
             }
-            $this->flash('success', 'Payment recorded successfully.');
+
+            $saved = $this->paymentModel->find((int) $id);
+            $payNo = (string) ($saved['payment_no'] ?? ('#' . $id));
+            $partyId = $this->inputInt('party_id');
+            $balNote = '';
+            if ($partyId > 0) {
+                $partyRow = $this->partyModel->findWithBalance($partyId);
+                if ($partyRow) {
+                    $net = (float) ($partyRow['net_balance'] ?? 0);
+                    if ($payType === 'out') {
+                        $disp = Party::displayBalanceDue($partyRow, $net, 'supplier');
+                        $amt = (float) $disp['amount'];
+                        if ($amt > 0.001) {
+                            $balNote = ' · You still owe ' . APP_CURRENCY . ' ' . number_format($amt, DECIMAL_PLACES);
+                        } elseif ($amt < -0.001) {
+                            $balNote = ' · Credit ' . APP_CURRENCY . ' ' . number_format(abs($amt), DECIMAL_PLACES);
+                        } else {
+                            $balNote = ' · Account clear';
+                        }
+                    } else {
+                        if ($net > 0.001) {
+                            $balNote = ' · Still due ' . APP_CURRENCY . ' ' . number_format($net, DECIMAL_PLACES);
+                        } elseif ($net < -0.001) {
+                            $balNote = ' · Advance ' . APP_CURRENCY . ' ' . number_format(abs($net), DECIMAL_PLACES);
+                        } else {
+                            $balNote = ' · Account clear';
+                        }
+                    }
+                }
+            }
+            $this->flash('success', $payNo . ' recorded' . $balNote . '.');
         } else {
             $err = trim($this->paymentModel->getLastError());
             $this->flash('error', $err !== '' ? ('Failed to save payment: ' . $err) : 'Failed to save payment.');
@@ -413,14 +495,14 @@ class PaymentController extends BaseController {
             return;
         }
 
-        $this->redirect('?page=payments');
+        $this->redirect($listUrl);
     }
 
     public function print(): void {
-        Auth::authorize('payments', 'view');
         $id      = $this->inputInt('id', 0, 'get');
         $payment = $this->paymentModel->findFull($id);
         if (!$payment) die('Payment not found.');
+        Auth::authorize($this->paymentPermModule($payment), 'view');
 
         $db       = Database::getInstance();
         $settings = self::getSettings();
@@ -443,7 +525,6 @@ class PaymentController extends BaseController {
     }
 
     public function detail(): void {
-        Auth::authorize('payments', 'view');
         $id      = $this->inputInt('id', 0, 'get');
         $payment = $this->paymentModel->findFull($id);
 
@@ -452,8 +533,11 @@ class PaymentController extends BaseController {
             $this->redirect('?page=payments');
         }
 
+        Auth::authorize($this->paymentPermModule($payment), 'view');
+
         $pageTitle = 'Payment: ' . $payment['payment_no'];
         $page      = 'payments';
+        $paymentsListBase = $this->paymentsListUrlFor($payment);
 
         ob_start();
         include __DIR__ . '/../views/payments/view.php';
@@ -615,8 +699,6 @@ class PaymentController extends BaseController {
      * Requires Payments → Delete permission (admins have all actions).
      */
     public function delete(): void {
-        Auth::authorize('payments', 'delete');
-
         if (!$this->isPost()) {
             $this->redirect('?page=payments');
             return;
@@ -636,9 +718,12 @@ class PaymentController extends BaseController {
             return;
         }
 
+        $listUrl = $this->paymentsListUrlFor($payment);
+        Auth::authorize($this->paymentPermModule($payment), 'delete');
+
         if (($payment['ref_type'] ?? '') === 'discount') {
             $this->flash('error', 'Remove discount-linked payments from the Discounts module.');
-            $this->redirect('?page=payments');
+            $this->redirect($listUrl);
             return;
         }
 
@@ -652,6 +737,6 @@ class PaymentController extends BaseController {
             $this->flash('error', $err !== '' ? ('Could not delete: ' . $err) : 'Could not delete payment.');
         }
 
-        $this->redirect('?page=payments');
+        $this->redirect($listUrl);
     }
 }

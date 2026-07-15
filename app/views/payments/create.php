@@ -143,6 +143,16 @@
     .pf-anim-enter, .pf-anim-enter.is-visible { transition:none; opacity:1; transform:none; }
     .pf-bal.pf-bal-pop { animation:none; }
 }
+.pf-amt-row { display:flex; align-items:stretch; gap:8px; }
+.pf-amt-row input { flex:1; min-width:0; }
+.pf-fill-due {
+    flex-shrink:0; align-self:stretch; padding:0 12px; border-radius:9px; border:1.5px solid #c7d2fe;
+    background:linear-gradient(135deg,#eef2ff,#e0e7ff); color:#3730a3; font-size:.72rem; font-weight:700;
+    cursor:pointer; white-space:nowrap; transition:all .15s; display:none;
+}
+.pf-fill-due.show { display:inline-flex; align-items:center; gap:4px; }
+.pf-fill-due:hover { border-color:#6366f1; background:linear-gradient(135deg,#e0e7ff,#c7d2fe); }
+.pf-fill-due:disabled { opacity:.45; cursor:not-allowed; }
 </style>
 
 <?php
@@ -152,7 +162,7 @@
     $modeTitle = $isReceive ? 'Receive Payment' : 'Make Payment';
     $modeIcon  = $isReceive ? 'bi-arrow-down-circle-fill' : 'bi-arrow-up-circle-fill';
     $modeColor = $isReceive ? '#10b981' : '#ef4444';
-    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Supplier');
+    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Supplier / Freight Forwarder');
     $accentBg  = $isReceive
         ? 'linear-gradient(135deg,#10b981,#059669)'
         : 'linear-gradient(135deg,#ef4444,#dc2626)';
@@ -163,14 +173,15 @@
         ? 'Type name or phone — Enter to select'
         : (($importPayable ?? false)
             ? 'Import partner — pre-selected from payable'
-            : 'Type supplier name or phone — Enter to select');
+            : 'Type supplier or freight forwarder — Enter to select');
     $linkRefId = (int) ($refId ?? 0);
     $importPayableContext = $importPayableContext ?? null;
+    $paymentsListBase = $isReceive ? '?page=payments' : '?page=payments&action=out';
 ?>
 <div class="pf-page">
     <div class="pf-head">
         <div class="left">
-            <a href="?page=payments" class="back"><i class="bi bi-arrow-left"></i></a>
+            <a href="<?= htmlspecialchars($paymentsListBase) ?>" class="back"><i class="bi bi-arrow-left"></i></a>
             <h1>
                 <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:<?= $accentBg ?>;color:#fff;margin-right:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);">
                     <i class="bi <?= $modeIcon ?>"></i>
@@ -182,9 +193,6 @@
             <?= $isReceive ? 'IN — Money Received' : 'OUT — Money Paid' ?>
         </div>
     </div>
-    <p style="margin:-8px 0 14px 46px;color:#64748b;font-size:.82rem;">
-        Record payment quickly with clean account selection and live party balance feedback.
-    </p>
 
     <form method="POST" action="?page=payments&action=store" id="payForm">
         <?= Auth::csrfField() ?>
@@ -255,7 +263,7 @@
             <div class="pf-grid2">
                 <div class="pf-field">
                     <label>Account <span id="acctTypeBadge" style="font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:5px;display:none;text-transform:uppercase;letter-spacing:.4px;"></span></label>
-                    <select name="account_id" id="accountSelect" required onchange="onAccountChange()">
+                    <select name="account_id" id="accountSelect" required>
                         <?php foreach ($accounts as $acc): ?>
                         <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
                         <?php endforeach; ?>
@@ -263,14 +271,19 @@
                 </div>
                 <div class="pf-field">
                     <label>Amount</label>
-                    <input type="number" name="amount" id="amt1" step="0.001" min="0.001" required
-                           value="<?= $refData ? $refData['balance'] : ((($preselectAmount ?? 0) > 0 ? number_format((float) $preselectAmount, 3, '.', '') : '') ?: ((float) ($importPayableContext['amount'] ?? 0) > 0 ? number_format((float) $importPayableContext['amount'], 3, '.', '') : '')) ?>" placeholder="0.000">
+                    <div class="pf-amt-row">
+                        <input type="number" name="amount" id="amt1" step="0.001" min="0.001" required
+                               value="<?= $refData ? $refData['balance'] : ((($preselectAmount ?? 0) > 0 ? number_format((float) $preselectAmount, 3, '.', '') : '') ?: ((float) ($importPayableContext['amount'] ?? 0) > 0 ? number_format((float) $importPayableContext['amount'], 3, '.', '') : '')) ?>" placeholder="0.000">
+                        <button type="button" class="pf-fill-due" id="btnFillDue" title="Fill amount from party balance">
+                            <i class="bi bi-magic"></i> Fill due
+                        </button>
+                    </div>
                 </div>
             </div>
 
             <!-- Cheque toggle (collapsed by default) -->
             <div style="margin-top:12px;">
-                <a href="javascript:void(0)" onclick="toggleCheque()" id="chequeToggle"
+                <a href="#" id="chequeToggle"
                    style="font-size:.78rem;color:var(--text-muted);text-decoration:none;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;border:1px dashed var(--border-color);">
                     <i class="bi bi-card-text"></i> <span id="chequeToggleLabel">Cheque payment? Add cheque number</span>
                 </a>
@@ -284,7 +297,6 @@
             </div>
         </div>
 
-        <?php if (!$isReceive): ?>
         <!-- Notes -->
         <div class="pf-card c-notes">
             <div class="pf-sec"><span class="num">3</span> Notes (Optional)</div>
@@ -292,20 +304,19 @@
                 <textarea name="notes" rows="2" placeholder="Reference, remarks..."><?= htmlspecialchars($preselectNotes ?? '') ?></textarea>
             </div>
         </div>
-        <?php endif; ?>
 
         <!-- Footer -->
         <div class="pf-foot">
-            <a href="?page=payments" class="pf-btn cancel">Cancel</a>
-            <button type="submit" class="pf-btn save" onclick="document.getElementById('printMode').value='0'">
+            <a href="<?= htmlspecialchars($paymentsListBase) ?>" class="pf-btn cancel">Cancel</a>
+            <button type="submit" class="pf-btn save" data-print-mode="0">
                 <i class="bi bi-check-lg"></i> Save
             </button>
-            <button type="submit" class="pf-btn print" onclick="document.getElementById('printMode').value='1'">
+            <button type="submit" class="pf-btn print" data-print-mode="1">
                 <i class="bi bi-printer"></i> Save &amp; Print
             </button>
-            <button type="submit" class="pf-btn print" id="btnPayThermal" style="background:linear-gradient(135deg,#059669,#047857);"
-                title="<?= $isReceive ? 'Ctrl+S / Cmd+S or F12: save and open thermal receipt' : '' ?>"
-                onclick="document.getElementById('printMode').value='2'">
+            <button type="submit" class="pf-btn print" id="btnPayThermal" data-print-mode="2"
+                title="Ctrl+S / Cmd+S or F12: save and open thermal receipt"
+                style="background:linear-gradient(135deg,#059669,#047857);">
                 <i class="bi bi-receipt"></i> Save &amp; Thermal
             </button>
         </div>
@@ -314,7 +325,11 @@
 
 <script>
 var partyBalance = 0;
+var paymentMode = <?= json_encode($mode) ?>;
+var isPaymentOut = paymentMode === 'out';
 var partySearchType = <?= json_encode($partySearchType) ?>;
+var warehouseId = <?= (int) (Auth::warehouseId() ?: 0) ?>;
+var lastAccountKey = 'iqbal_last_pay_account_' + paymentMode + '_' + warehouseId;
 var partyStore = { results: [] };
 var partyTimer = null;
 var partyHighlightIdx = -1;
@@ -361,6 +376,23 @@ function setBalLabel(label, iconClass, text) {
     label.appendChild(document.createTextNode(text));
 }
 
+function updateFillDueButton() {
+    var btn = document.getElementById('btnFillDue');
+    if (!btn) return;
+    var show = partyIdSelected() && partyBalance > 0.001;
+    btn.classList.toggle('show', show);
+    btn.disabled = !show;
+}
+
+function fillDueAmount() {
+    if (!(partyBalance > 0.001)) return;
+    var amtEl = document.getElementById('amt1');
+    if (!amtEl) return;
+    amtEl.value = partyBalance.toFixed(3);
+    amtEl.focus();
+    try { amtEl.select(); } catch (e) { /* ignore */ }
+}
+
 function renderPartyBalance(bal) {
     var box    = document.getElementById('partyBal');
     var label  = document.getElementById('balLabel');
@@ -368,13 +400,23 @@ function renderPartyBalance(bal) {
     var curr   = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
     partyBalance = bal;
     box.className = 'pf-bal show';
+    // IN uses unified net (positive = they owe us).
+    // OUT uses payable (positive = we owe them) — same as party search type=payment_out.
     if (bal > 0.001) {
         box.classList.add('owes');
-        setBalLabel(label, 'bi-exclamation-triangle-fill', '<?= $isReceive ? 'Customer Owes You' : 'You Are Owed (credit)' ?>');
+        setBalLabel(
+            label,
+            'bi-exclamation-triangle-fill',
+            isPaymentOut ? 'You Owe' : 'Customer Owes You'
+        );
         amount.textContent = curr + ' ' + bal.toFixed(3);
     } else if (bal < -0.001) {
         box.classList.add('youowe');
-        setBalLabel(label, 'bi-info-circle-fill', '<?= $isReceive ? 'You Owe (advance held)' : 'You Owe Supplier' ?>');
+        setBalLabel(
+            label,
+            'bi-info-circle-fill',
+            isPaymentOut ? 'You Are Owed (credit)' : 'You Owe (advance held)'
+        );
         amount.textContent = curr + ' ' + Math.abs(bal).toFixed(3);
     } else {
         box.classList.add('clear');
@@ -384,11 +426,17 @@ function renderPartyBalance(bal) {
     box.classList.remove('pf-bal-pop');
     void box.offsetWidth;
     box.classList.add('pf-bal-pop');
+    updateFillDueButton();
 }
 
 function showPartyBalance(balOverride) {
     var box = document.getElementById('partyBal');
-    if (!partyIdSelected()) { box.classList.remove('show','owes','youowe','clear'); return; }
+    if (!partyIdSelected()) {
+        box.classList.remove('show','owes','youowe','clear');
+        partyBalance = 0;
+        updateFillDueButton();
+        return;
+    }
     var partyId = document.getElementById('partyIdInput').value;
 
     if (balOverride !== undefined && balOverride !== null) {
@@ -402,10 +450,31 @@ function showPartyBalance(balOverride) {
     amount.textContent = '';
     box.className = 'pf-bal show clear';
 
-    fetch('?page=payments&action=partyBalance&id=' + partyId)
+    fetch('?page=payments&action=partyBalance&id=' + encodeURIComponent(partyId) + '&mode=' + encodeURIComponent(paymentMode))
         .then(function(r) { return r.json(); })
         .then(function(data) { renderPartyBalance(parseFloat(data.balance) || 0); })
-        .catch(function() { box.classList.remove('show'); });
+        .catch(function() { box.classList.remove('show'); updateFillDueButton(); });
+}
+
+function restoreLastAccount() {
+    var sel = document.getElementById('accountSelect');
+    if (!sel) return;
+    try {
+        var saved = localStorage.getItem(lastAccountKey);
+        if (!saved) return;
+        for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === saved) {
+                sel.selectedIndex = i;
+                break;
+            }
+        }
+    } catch (e) { /* private mode */ }
+}
+
+function persistLastAccount() {
+    var sel = document.getElementById('accountSelect');
+    if (!sel || !sel.value) return;
+    try { localStorage.setItem(lastAccountKey, sel.value); } catch (e) { /* ignore */ }
 }
 
 function escapeHtml(text) {
@@ -429,8 +498,13 @@ function updatePartyHighlight() {
 function partyBalanceHint(bal) {
     var curr = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
     var n = parseFloat(bal) || 0;
-    if (n > 0.001) return '<span class="pf-party-due">Due: ' + curr + ' ' + n.toFixed(3) + '</span>';
-    if (n < -0.001) return '<span class="pf-party-credit">Credit: ' + curr + ' ' + Math.abs(n).toFixed(3) + '</span>';
+    if (isPaymentOut) {
+        if (n > 0.001) return '<span class="pf-party-due">You owe: ' + curr + ' ' + n.toFixed(3) + '</span>';
+        if (n < -0.001) return '<span class="pf-party-credit">Credit: ' + curr + ' ' + Math.abs(n).toFixed(3) + '</span>';
+    } else {
+        if (n > 0.001) return '<span class="pf-party-due">Due: ' + curr + ' ' + n.toFixed(3) + '</span>';
+        if (n < -0.001) return '<span class="pf-party-credit">Credit: ' + curr + ' ' + Math.abs(n).toFixed(3) + '</span>';
+    }
     return '<span class="pf-party-clear">Account clear</span>';
 }
 
@@ -441,6 +515,7 @@ function renderPartyDropdown(parties) {
     partyHighlightIdx = parties.length === 1 ? 0 : -1;
     drop.innerHTML = parties.map(function(p, idx) {
         var meta = [];
+        if (p.type === 'freight_forwarder') meta.push('<span style="color:#0284c7;font-weight:600;">Freight forwarder</span>');
         if (p.phone) meta.push(escapeHtml(p.phone));
         meta.push(partyBalanceHint(p.balance));
         return '<div class="pf-party-item' + (idx === partyHighlightIdx ? ' active' : '') + '" data-idx="' + idx + '" role="option">'
@@ -498,6 +573,8 @@ function initPartySearch() {
         input.classList.remove('selected');
         document.getElementById('partyIdInput').value = '';
         document.getElementById('partyBal').classList.remove('show','owes','youowe','clear');
+        partyBalance = 0;
+        updateFillDueButton();
         clearTimeout(partyTimer);
         var q = input.value.trim();
         if (q.length < 1) {
@@ -563,7 +640,36 @@ function initPartySearch() {
 
 document.addEventListener('DOMContentLoaded', function() {
     var payForm = document.getElementById('payForm');
+    var accountSelect = document.getElementById('accountSelect');
+    var chequeToggle = document.getElementById('chequeToggle');
+    var btnFillDue = document.getElementById('btnFillDue');
+
+    restoreLastAccount();
+
+    if (accountSelect) {
+        accountSelect.addEventListener('change', function() {
+            onAccountChange();
+            persistLastAccount();
+        });
+    }
+    if (chequeToggle) {
+        chequeToggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            toggleCheque();
+        });
+    }
+    if (btnFillDue) {
+        btnFillDue.addEventListener('click', fillDueAmount);
+    }
+
     if (payForm) {
+        payForm.querySelectorAll('button[type="submit"][data-print-mode]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var pm = document.getElementById('printMode');
+                if (pm) pm.value = btn.getAttribute('data-print-mode') || '0';
+            });
+        });
+
         payForm.addEventListener('submit', function(e) {
             if (!partyIdSelected()) {
                 e.preventDefault();
@@ -574,12 +680,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.preventDefault();
                 return;
             }
+            persistLastAccount();
             payForm.dataset.submitting = '1';
             payForm.querySelectorAll('button[type="submit"]').forEach(function(btn) {
                 btn.disabled = true;
             });
         });
-        <?php if ($isReceive): ?>
+
         payForm.addEventListener('keydown', function(e) {
             if (((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) || e.key === 'F12') {
                 e.preventDefault();
@@ -593,7 +700,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         }, true);
-        <?php endif; ?>
     }
 
     // Page-entry reveal animation (staggered)
@@ -610,12 +716,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (partySearchEl && partySearchEl.value) partySearchEl.title = partySearchEl.value;
         showPartyBalance();
     }
+    updateFillDueButton();
     setTimeout(function() {
         if (partySearchEl) partySearchEl.focus();
     }, 120);
 });
 
-<?php if ($isReceive): ?>
 document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
 
@@ -629,7 +735,6 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    window.location.href = '?page=dashboard';
+    window.location.href = <?= json_encode($paymentsListBase) ?>;
 }, true);
-<?php endif; ?>
 </script>

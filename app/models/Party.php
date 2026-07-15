@@ -492,6 +492,8 @@ class Party extends BaseModel {
         if ($type !== 'all') {
             if ($type === 'freight_forwarder') {
                 $where .= " AND p.type = 'freight_forwarder'";
+            } elseif ($type === 'payment_out') {
+                $where .= " AND p.type IN ('supplier', 'both', 'freight_forwarder')";
             } else {
                 $where .= ' AND (p.type = ? OR p.type = \'both\')';
                 $params[] = $type;

@@ -89,6 +89,52 @@ class ImportPayableAccrualService {
         );
     }
 
+    /**
+     * Write off open accruals (no cash movement) — removes liability from freight payables + party ledger.
+     * Use only when there is no matching outbound PAY left on the books. If PAYs exist, link them
+     * (`LandedCostPaymentLinker`) so status becomes `paid` — cancelling while payments remain
+     * leaves a false Party Master credit (payments count; cancelled accruals do not).
+     *
+     * @param list<int> $chargeIds
+     */
+    public static function cancelOpenByCharges(Database $db, string $refType, array $chargeIds, string $reason = ''): int {
+        $leg = self::REF_TYPE_TO_LEG[$refType] ?? null;
+        if (!$leg || $chargeIds === []) {
+            return 0;
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $chargeIds), static fn (int $id): bool => $id > 0)));
+        if ($ids === []) {
+            return 0;
+        }
+
+        $note = trim($reason);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        if ($note !== '') {
+            $db->execute(
+                "UPDATE import_payable_accruals
+                 SET status = 'cancelled',
+                     description = CONCAT(COALESCE(description, ''), CASE WHEN description IS NULL OR description = '' THEN '' ELSE ' · ' END, ?)
+                 WHERE shipment_item_charge_id IN ({$ph}) AND leg = ? AND status = 'open'",
+                array_merge([$note], $ids, [$leg])
+            );
+        } else {
+            $db->execute(
+                "UPDATE import_payable_accruals
+                 SET status = 'cancelled'
+                 WHERE shipment_item_charge_id IN ({$ph}) AND leg = ? AND status = 'open'",
+                array_merge($ids, [$leg])
+            );
+        }
+
+        $left = $db->fetchOne(
+            "SELECT COUNT(*) AS c FROM import_payable_accruals
+             WHERE shipment_item_charge_id IN ({$ph}) AND leg = ? AND status = 'open'",
+            array_merge($ids, [$leg])
+        );
+
+        return count($ids) - (int) ($left['c'] ?? 0);
+    }
+
     public static function legLabel(string $leg): string {
         return self::LEG_LABELS[$leg] ?? $leg;
     }

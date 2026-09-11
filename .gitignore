@@ -25,6 +25,12 @@ backups/cache/
 .vscode/
 .vs/
 .cursor/
+!.cursor/skills/
+.cursor/skills/*
+!.cursor/skills/gstack/
+!.cursor/skills/gstack/**
+!.cursor/skills/gstack-*/
+!.cursor/skills/gstack-*/**
 *.swp
 *.swo
 *~
@@ -108,3 +114,7 @@ build/
 
 # IDE-specific config workspace files (these ARE tracked elsewhere — uncomment to ignore)
 # *.code-workspace
+
+# Harness-foundry runtime sessions (worktrees + traces — keep .foundry/stack.yaml)
+.foundry/sessions/*/
+!.foundry/sessions/.gitkeep

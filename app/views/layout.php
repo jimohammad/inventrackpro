@@ -1,32 +1,67 @@
 <!DOCTYPE html>
-<html lang="en" id="htmlRoot">
+<html lang="en" id="htmlRoot" class="iq-boot">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Preconnect only to CDNs we actually load (cdnjs) -->
     <title><?= $pageTitle ?? 'Dashboard' ?> | <?= APP_NAME ?></title>
+    <?php
+        $iqFont = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    ?>
+    <style>
+        :root {
+            --iq-font: <?= $iqFont ?>;
+            --bs-font-sans-serif: <?= $iqFont ?>;
+            --bs-font-serif: <?= $iqFont ?>;
+            --bs-body-font-family: <?= $iqFont ?>;
+            --bs-font-monospace: <?= $iqFont ?>;
+            --bs-body-font-size: 0.9rem;
+            --header-height: 56px;
+        }
+        html { background: #f6f7f9; }
+        html, body, h1, h2, h3, h4, h5, h6, p, button, input, select, textarea, .btn, .form-control, .form-select, table, .page-title {
+            font-family: <?= $iqFont ?> !important;
+        }
+        body { font-size: 0.9rem !important; line-height: 1.5; }
+        /* Hold first paint until icon font + jQuery widgets are applied (no FOUT / Select2 jump). */
+        html.iq-boot body { visibility: hidden; }
+        .app-topbar { height: 56px; }
+        .main-content { margin-left: 0; }
+    </style>
+    <noscript><style>html.iq-boot body { visibility: visible; }</style></noscript>
     <script>
-        // Force light theme (single-theme app) before CSS loads.
         (function() {
             document.getElementById('htmlRoot').setAttribute('data-theme', 'light');
         })();
+        window.iqbalReadyQueue = [];
+        window.iqbalLibsReady = false;
+        window.iqbalWhenIdle = function (fn) {
+            if (typeof fn !== 'function') return;
+            if (window.iqbalLibsReady) fn();
+            else window.iqbalReadyQueue.push(fn);
+        };
+        window.iqbalReveal = function () {
+            document.documentElement.classList.remove('iq-boot');
+        };
+        setTimeout(function () { window.iqbalReveal(); }, 2000);
     </script>
 
     <!-- Preconnect to CDN for faster resource loading -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    <link rel="preload" href="assets/fonts/bootstrap-icons.woff2" as="font" type="font/woff2" crossorigin>
 
-    <!-- Bootswatch (Bootstrap 5) Theme: Litera -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/litera/bootstrap.min.css">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
+    <!-- Bootstrap 5 from cdnjs (same origin as JS). Litera @imports Google Fonts and FOUT-shakes the page. -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css">
+    <!-- Bootstrap Icons (local; font-display:optional so icons never swap after paint) -->
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css?v=<?= htmlspecialchars(ASSETS_VER) ?>">
     <!-- DataTables - only on list pages -->
-    <?php $dtPages = ['sales','purchases','payments','returns','parties','expenses','stock','items','reports','purchaseorders','warranty','discounts']; ?>
+    <?php $dtPages = ['returns','parties','expenses','items','reports','warranty','discounts']; ?>
     <?php if (isset($page) && in_array($page, $dtPages) && empty($skipListAssets)): ?>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.21/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.21/css/jquery.dataTables.min.css">
     <?php endif; ?>
     <!-- Select2 - only on pages that need it -->
-    <?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchaseorders']) && empty($skipListAssets)): ?>
+    <?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchases', 'purchaseorders', 'returns']) && empty($skipListAssets)): ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css">
     <?php endif; ?>
 
@@ -36,19 +71,60 @@
 </head>
 <body>
 
-<!-- Sidebar -->
-<nav class="sidebar">
-    <div class="sidebar-brand">
-        <i class="bi bi-boxes"></i>
-        Inven<span>Track</span>
-    </div>
+<!-- App header: light top navigation -->
+<header class="app-topbar">
+    <button type="button" class="nav-toggle" id="sidebarToggle" aria-label="Open menu" aria-controls="appNav" aria-expanded="false">
+        <i class="bi bi-list"></i>
+    </button>
+    <a href="<?= Auth::can('dashboard', 'view') ? '?page=dashboard' : '#' ?>" class="sidebar-brand">
+        <span class="sidebar-brand-mark" aria-hidden="true"><i class="bi bi-boxes"></i></span>
+        <span class="sidebar-brand-text">Iqbal<span>Erp</span></span>
+    </a>
+    <nav class="sidebar" id="appNav">
+    <div class="sidebar-nav">
+    <?php
+        $navPage = (string) ($page ?? '');
+        $navGroupOpen = [
+            'transactions' => in_array($navPage, ['purchaseorders', 'purchases', 'sales', 'orderrequests', 'saleedits', 'payments', 'returns', 'warranty', 'dumps', 'expenses', 'service'], true),
+            'parties'      => in_array($navPage, ['parties', 'suppliercontacts'], true),
+            'inventory'    => in_array($navPage, ['items', 'categories', 'transfers', 'openingstock', 'stock', 'mandoob_inventory', 'imei', 'imeitrack'], true),
+            'finance'      => in_array($navPage, ['accounts', 'landedcost', 'discounts'], true),
+            'employees'    => ($navPage === 'employees'),
+            'reports'      => ($navPage === 'reports'),
+            'settings'     => in_array($navPage, ['warehouses', 'users', 'backups', 'settings'], true),
+        ];
+        $showTransactions = Auth::can('purchases', 'view')
+            || Auth::can('sales', 'view')
+            || Auth::can('payments', 'view')
+            || Auth::can('payments_out', 'view')
+            || Auth::can('returns', 'view')
+            || Auth::can('warranty', 'view')
+            || Auth::can('dumps', 'view')
+            || Auth::can('expenses', 'view')
+            || Auth::can('service', 'view');
+        $sgClass = static function (string $id, array $open): string {
+            return !empty($open[$id]) ? ' has-active' : '';
+        };
+        $sgAria = static function (): string {
+            return 'false';
+        };
+    ?>
 
+    <?php if (Auth::can('dashboard', 'view')): ?>
     <div class="sidebar-label">Main</div>
-    <a href="?page=dashboard" class="sidebar-link <?= ($page ?? '') === 'dashboard' ? 'active' : '' ?>">
+    <a href="?page=dashboard" class="sidebar-link <?= $navPage === 'dashboard' ? 'active' : '' ?>">
         <i class="bi bi-speedometer2"></i> Dashboard
     </a>
+    <?php endif; ?>
 
-    <div class="sidebar-label">Transactions</div>
+    <?php if ($showTransactions): ?>
+    <div class="sidebar-group<?= $sgClass('transactions', $navGroupOpen) ?>" data-group="transactions">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('transactions', $navGroupOpen) ?>">
+        <span>Transactions</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
+
     <?php if (Auth::can('purchases', 'view')): ?>
     <div class="sidebar-link-wrap">
         <a href="?page=purchaseorders" class="sidebar-link <?= ($page ?? '') === 'purchaseorders' ? 'active' : '' ?>">
@@ -76,6 +152,16 @@
         <a href="?page=sales&action=create" class="quick-add-btn" title="New Sale Invoice  (Alt+S)">+</a>
         <?php endif; ?>
     </div>
+    <a href="?page=orderrequests" class="sidebar-link <?= ($page ?? '') === 'orderrequests' ? 'active' : '' ?>" id="navOrderRequests">
+        <i class="bi bi-bag-check"></i> Order Requests
+        <span id="orderReqBadge" class="badge bg-warning text-dark ms-auto" style="display:none;font-size:0.65rem;">0</span>
+    </a>
+    <?php if (Auth::isAdmin()): ?>
+    <a href="?page=saleedits" class="sidebar-link <?= ($page ?? '') === 'saleedits' ? 'active' : '' ?>" id="navSaleEdits">
+        <i class="bi bi-unlock"></i> Sale edit requests
+        <span id="saleEditBadge" class="badge bg-warning text-dark ms-auto" style="display:none;font-size:0.65rem;">0</span>
+    </a>
+    <?php endif; ?>
     <?php endif; ?>
     <?php
         $payNavAction = (string) ($_GET['action'] ?? '');
@@ -98,7 +184,7 @@
             <i class="bi bi-arrow-up-circle"></i> Payment Out
         </a>
         <?php if (Auth::can('payments_out', 'add')): ?>
-        <a href="?page=payments&action=pay" class="quick-add-btn" title="Make Payment" style="background:linear-gradient(135deg,#ef4444,#dc2626);">+</a>
+        <a href="?page=payments&action=pay" class="quick-add-btn" title="Make Payment">+</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -122,6 +208,16 @@
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    <?php if (Auth::can('dumps', 'view')): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=dumps" class="sidebar-link <?= ($page ?? '') === 'dumps' ? 'active' : '' ?>">
+            <i class="bi bi-recycle"></i> Dump Credit
+        </a>
+        <?php if (Auth::can('dumps', 'add')): ?>
+        <a href="?page=dumps&action=create" class="quick-add-btn" title="New Dump Credit">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <?php if (Auth::can('expenses', 'view')): ?>
     <div class="sidebar-link-wrap">
         <a href="?page=expenses" class="sidebar-link <?= ($page ?? '') === 'expenses' ? 'active' : '' ?>">
@@ -142,18 +238,77 @@
         <?php endif; ?>
     </div>
     <?php endif; ?>
-    <!-- PARTY_SIDEBAR_V2 -->
-    <?php if (Auth::can('customers', 'view') || Auth::can('suppliers', 'view')): ?>
-    <div class="sidebar-label">Parties</div>
+    </div>
+    </div>
+    <?php endif; ?>
+    <!-- Parties: Customers + Suppliers + Freight Forwarders; Party Master = All / Both -->
+    <?php
+        $showPartyMaster = Auth::can('parties', 'view') && !Auth::isSalesFloor();
+        $showCustomersList = Auth::can('customers', 'view') || Auth::can('parties', 'view');
+        // Party Master must not reveal suppliers — salesman often has parties but not suppliers.
+        $showSuppliersList = Auth::can('suppliers', 'view');
+        $showFreightForwardersList = $showSuppliersList;
+        $showSupplierContacts = Auth::can('supplier_contacts', 'view');
+
+        $isPartiesPage = ($page ?? '') === 'parties';
+        $partyListType = isset($_GET['type']) ? (string) $_GET['type'] : 'all';
+        $partyAction   = isset($_GET['action']) ? (string) $_GET['action'] : '';
+        $onPartyList   = $isPartiesPage && ($partyAction === '' || $partyAction === 'index');
+        $onPartyCreate = $isPartiesPage && $partyAction === 'create';
+
+        $customersActive = ($onPartyList || $onPartyCreate) && $partyListType === 'customer';
+        $suppliersActive = ($onPartyList || $onPartyCreate) && $partyListType === 'supplier';
+        $freightActive   = ($onPartyList || $onPartyCreate) && $partyListType === 'freight_forwarder';
+        $partyMasterActive = $isPartiesPage && !$customersActive && !$suppliersActive && !$freightActive;
+    ?>
+    <?php if ($showPartyMaster || $showCustomersList || $showSuppliersList || $showSupplierContacts): ?>
+    <div class="sidebar-group<?= $sgClass('parties', $navGroupOpen) ?>" data-group="parties">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('parties', $navGroupOpen) ?>">
+        <span>Parties</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
+    <?php if ($showCustomersList): ?>
     <div class="sidebar-link-wrap">
-        <a href="?page=parties" class="sidebar-link <?= ($page ?? '') === 'parties' ? 'active' : '' ?>">
+        <a href="?page=parties&type=customer" class="sidebar-link <?= $customersActive ? 'active' : '' ?>">
+            <i class="bi bi-person"></i> Customers
+        </a>
+        <?php if (Auth::canAny(['parties', 'customers'], 'add')): ?>
+        <a href="?page=parties&action=create&type=customer" class="quick-add-btn" title="New Customer">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($showSuppliersList): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=parties&type=supplier" class="sidebar-link <?= $suppliersActive ? 'active' : '' ?>">
+            <i class="bi bi-truck"></i> Suppliers
+        </a>
+        <?php if (Auth::can('suppliers', 'add')): ?>
+        <a href="?page=parties&action=create&type=supplier" class="quick-add-btn" title="New Supplier">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($showFreightForwardersList): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=parties&type=freight_forwarder" class="sidebar-link <?= $freightActive ? 'active' : '' ?>">
+            <i class="bi bi-boxes"></i> Freight Forwarders
+        </a>
+        <?php if (Auth::can('suppliers', 'add')): ?>
+        <a href="?page=parties&action=create&type=freight_forwarder" class="quick-add-btn" title="New Freight Forwarder">+</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($showPartyMaster): ?>
+    <div class="sidebar-link-wrap">
+        <a href="?page=parties" class="sidebar-link <?= $partyMasterActive ? 'active' : '' ?>">
             <i class="bi bi-people"></i> Party Master
         </a>
-        <?php if (Auth::can('customers', 'add') || Auth::can('suppliers', 'add')): ?>
+        <?php if (Auth::can('parties', 'add')): ?>
         <a href="?page=parties&action=create" class="quick-add-btn" title="New Party">+</a>
         <?php endif; ?>
     </div>
-    <?php if (Auth::can('supplier_contacts', 'view')): ?>
+    <?php endif; ?>
+    <?php if ($showSupplierContacts): ?>
     <div class="sidebar-link-wrap">
         <a href="?page=suppliercontacts" class="sidebar-link <?= ($page ?? '') === 'suppliercontacts' ? 'active' : '' ?>">
             <i class="bi bi-building"></i> Supplier Contacts
@@ -163,10 +318,44 @@
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    </div>
+    </div>
     <?php endif; ?>
 
-    <?php if (Auth::can('inventory', 'view')): ?>
-    <div class="sidebar-label">Inventory</div>
+    <?php if (Auth::can('employees', 'view')): ?>
+    <div class="sidebar-group<?= $sgClass('employees', $navGroupOpen) ?>" data-group="employees">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria() ?>">
+        <span>Employees</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
+    <div class="sidebar-link-wrap">
+        <a href="?page=employees" class="sidebar-link <?= ($page ?? '') === 'employees' ? 'active' : '' ?>">
+            <i class="bi bi-person-badge"></i> All Employees
+        </a>
+        <?php if (Auth::can('employees', 'add')): ?>
+        <a href="?page=employees&action=create" class="quick-add-btn" title="New Employee">+</a>
+        <?php endif; ?>
+    </div>
+    </div>
+    </div>
+    <?php endif; ?>
+
+    <?php
+        $canInventory = Auth::can('inventory', 'view');
+        $canStock     = Auth::canAny(['stock', 'inventory'], 'view');
+        $canMandoob   = Auth::can('mandoob_inventory', 'view');
+        $canImei      = Auth::can('imei', 'view');
+        $showInventorySection = $canInventory || $canStock || $canMandoob || $canImei || Auth::can('intershop', 'view');
+    ?>
+    <?php if ($showInventorySection): ?>
+    <div class="sidebar-group<?= $sgClass('inventory', $navGroupOpen) ?>" data-group="inventory">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('inventory', $navGroupOpen) ?>">
+        <span>Inventory</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
+    <?php if ($canInventory): ?>
     <div class="sidebar-link-wrap">
         <a href="?page=items" class="sidebar-link <?= ($page ?? '') === 'items' ? 'active' : '' ?>">
             <i class="bi bi-box-seam"></i> Items
@@ -178,70 +367,99 @@
     <a href="?page=categories" class="sidebar-link <?= ($page ?? '') === 'categories' ? 'active' : '' ?>">
         <i class="bi bi-tag"></i> Categories
     </a>
-    <?php if (Auth::can('stock', 'view')): ?>
-    <a href="?page=stock" class="sidebar-link <?= ($page ?? '') === 'stock' ? 'active' : '' ?>">
-        <i class="bi bi-clipboard-data"></i> Stock List
-    </a>
-    <?php endif; ?>
     <a href="?page=transfers" class="sidebar-link <?= ($page ?? '') === 'transfers' ? 'active' : '' ?>">
         <i class="bi bi-arrow-left-right"></i> Stock Transfers
     </a>
     <a href="?page=openingstock" class="sidebar-link <?= ($page ?? '') === 'openingstock' ? 'active' : '' ?>">
         <i class="bi bi-box-arrow-in-down"></i> Opening Stock
     </a>
-    <?php if (Auth::can('mandoob_inventory', 'view')): ?>
+    <?php endif; ?>
+    <?php if ($canStock): ?>
+    <a href="?page=stock" class="sidebar-link <?= ($page ?? '') === 'stock' ? 'active' : '' ?>">
+        <i class="bi bi-clipboard-data"></i> Stock List
+    </a>
+    <?php endif; ?>
+    <?php if (Auth::can('intershop', 'view')): ?>
+    <a href="?page=intershop" class="sidebar-link <?= ($page ?? '') === 'intershop' ? 'active' : '' ?>">
+        <i class="bi bi-shop-window"></i> Shop transfer
+    </a>
+    <?php endif; ?>
+    <?php if ($canMandoob): ?>
     <a href="?page=mandoob_inventory" class="sidebar-link <?= ($page ?? '') === 'mandoob_inventory' ? 'active' : '' ?>">
         <i class="bi bi-truck-front"></i> Mandoob Inventory
     </a>
     <?php endif; ?>
-    <?php if (Auth::isAdmin() || Auth::can('imei', 'view')): ?>
-    <a href="?page=imei&action=register" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'register' ? 'active' : '' ?>">
-        <i class="bi bi-upc-scan"></i> IMEI Scanner
-    </a>
-    <?php endif; ?>
+    <?php if ($canImei): ?>
     <a href="?page=imei&action=lifecycle" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'lifecycle' ? 'active' : '' ?>">
         <i class="bi bi-clock-history"></i> IMEI Lifecycle
     </a>
+    <?php endif; ?>
+    <?php if ($canImei || $canInventory): ?>
+    <a href="/imei" class="sidebar-link <?= ($page ?? '') === 'imeitrack' ? 'active' : '' ?>">
+        <i class="bi bi-shield-check"></i> IMEI Warranty Track
+    </a>
+    <?php endif; ?>
     <?php if (Auth::isAdmin()): ?>
     <a href="?page=imei&action=audit" class="sidebar-link <?= ($page ?? '') === 'imei' && ($_GET['action'] ?? '') === 'audit' ? 'active' : '' ?>">
         <i class="bi bi-clipboard-check"></i> Stock Audit
     </a>
     <?php endif; ?>
-    <a href="/imei" class="sidebar-link <?= ($page ?? '') === 'imeitrack' ? 'active' : '' ?>">
-        <i class="bi bi-shield-check"></i> IMEI Warranty Track
-    </a>
+    </div>
+    </div>
     <?php endif; ?>
 
-    <?php if (Auth::can('payments', 'view') || Auth::can('expenses', 'view') || Auth::can('settings', 'view')): ?>
-    <div class="sidebar-label">Finance</div>
-    <?php if (Auth::can('settings', 'view')): ?>
+    <?php if (Auth::canAny(['payments', 'expenses', 'settings', 'discounts', 'import_logistics'], 'view')): ?>
+    <div class="sidebar-group<?= $sgClass('finance', $navGroupOpen) ?>" data-group="finance">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('finance', $navGroupOpen) ?>">
+        <span>Finance</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
+    <?php if (Auth::canAny(['settings', 'payments', 'rpt_account_stmt'], 'view')): ?>
     <a href="?page=accounts" class="sidebar-link <?= ($page ?? '') === 'accounts' ? 'active' : '' ?>">
         <i class="bi bi-wallet2"></i> Accounts
     </a>
     <?php endif; ?>
+    <?php if (Auth::canAny(['import_logistics', 'purchases'], 'view')): ?>
     <a href="?page=landedcost" class="sidebar-link <?= ($page ?? '') === 'landedcost' ? 'active' : '' ?>">
         <i class="bi bi-globe2"></i> Import Logistics
     </a>
+    <?php endif; ?>
+    <?php if (Auth::canAny(['discounts', 'settings'], 'view')): ?>
     <div class="sidebar-link-wrap">
         <a href="?page=discounts" class="sidebar-link <?= ($page ?? '') === 'discounts' ? 'active' : '' ?>">
             <i class="bi bi-tag"></i> Discounts
         </a>
-        <?php if (Auth::can('settings', 'add')): ?>
+        <?php if (Auth::canAny(['discounts', 'settings'], 'add')): ?>
         <a href="?page=discounts&new=1" class="quick-add-btn" title="New Discount">+</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
+    </div>
+    </div>
+    <?php endif; ?>
 
-    <?php if (Auth::can('reports', 'view')): ?>
-    <div class="sidebar-label">Reports</div>
+    <?php if (Auth::hasAnyReportAccess()): ?>
+    <div class="sidebar-group<?= $sgClass('reports', $navGroupOpen) ?>" data-group="reports">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('reports', $navGroupOpen) ?>">
+        <span>Reports</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
     <a href="?page=reports" class="sidebar-link <?= ($page ?? '') === 'reports' ? 'active' : '' ?>">
         <i class="bi bi-bar-chart-line"></i> All Reports
     </a>
+    </div>
+    </div>
     <?php endif; ?>
 
-    <?php if (Auth::can('settings', 'view')): ?>
-    <div class="sidebar-label">Settings</div>
     <?php if (Auth::isAdmin()): ?>
+    <div class="sidebar-group<?= $sgClass('settings', $navGroupOpen) ?>" data-group="settings">
+    <button type="button" class="sidebar-group-toggle" aria-expanded="<?= $sgAria('settings', $navGroupOpen) ?>">
+        <span>Settings</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="sidebar-group-body">
     <a href="?page=warehouses" class="sidebar-link <?= ($page ?? '') === 'warehouses' ? 'active' : '' ?>">
         <i class="bi bi-building"></i> Warehouses
     </a>
@@ -254,58 +472,41 @@
     <a href="?page=settings" class="sidebar-link <?= ($page ?? '') === 'settings' ? 'active' : '' ?>">
         <i class="bi bi-gear"></i> Settings
     </a>
-    <?php endif; ?>
-    <?php endif; ?>
-
-    <!-- Logout at bottom -->
-    <div style="padding: 1.5rem;">
-        <form method="post" action="?page=logout&action=logout" class="m-0">
-            <?= Auth::csrfField() ?>
-            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
-                <i class="bi bi-box-arrow-right me-1"></i> Logout
-            </button>
-        </form>
     </div>
-</nav>
-
-<!-- Top Bar -->
-<div class="topbar">
-    <div class="d-flex align-items-center gap-3">
-        <!-- Mobile toggle -->
-        <button class="btn btn-sm d-md-none" id="sidebarToggle" style="color:var(--text-muted);background:transparent;border:none;">
-            <i class="bi bi-list fs-5"></i>
-        </button>
-
-        <!-- Global Search -->
-        <div class="search-box">
-            <i class="bi bi-search search-icon"></i>
-            <input type="text" id="globalSearch" placeholder="Search invoices, IMEI, parties..." autocomplete="off">
-            <div class="search-results" id="searchResults"></div>
-        </div>
     </div>
+    <?php endif; ?>
 
-    <div class="d-flex align-items-center gap-3">
-        <!-- Keyboard shortcuts hint -->
-        <div style="display:flex;align-items:center;gap:5px;font-size:0.72rem;color:#475569;" class="d-none d-lg-flex">
-            <span style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#818cf8;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+S</span>Sale
-            <span style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#34d399;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+P</span>Purchase
-            <span style="background:rgba(14,165,233,0.12);border:1px solid rgba(14,165,233,0.25);color:#38bdf8;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+A</span>Accounts
-            <span style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#fbbf24;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+E</span>Expense
-            <span style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);color:#60a5fa;border-radius:5px;padding:2px 6px;font-family:monospace;font-weight:700;">Alt+I/O</span>Payment
-        </div>
+    </div>
+    </nav>
 
-        <!-- Current Warehouse Badge -->
+    <div class="app-topbar-tools">
+        <!-- Current branch label (no switcher — Main is the only operational branch) -->
         <?php if (Auth::warehouseId()): ?>
         <div class="d-flex align-items-center gap-1" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:4px 10px;">
             <i class="bi bi-building" style="color:#10b981;font-size:0.8rem;"></i>
             <span style="color:#10b981;font-size:0.8rem;font-weight:600;"><?= htmlspecialchars(Auth::warehouseName()) ?></span>
-            <?php if (Auth::isAdmin()): ?>
+            <?php if (defined('WAREHOUSE_UI_SWITCHER') && WAREHOUSE_UI_SWITCHER && Auth::isAdmin()): ?>
             <a href="?page=warehouse&switch=1" title="Switch warehouse"
                style="color:#10b981;margin-left:4px;font-size:0.75rem;text-decoration:none;opacity:0.7;" >
                 <i class="bi bi-arrow-left-right"></i>
             </a>
             <?php endif; ?>
         </div>
+        <?php endif; ?>
+
+        <?php if (Auth::can('sales', 'view')): ?>
+        <a href="?page=orderrequests" id="topOrderReqBell" title="Order requests"
+           style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.28);color:#d97706;text-decoration:none;">
+            <i class="bi bi-bell"></i>
+            <span id="topOrderReqBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:800;padding:1px 5px;border-radius:10px;line-height:1.3;">0</span>
+        </a>
+        <?php endif; ?>
+        <?php if (Auth::isAdmin()): ?>
+        <a href="?page=saleedits" id="topSaleEditBell" title="Sale edit requests"
+           style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.28);color:#4f46e5;text-decoration:none;">
+            <i class="bi bi-unlock"></i>
+            <span id="topSaleEditBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:800;padding:1px 5px;border-radius:10px;line-height:1.3;">0</span>
+        </a>
         <?php endif; ?>
 
         <!-- Pricelist Toggle — only on stock page -->
@@ -351,7 +552,7 @@
                     </div>
                 </li>
                 <li><hr class="dropdown-divider" style="border-color:var(--border-color);"></li>
-                <?php if (Auth::isAdmin()): ?>
+                <?php if (defined('WAREHOUSE_UI_SWITCHER') && WAREHOUSE_UI_SWITCHER && Auth::isAdmin()): ?>
                 <li>
                     <a class="dropdown-item" href="?page=warehouse&switch=1">
                         <i class="bi bi-building me-2"></i>Switch Warehouse
@@ -369,7 +570,7 @@
             </ul>
         </div>
     </div>
-</div>
+</header>
 
 <!-- Flash Message -->
 <?php $flash = BaseController::getFlash(); if ($flash): ?>
@@ -395,13 +596,14 @@
 <?php if (isset($page) && in_array($page, $dtPages ?? []) && empty($skipListAssets)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.21/js/jquery.dataTables.min.js"></script>
 <?php endif; ?>
-<?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchaseorders']) && empty($skipListAssets)): ?>
+<?php if (isset($page) && in_array($page, ['sales', 'payments', 'purchases', 'purchaseorders', 'returns']) && empty($skipListAssets)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/js/select2.min.js"></script>
 <?php endif; ?>
-<?php if (isset($page) && in_array($page, ['reports', 'dashboard'])): ?>
+<?php if (!empty($loadChartJs) || ($page ?? '') === 'dashboard'): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <?php endif; ?>
 <script src="assets/js/app.js?v=<?= htmlspecialchars(ASSETS_VER) ?>"></script>
+<script src="assets/js/imei-format.js?v=<?= htmlspecialchars(ASSETS_VER) ?>"></script>
 
 <?php if (isset($extraJs)): ?>
 <?php
@@ -537,22 +739,41 @@ document.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
 
+    function replayAfterPin() {
+        _pinVerified = true;
+        try { el.click(); } catch (err) {}
+    }
+
     if (el.tagName === 'A') {
-        requirePin(function() { window.location = el.href; });
+        var rawHref = (el.getAttribute('href') || '').trim();
+        var dest = el.href || rawHref;
+        var isPlaceholder = !rawHref || rawHref === '#' || rawHref.toLowerCase().indexOf('javascript:') === 0;
+        requirePin(function() {
+            if (!isPlaceholder && dest) {
+                window.location.href = dest;
+                return;
+            }
+            replayAfterPin();
+        });
         return;
     }
 
     if (el.tagName === 'BUTTON' && el.type === 'submit') {
-        var form = el.closest('form');
+        var form = el.form || el.closest('form');
         if (form) {
-            var isCancel = form.action && form.action.indexOf('cancel') !== -1;
+            var confirmMsg = el.getAttribute('data-confirm') || '';
+            if (!confirmMsg && form.action && form.action.indexOf('cancel') !== -1) {
+                confirmMsg = 'Are you sure you want to cancel this?';
+            }
             requirePin(function() {
-                if (isCancel && !confirm('Are you sure you want to cancel this?')) return;
+                if (confirmMsg && !confirm(confirmMsg)) return;
                 form.submit();
             });
+            return;
         }
-        return;
     }
+
+    requirePin(replayAfterPin);
 }, true);
 
 // ── Pricelist Toggle (stock page only) ──
@@ -624,6 +845,26 @@ fetch('?page=settings&action=pricelistStatus')
         }
     });
 <?php endif; // stock page only ?>
+</script>
+<script>
+(function () {
+    window.iqbalLibsReady = true;
+    var q = window.iqbalReadyQueue || [];
+    window.iqbalReadyQueue = [];
+    for (var i = 0; i < q.length; i++) {
+        try { q[i](); } catch (e) {}
+    }
+    function reveal() {
+        if (typeof window.iqbalReveal === 'function') window.iqbalReveal();
+        else document.documentElement.classList.remove('iq-boot');
+    }
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(reveal);
+        setTimeout(reveal, 150);
+    } else {
+        reveal();
+    }
+})();
 </script>
 
 </body>

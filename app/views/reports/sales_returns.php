@@ -1,8 +1,11 @@
 <!-- Sales Returns Report -->
 <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <div>
-        <h1 class="page-title">Sales Returns Report</h1>
-        <p class="page-subtitle">All sale returns by date range, customer, or reference</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Sales Returns Report</h1>
+            <p class="page-subtitle">All sale returns by date range, customer, or reference</p>
+        </div>
     </div>
     <?php if (!empty($returns)):
         $salesReturnsPrintUrl = '?page=reports&action=salesReturnsPrint'
@@ -116,7 +119,7 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($ret['date'])) ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;white-space:nowrap;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.78rem;white-space:nowrap;">
                         <a href="?page=returns&action=detail&id=<?= $ret['id'] ?>" style="color:#0e7490;font-weight:700;text-decoration:none;">
                             <?= htmlspecialchars($ret['return_no']) ?>
                         </a>
@@ -124,7 +127,7 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#1e293b;font-weight:600;">
                         <?= htmlspecialchars($ret['party_name']) ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#6366f1;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.78rem;color:#6366f1;">
                         <?= $ret['original_invoice'] ? htmlspecialchars($ret['original_invoice']) : '<span style="color:#cbd5e1;">—</span>' ?>
                     </td>
                     <td class="sr-items-cell" style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:0.8rem;">

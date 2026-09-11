@@ -37,7 +37,7 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
-    <title>Warranty Check &middot; Iqbal Electronics Co. WLL</title>
+    <title>Warranty Check &middot; Iqbal Electronics Co. LLC</title>
     <link rel="apple-touch-icon" href="/assets/pwa/apps/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/apps/icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/assets/pwa/apps/icons/icon-512.png">
@@ -303,7 +303,7 @@ $accent = !empty($isExpired) ? '#dc2626' : '#16a34a';
                 <div class="brand-row">
                     <div class="brand-badge"><i class="bi bi-shield-check"></i></div>
                     <div>
-                        <div class="brand-name">Iqbal Electronics Co. WLL</div>
+                        <div class="brand-name">Iqbal Electronics Co. LLC</div>
                     </div>
                 </div>
                 <h1 class="head-title">Warranty Check</h1>

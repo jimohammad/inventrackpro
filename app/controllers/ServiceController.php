@@ -148,9 +148,10 @@ class ServiceController extends BaseController {
 
         $whId  = Auth::warehouseId();
         $filters = [
-            'search' => $this->input('search', '', 'get'),
-            'status' => $this->input('status', '', 'get'),
-            'stage'  => $this->input('stage', '', 'get'),
+            'search'  => $this->input('search', '', 'get'),
+            'status'  => $this->input('status', '', 'get'),
+            'stage'   => $this->input('stage', '', 'get'),
+            'overdue' => $this->input('overdue', '', 'get') === '1' ? '1' : '',
         ];
 
         $where  = 'WHERE sr.warehouse_id = ?';
@@ -169,13 +170,19 @@ class ServiceController extends BaseController {
             $where .= ' AND sr.device_stage = ?';
             $params[] = (int)$filters['stage'];
         }
+        if ($filters['overdue'] === '1') {
+            $where .= " AND sr.status IN ('Pending', 'In Progress')
+                        AND COALESCE(sr.received_date, DATE(sr.created_at)) <= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        }
 
         $records = $this->db->fetchAll(
             "SELECT sr.*, p.name as party_name
              FROM service_records sr
              LEFT JOIN parties p ON p.id = sr.party_id
              $where
-             ORDER BY sr.id DESC
+             ORDER BY " . ($filters['overdue'] === '1'
+                ? 'COALESCE(sr.received_date, DATE(sr.created_at)) ASC, sr.id ASC'
+                : 'sr.id DESC') . "
              LIMIT 500",
             $params
         );
@@ -192,7 +199,9 @@ class ServiceController extends BaseController {
                 SUM(status = 'Fixed & Delivered') as fixed_delivered,
                 SUM(status = 'Replaced & Delivered') as replaced_delivered,
                 SUM(status = 'No Repair & Delivered') as no_repair_delivered,
-                SUM(device_stage = 4) as delivered
+                SUM(device_stage = 4) as delivered,
+                SUM(status IN ('Pending', 'In Progress')
+                    AND COALESCE(received_date, DATE(created_at)) <= DATE_SUB(CURDATE(), INTERVAL 7 DAY)) as overdue
              FROM service_records WHERE warehouse_id = ?",
             [$whId]
         );

@@ -13,20 +13,19 @@
         <?= $isIn ? 'Payment In' : 'Payment Out' ?>
     </span>
     <div class="ms-auto d-flex flex-wrap gap-2 justify-content-end align-items-center" style="row-gap:8px;">
-        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
-        <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1&thermal=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-success">
+        <a href="?page=payments&action=thermalPrint&id=<?= $payment['id'] ?>&thermal=1&autoprint=1" class="btn btn-sm btn-outline-success">
             <i class="bi bi-receipt me-1"></i> Thermal
         </a>
-        <?php if (Auth::can($paymentsPermModule, 'edit')): ?>
+        <?php if (Auth::isAdmin() && ($payment['ref_type'] ?? '') !== 'purchase_order' && ($payment['ref_type'] ?? '') !== 'discount'): ?>
         <a href="?page=payments&action=edit&id=<?= $payment['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
         <?php endif; ?>
-        <?php if (Auth::can($paymentsPermModule, 'delete') && ($payment['ref_type'] ?? '') !== 'discount'): ?>
-        <form method="POST" action="?page=payments&action=delete" style="display:inline;"
-              onsubmit="return confirm('Delete this payment permanently? Account and invoice balances will be reversed.');">
+        <?php if (Auth::can($paymentsPermModule, 'delete') && ($payment['ref_type'] ?? '') !== 'discount' && ($payment['ref_type'] ?? '') !== 'purchase_order'): ?>
+        <form method="POST" action="?page=payments&action=delete" class="js-payment-delete-detail" style="display:inline;">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="id" value="<?= (int)$payment['id'] ?>">
             <button type="submit" class="btn btn-sm btn-outline-danger pin-protect">
@@ -115,3 +114,12 @@
 
     </div>
 </div>
+<script>
+document.querySelectorAll('form.js-payment-delete-detail').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+        if (!confirm('Delete this payment permanently? Account and invoice balances will be reversed.')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>

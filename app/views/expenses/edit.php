@@ -1,6 +1,10 @@
 <!-- Edit Expense -->
+<?php
+    $accountsReturnUrl = $accountsReturnUrl ?? '';
+    $cancelUrl = $accountsReturnUrl !== '' ? $accountsReturnUrl : '?page=expenses';
+?>
 <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="?page=expenses" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <a href="<?= htmlspecialchars($cancelUrl) ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0">Edit: <?= htmlspecialchars($expense['expense_no']) ?></h1>
 </div>
 
@@ -9,6 +13,9 @@
         <form method="POST" action="?page=expenses&action=update">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="id" value="<?= $expense['id'] ?>">
+            <?php if (!empty($returnAccountId)): ?>
+            <input type="hidden" name="return_account_id" value="<?= (int)$returnAccountId ?>">
+            <?php endif; ?>
 
             <div class="row g-3">
                 <div class="col-md-6">
@@ -32,9 +39,21 @@
                 </div>
 
                 <div class="col-md-6">
-                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Date <span class="text-danger">*</span></label>
-                    <input type="date" name="date" class="form-control form-control-sm" required
-                           value="<?= htmlspecialchars($expense['date'] ?? '') ?>">
+                    <label class="form-label" style="font-weight:600;font-size:0.82rem;">Date &amp; Time <span class="text-danger">*</span></label>
+                    <?php
+                        $editTime = '';
+                        if (!empty($expense['created_at']) && strtotime((string) $expense['created_at'])) {
+                            $editTime = date('H:i', strtotime((string) $expense['created_at']));
+                        } else {
+                            $editTime = date('H:i');
+                        }
+                    ?>
+                    <div class="d-flex gap-2">
+                        <input type="date" name="date" class="form-control form-control-sm" required
+                               value="<?= htmlspecialchars(substr((string) ($expense['date'] ?? ''), 0, 10)) ?>">
+                        <input type="time" name="time" class="form-control form-control-sm" required
+                               value="<?= htmlspecialchars($editTime) ?>">
+                    </div>
                 </div>
 
                 <div class="col-md-6">
@@ -57,7 +76,7 @@
             </div>
 
             <div class="d-flex gap-2 mt-4 justify-content-end">
-                <a href="?page=expenses" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                <a href="<?= htmlspecialchars($cancelUrl) ?>" class="btn btn-outline-secondary btn-sm">Cancel</a>
                 <button type="submit" class="btn btn-primary btn-sm pin-protect">
                     <i class="bi bi-check-lg me-1"></i> Save Changes
                 </button>

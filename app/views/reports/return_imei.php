@@ -1,0 +1,241 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Customer Return IMEI</h1>
+            <p class="page-subtitle">IMEIs on sale return invoices for a customer, grouped by return &amp; item</p>
+        </div>
+    </div>
+    <?php if (!empty($records)):
+        $retPrintQs = 'party_id=' . (int) $partyId
+            . '&from_date=' . urlencode((string) $fromDate)
+            . '&to_date=' . urlencode((string) $toDate);
+        if (!empty($itemId)) {
+            $retPrintQs .= '&item_id=' . (int) $itemId;
+        }
+        if (!empty($returnNo)) {
+            $retPrintQs .= '&return_no=' . urlencode((string) $returnNo);
+        }
+        $retPrintUrl  = '?page=reports&action=returnImeiPrint&' . $retPrintQs;
+        $retExportUrl = '?page=reports&action=returnImeiExport&' . $retPrintQs;
+    ?>
+    <div class="d-flex gap-2">
+        <a href="<?= htmlspecialchars($retExportUrl) ?>" class="btn btn-success btn-sm">
+            <i class="bi bi-file-earmark-excel me-1"></i> Excel
+        </a>
+        <a href="<?= htmlspecialchars($retPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+        </a>
+        <a href="<?= htmlspecialchars($retPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-printer me-1"></i> Print
+        </a>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- Filters -->
+<div class="card mb-3 no-print" style="border:none;">
+    <div class="card-body py-2 th-blue-card">
+        <form method="GET" class="row g-2 align-items-end">
+            <input type="hidden" name="page" value="reports">
+            <input type="hidden" name="action" value="returnImei">
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Customer</label>
+                <select name="party_id" class="form-select form-select-sm" required>
+                    <option value="">-- Select Customer --</option>
+                    <?php foreach ($customers as $c): ?>
+                    <option value="<?= $c['id'] ?>" <?= $partyId == $c['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($c['name']) ?> <?= $c['phone'] ? "({$c['phone']})" : '' ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Item</label>
+                <select name="item_id" class="form-select form-select-sm">
+                    <option value="">-- All Items --</option>
+                    <?php foreach ($items as $it): ?>
+                    <option value="<?= $it['id'] ?>" <?= $itemId == $it['id'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($it['name']) ?>
+                        <?php if ($it['sku']): ?>(<?= htmlspecialchars((string) $it['sku']) ?>)<?php endif; ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">From Date</label>
+                <input type="date" name="from_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $fromDate) ?>">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">To Date</label>
+                <input type="date" name="to_date" class="form-control form-control-sm" value="<?= htmlspecialchars((string) $toDate) ?>">
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label mb-1" style="font-size:0.8rem;font-weight:600;">Return No</label>
+                <input type="text" name="return_no" class="form-control form-control-sm"
+                       value="<?= htmlspecialchars((string) ($returnNo ?? '')) ?>"
+                       placeholder="e.g. RET-000045">
+            </div>
+            <div class="col-12 col-md-2">
+                <div class="d-flex gap-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">Generate</button>
+                    <a href="?page=reports&action=returnImei" class="btn btn-outline-secondary btn-sm">Clear</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<?php if ($partyId && !empty($records)): ?>
+<?php
+    $party = $records[0];
+
+    // Group: Return -> Item -> IMEIs
+    $grouped = [];
+    foreach ($records as $r) {
+        $retKey  = $r['return_no'];
+        $itemKey = $r['item_name'];
+        if (!isset($grouped[$retKey])) {
+            $grouped[$retKey] = [
+                'return_no' => $r['return_no'],
+                'return_id' => $r['return_id'],
+                'date'      => $r['date'],
+                'items'     => [],
+                'count'     => 0,
+            ];
+        }
+        if (!isset($grouped[$retKey]['items'][$itemKey])) {
+            $grouped[$retKey]['items'][$itemKey] = [
+                'item_name' => $r['item_name'],
+                'brand'     => $r['brand'],
+                'model'     => $r['model'],
+                'imeis'     => [],
+            ];
+        }
+        $grouped[$retKey]['items'][$itemKey]['imeis'][] = $r;
+        $grouped[$retKey]['count']++;
+    }
+    $totalImei    = count($records);
+    $totalReturns = count($grouped);
+?>
+
+<!-- Customer Info -->
+<div class="card mb-3 customer-info-card">
+    <div class="card-body py-2">
+        <table style="width:100%;font-size:0.85rem;">
+            <tr>
+                <td>Customer Name: <strong><?= htmlspecialchars($party['party_name']) ?></strong>
+                    <?php if ($party['party_code']): ?>
+                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#dc2626;font-size:0.7rem;margin-left:4px;"><?= htmlspecialchars((string) $party['party_code']) ?></span>
+                    <?php endif; ?>
+                </td>
+                <td><?= htmlspecialchars((string) ($party['party_phone'] ?? '')) ?></td>
+                <td>
+                    <?= $fromDate ? date('d M Y', strtotime($fromDate)) : 'All time' ?><?= $toDate ? ' — ' . date('d M Y', strtotime($toDate)) : '' ?>
+                    <?php if (!empty($itemId)): ?>
+                    <?php
+                        $selectedItem = null;
+                        foreach ($items as $it) {
+                            if ((int) $it['id'] === (int) $itemId) {
+                                $selectedItem = $it;
+                                break;
+                            }
+                        }
+                    ?>
+                    <?php if ($selectedItem): ?>
+                    <span class="badge ms-1" style="background:rgba(16,185,129,0.15);color:#059669;font-size:0.7rem;"><?= htmlspecialchars($selectedItem['name']) ?></span>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($returnNo)): ?>
+                    <span class="badge ms-1" style="background:rgba(239,68,68,0.15);color:#dc2626;font-size:0.7rem;"><?= htmlspecialchars($returnNo) ?></span>
+                    <?php endif; ?>
+                </td>
+                <td class="text-end">
+                    <strong><?= $totalImei ?></strong> IMEI<?= $totalImei > 1 ? 's' : '' ?> /
+                    <strong><?= $totalReturns ?></strong> return<?= $totalReturns > 1 ? 's' : '' ?>
+                </td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<!-- Grouped by Return then by Item -->
+<?php $globalNum = 1; ?>
+<?php foreach ($grouped as $ret): ?>
+<div class="card mb-3 invoice-group">
+    <div class="card-header inv-header" style="background:rgba(239,68,68,0.08);border-bottom:2px solid rgba(239,68,68,0.2);padding:8px 14px;">
+        <div class="d-flex justify-content-between align-items-center">
+            <a href="?page=returns&action=detail&id=<?= (int) $ret['return_id'] ?>" style="color:#dc2626;font-weight:700;text-decoration:none;font-size:0.9rem;" class="inv-link">
+                Return Number: <?= htmlspecialchars($ret['return_no']) ?>
+            </a>
+            <div class="d-flex align-items-center gap-2">
+                <span class="date-badge" style="background:#fee2e2;color:#b91c1c;padding:3px 10px;border-radius:5px;font-size:0.75rem;font-weight:600;">
+                    <?= date('d M Y', strtotime($ret['date'])) ?>
+                </span>
+                <span class="count-badge" style="background:rgba(239,68,68,0.12);color:#dc2626;padding:3px 10px;border-radius:5px;font-size:0.75rem;font-weight:600;">
+                    <?= $ret['count'] ?> pcs
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+    <?php foreach ($ret['items'] as $item): ?>
+        <div class="item-header" style="padding:6px 14px;background:rgba(239,68,68,0.04);border-bottom:1px solid var(--border-color);font-size:0.82rem;">
+            <strong><?= htmlspecialchars($item['item_name']) ?></strong>
+            <?php if ($item['brand'] || $item['model']): ?>
+            <small class="text-muted ms-1"><?= htmlspecialchars(trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''))) ?></small>
+            <?php endif; ?>
+            <span class="text-muted" style="float:right;font-size:0.75rem;"><?= count($item['imeis']) ?> pcs</span>
+        </div>
+        <table class="table mb-0" style="font-size:0.82rem;">
+            <thead>
+                <tr style="background:#f8fafc;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.3px;color:#64748b;">
+                    <th style="width:36px;padding:4px 8px;font-weight:700;">#</th>
+                    <th style="padding:4px 8px;font-weight:700;">IMEI</th>
+                    <th style="padding:4px 8px;font-weight:700;">IMEI 2</th>
+                    <th style="padding:4px 8px;font-weight:700;">Orig. Invoice</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($item['imeis'] as $r): ?>
+                <tr>
+                    <td style="width:36px;color:var(--text-muted);font-size:0.75rem;text-align:center;"><?= $globalNum++ ?></td>
+                    <td style="font-family:'Courier New',monospace;font-weight:600;letter-spacing:0.5px;"><?= htmlspecialchars($r['imei']) ?></td>
+                    <td style="font-family:'Courier New',monospace;color:var(--text-muted);"><?= htmlspecialchars($r['imei2'] ?: '—') ?></td>
+                    <td style="font-size:0.78rem;">
+                        <?php if (!empty($r['original_invoice']) && !empty($r['original_sale_id'])): ?>
+                        <a href="?page=sales&action=detail&id=<?= (int) $r['original_sale_id'] ?>" style="color:#6366f1;text-decoration:none;">
+                            <?= htmlspecialchars((string) $r['original_invoice']) ?>
+                        </a>
+                        <?php elseif (!empty($r['original_invoice'])): ?>
+                        <?= htmlspecialchars((string) $r['original_invoice']) ?>
+                        <?php else: ?>
+                        <span style="color:#cbd5e1;">—</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endforeach; ?>
+    </div>
+</div>
+<?php endforeach; ?>
+
+<!-- Summary -->
+<div class="card summary-card">
+    <div class="card-body py-2 text-center" style="background:rgba(239,68,68,0.06);font-size:0.85rem;">
+        Total: <strong style="color:#dc2626;"><?= $totalImei ?></strong> IMEI<?= $totalImei > 1 ? 's' : '' ?>
+        across <strong style="color:#dc2626;"><?= $totalReturns ?></strong> return<?= $totalReturns > 1 ? 's' : '' ?>
+    </div>
+</div>
+
+<?php elseif ($partyId && empty($records)): ?>
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-inbox" style="font-size:2.5rem;color:#cbd5e1;"></i>
+        <p class="mt-3 text-muted">No return IMEI records found for this customer with the selected filters.</p>
+    </div>
+</div>
+<?php endif; ?>

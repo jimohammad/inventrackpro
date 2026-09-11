@@ -31,4 +31,4 @@
         </table>
     </div>
 </div>
-<script>$(document).ready(() => { $('#transfersTable').DataTable({ pageLength:25, order:[[1,'desc']] }); });</script>
+<script>window.iqbalWhenIdle(function () { if (typeof jQuery === 'undefined' || !jQuery.fn || !jQuery.fn.DataTable || jQuery.fn.DataTable.isDataTable('#transfersTable')) return; jQuery('#transfersTable').DataTable({ pageLength:25, order:[[1,'desc']], deferRender:true }); });</script>

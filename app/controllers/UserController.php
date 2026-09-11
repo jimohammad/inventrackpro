@@ -123,18 +123,8 @@ class UserController extends BaseController {
 
         // Refresh session permissions if editing self
         if ((int) $id === (int) Auth::id()) {
-            $perms = $db->fetchAll("SELECT * FROM permissions WHERE user_id = ?", [$id]);
-            $permMap = [];
-            foreach ($perms as $p) {
-                $permMap[$p['module']] = [
-                    'view'   => (bool) $p['can_view'],
-                    'add'    => (bool) $p['can_add'],
-                    'edit'   => (bool) $p['can_edit'],
-                    'delete' => (bool) $p['can_delete'],
-                ];
-            }
-            $_SESSION['permissions'] = $permMap;
-            $_SESSION['user_role']   = $role;
+            Auth::loadPermissionsIntoSession($id);
+            $_SESSION['user_role'] = $role;
         }
 
         $this->flash('success', 'User updated successfully.');
@@ -183,13 +173,13 @@ class UserController extends BaseController {
 
         $perms   = $_POST['perms'] ?? [];
         $modules = [
-            'dashboard', 'sales', 'purchases', 'returns', 'inventory', 'stock', 'payments', 'expenses',
-            'customers', 'suppliers', 'reports', 'imei', 'service', 'warranty', 'supplier_contacts',
-            'mandoob_inventory', 'settings',
+            'dashboard', 'sales', 'purchases', 'returns', 'inventory', 'stock', 'intershop', 'payments', 'payments_out',
+            'expenses', 'parties', 'customers', 'suppliers', 'discounts', 'import_logistics', 'reports',
+            'imei', 'service', 'warranty', 'dumps', 'supplier_contacts', 'mandoob_inventory', 'employees', 'settings',
             'rpt_daybook', 'rpt_sales', 'rpt_profit', 'rpt_stock', 'rpt_payments', 'rpt_party', 'rpt_item_sales',
             'rpt_customer_purchases', 'rpt_reconciliation', 'rpt_account_stmt', 'rpt_expenses', 'rpt_sales_returns',
-            'rpt_supplier_stmt', 'rpt_purchase_orders', 'rpt_balance_sheet', 'rpt_customer_imei', 'rpt_purchase_imei',
-            'rpt_partner_profit',
+            'rpt_supplier_stmt', 'rpt_purchase_orders', 'rpt_balance_sheet', 'rpt_customer_imei', 'rpt_return_imei',
+            'rpt_purchase_imei', 'rpt_partner_profit', 'rpt_bank_kyc',
         ];
 
         foreach ($modules as $mod) {

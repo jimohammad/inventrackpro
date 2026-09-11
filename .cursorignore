@@ -1,0 +1,56 @@
+﻿# === Cursor speed (max) — do not index ===
+.git/
+.idea/
+.vs/
+.vscode/
+.claude/
+.foundry/
+node_modules/
+graphify-out/
+.graphify_python
+.graphify_python (1)
+launch-your-agent/
+
+# Duplicate app forks (live copies; edit root app/ only unless asked)
+wf/
+wh2/
+
+# One-off diagnostics / local scripts
+tools/
+scripts/
+cron/
+
+# Heavy / generated / static vendor (CDN used for most UI)
+assets/vendor/
+assets/uploads/
+assets/pwa/**/icons/
+assets/img/
+imei/
+
+# DB dumps / large schema noise (migrations rarely needed in chat)
+database/migrations/
+database/*.sql
+database/*.md
+
+# Docs noise (keep domain rules via explicit open; still ignore bulk)
+APP_MAP.md
+BUSINESS_RULES.md
+CHANGELOG_AI.md
+CLAUDE.md
+
+# Logs / temp
+*.log
+error_log
+php_errors.log
+**/error_log
+*.cache
+*.tmp
+*.bak
+*.old
+*.swp
+*~
+
+# Package lock leftovers
+package.json
+package-lock.json
+composer.lock

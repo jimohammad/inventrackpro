@@ -24,6 +24,12 @@ class ListPage {
         return $start->modify('-' . ($months - 1) . ' months')->format('Y-m-d');
     }
 
+    /** Inclusive last N calendar days through today (3 = today, yesterday, and the day before). */
+    public static function defaultFromDateDays(int $days = 3): string {
+        $days = max(1, $days);
+        return (new DateTimeImmutable('today'))->modify('-' . ($days - 1) . ' days')->format('Y-m-d');
+    }
+
     public static function defaultToDate(): string {
         return date('Y-m-d');
     }
@@ -31,15 +37,20 @@ class ListPage {
     /**
      * Resolve from/to dates for sales, payments, purchases list pages.
      *
-     * - First visit (no from_date / to_date in query): current calendar month(s) through today.
+     * - First visit (no from_date / to_date in query): current calendar month(s) through today,
+     *   or last N days when $defaultDays is set.
      * - all_dates=1: no date filter (still capped at MAX_ROWS).
      * - Filter form with both dates empty: treated as all_dates.
      *
      * @param int $defaultMonths Number of calendar months to include (1 = current month only).
+     * @param int|null $defaultDays If set, first visit uses last N calendar days through today.
      * @return array{from_date:string,to_date:string,all_dates:bool,dates_defaulted:bool}
      */
-    public static function resolveDateFiltersFromGet(int $defaultMonths = 1): array {
+    public static function resolveDateFiltersFromGet(int $defaultMonths = 1, ?int $defaultDays = null): array {
         $defaultMonths = max(1, $defaultMonths);
+        $defaultFrom = $defaultDays !== null
+            ? self::defaultFromDateDays($defaultDays)
+            : self::defaultFromDate($defaultMonths);
         $get      = $_GET;
         $allDates = isset($get['all_dates']) && (string) $get['all_dates'] === '1';
 
@@ -57,7 +68,7 @@ class ListPage {
 
         if (!$fromExplicit && !$toExplicit) {
             return [
-                'from_date'       => self::defaultFromDate($defaultMonths),
+                'from_date'       => $defaultFrom,
                 'to_date'         => self::defaultToDate(),
                 'all_dates'       => false,
                 'dates_defaulted' => true,
@@ -80,7 +91,7 @@ class ListPage {
             $to = self::defaultToDate();
         }
         if ($from === '') {
-            $from = self::defaultFromDate($defaultMonths);
+            $from = $defaultFrom;
         }
 
         return [

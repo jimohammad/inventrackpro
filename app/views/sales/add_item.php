@@ -16,9 +16,10 @@ $skipListAssets = true;
 
 .ai-card { background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;overflow:visible; }
 .ai-card-head { padding:11px 18px;background:linear-gradient(135deg,#f8faff,#f0f4ff);border-bottom:1px solid #e0e7ff;font-size:.78rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center; }
-.ai-tbl { width:100%;border-collapse:collapse;font-size:.84rem; }
-.ai-tbl th { padding:9px 10px;font-size:.7rem;font-weight:700;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:left; }
-.ai-tbl td { padding:5px 6px;border-bottom:1px solid #cbd5e1;vertical-align:middle; }
+.ai-tbl { width:100%;border-collapse:collapse;border-spacing:0;font-size:.84rem; }
+.ai-tbl th, .ai-tbl td { border:none; }
+.ai-tbl th { padding:9px 10px;font-size:.7rem;font-weight:700;color:#64748b;background:#f8fafc;text-align:left; }
+.ai-tbl td { padding:8px 6px;vertical-align:middle; }
 .ai-tbl tr:hover { background:#f8faff; }
 .ai-tbl input, .ai-tbl select { width:100%;padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:.83rem;background:#fafbff;color:#1e293b;outline:none; }
 .ai-tbl input:focus { border-color:#6366f1;background:#fff; }
@@ -33,12 +34,14 @@ $skipListAssets = true;
 .ai-imei-btn:hover { background:linear-gradient(135deg,#e0e7ff,#c7d2fe); }
 .ai-imei-btn.has-imei { background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-color:#6ee7b7;color:#059669; }
 
-.ai-actions { display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#f8fafc;border-top:1px solid #e0e7ff; }
+.ai-actions { display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#f8fafc; }
 .ai-totals { font-size:.92rem; }
 .ai-totals .lbl { color:var(--text-muted); }
 .ai-totals .val { font-weight:800;color:#4338ca;margin-left:6px; }
 .ai-btn-cancel { padding:8px 18px;background:transparent;border:1.5px solid #e2e8f0;color:var(--text-muted);border-radius:8px;text-decoration:none;font-size:.85rem; }
 .ai-btn-save { padding:8px 22px;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(59,130,246,.4); }
+.ai-btn-save:disabled { opacity:.5;cursor:not-allowed;box-shadow:none; }
+.ai-credit-warn { margin:0 0 12px;padding:10px 14px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:.8rem;font-weight:600;display:none; }
 
 /* Item search dropdown */
 .ai-drop { position:absolute;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:280px;overflow-y:auto;min-width:380px; }
@@ -78,10 +81,14 @@ $skipListAssets = true;
 
     <div class="ai-info">
         <span><b>Customer:</b> <?= htmlspecialchars($sale['party_name']) ?></span>
+        <?php if (Party::isRetailCustomer($partyCustomerKind ?? null)): ?>
+        <span><b>Retail:</b> +0.500 under 40 KWD, +1.000 at 40 KWD+ — you can increase</span>
+        <?php endif; ?>
         <span><b>Warehouse:</b> <?= htmlspecialchars($sale['warehouse_name'] ?? '—') ?></span>
         <span><b>Date:</b> <?= date('d M Y', strtotime($sale['date'])) ?></span>
         <span><b>Current Total:</b> <?= APP_CURRENCY ?> <?= number_format($sale['grand_total'], DECIMAL_PLACES) ?></span>
     </div>
+    <div class="ai-credit-warn" id="aiCreditWarn"></div>
 
     <form method="POST" action="?page=sales&action=addItemStore" id="addItemForm">
         <?= Auth::csrfField() ?>
@@ -138,7 +145,7 @@ $skipListAssets = true;
             <span id="imeiCount" style="font-size:.8rem;"></span>
         </div>
         <div class="imei-input-row">
-            <input type="text" id="imeiScanInput" placeholder="Scan or type IMEI..." maxlength="18"
+            <input type="text" id="imeiScanInput" placeholder="Scan or type IMEI / tablet serial..." maxlength="20"
                    oninput="autoTriggerImei()" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmImei();}">
             <button type="button" class="imei-confirm-btn" onclick="confirmImei()"><i class="bi bi-check-lg"></i></button>
             <button type="button" class="imei-paste-btn" onclick="togglePasteMode()"><i class="bi bi-clipboard-plus"></i> Paste</button>
@@ -168,6 +175,19 @@ var imeiData     = {};
 var currentImeiRow = null;
 var activeImeis  = [];
 var currentItemName = '';
+var partyCreditLimit = <?= json_encode((float)($partyCreditLimit ?? 0)) ?>;
+var partyOutstanding = <?= json_encode((float)($partyOutstanding ?? 0)) ?>;
+var partyCustomerKind = <?= json_encode((string)($partyCustomerKind ?? 'wholesale')) ?>;
+const RETAIL_TIER_KWD = 40;
+const RETAIL_MARKUP_LOW = 0.5;
+const RETAIL_MARKUP_HIGH = 1;
+function isRetailCustomer() {
+    return String(partyCustomerKind || '') === 'retail';
+}
+function retailMarkupFromCatalog(catalog) {
+    return (parseFloat(catalog) || 0) >= RETAIL_TIER_KWD ? RETAIL_MARKUP_HIGH : RETAIL_MARKUP_LOW;
+}
+var addItemCurrency = <?= json_encode(defined('APP_CURRENCY') ? APP_CURRENCY : 'KWD') ?>;
 window.rowItemNameMap = {};
 window.rowCategoryMap = {};
 
@@ -186,7 +206,6 @@ function addRow() {
             '<input type="text" class="ai-item-search" placeholder="Search item..." data-row="' + rid + '" autocomplete="off" oninput="searchItem(this,\'' + rid + '\')">' +
             '<input type="hidden" name="items[' + rowCount + '][item_id]" id="itemId_' + rid + '">' +
             '<input type="hidden" name="items[' + rowCount + '][has_imei]" id="hasImei_' + rid + '" value="0">' +
-            '<input type="hidden" name="items[' + rowCount + '][imei_optional]" id="imeiOpt_' + rid + '" value="0">' +
             '<div class="ai-drop" id="drop_' + rid + '" style="display:none;"></div>' +
         '</td>' +
         '<td class="ai-col-qty"><input type="number" name="items[' + rowCount + '][quantity]" id="qty_' + rid + '" value="" min="1" placeholder="1" style="text-align:center;" oninput="calcRow(\'' + rid + '\')"></td>' +
@@ -194,7 +213,7 @@ function addRow() {
             '<button type="button" class="ai-imei-btn" id="imeiBtn_' + rid + '" onclick="openImeiModal(\'' + rid + '\')" style="display:none;"><i class="bi bi-upc-scan"></i></button>' +
             '<input type="hidden" name="items[' + rowCount + '][imeis]" id="imeiInput_' + rid + '" value="">' +
         '</td>' +
-        '<td class="ai-col-price"><input type="number" name="items[' + rowCount + '][unit_price]" id="price_' + rid + '" value="" step="0.001" placeholder="0.000" style="text-align:right;" oninput="calcRow(\'' + rid + '\')"></td>' +
+                    '<td class="ai-col-price"><input type="number" name="items[' + rowCount + '][unit_price]" id="price_' + rid + '" value="" step="0.001" placeholder="0.000" style="text-align:right;" oninput="calcRow(\'' + rid + '\')"><input type="hidden" id="minPrice_' + rid + '" value="0"></td>' +
         '<td class="ai-col-amt" id="amt_' + rid + '">0.000</td>' +
         '<td class="ai-col-act"><button type="button" onclick="removeRow(\'' + rid + '\')" style="background:none;border:none;color:#fca5a8;cursor:pointer;font-size:1.1rem;">&times;</button></td>';
     document.getElementById('itemsBody').appendChild(tr);
@@ -270,8 +289,22 @@ function selectItem(rid, item) {
     document.querySelector('#' + rid + ' .ai-item-search').value = item.name;
     document.getElementById('itemId_'  + rid).value = item.id;
     document.getElementById('hasImei_' + rid).value = item.has_imei;
-    document.getElementById('imeiOpt_' + rid).value = item.imei_optional || 0;
-    document.getElementById('price_'   + rid).value = parseFloat(item.sale_price).toFixed(3);
+    var catalog = parseFloat(item.sale_price) || 0;
+    var min = isRetailCustomer() ? catalog + retailMarkupFromCatalog(catalog) : catalog;
+    var priceEl = document.getElementById('price_' + rid);
+    var minEl = document.getElementById('minPrice_' + rid);
+    if (minEl) minEl.value = min.toFixed(3);
+    if (isRetailCustomer()) {
+        priceEl.value = min.toFixed(3);
+        priceEl.placeholder = min.toFixed(3);
+        priceEl.min = String(min.toFixed(3));
+        priceEl.title = 'Retail minimum ' + min.toFixed(3) + '. You can increase.';
+    } else {
+        priceEl.value = catalog.toFixed(3);
+        priceEl.placeholder = '0.000';
+        priceEl.removeAttribute('min');
+        priceEl.title = '';
+    }
     document.getElementById('drop_'    + rid).style.display = 'none';
     itemHighlightIdx[rid] = -1;
 
@@ -280,9 +313,11 @@ function selectItem(rid, item) {
 
     window.rowItemNameMap[rid] = (item.name || '').toLowerCase();
     window.rowCategoryMap[rid] = (item.category_name || '').toLowerCase();
+    if (!window.rowSerialKindMap) window.rowSerialKindMap = {};
+    window.rowSerialKindMap[rid] = item.serial_kind || 'phone';
 
     var btn = document.getElementById('imeiBtn_' + rid);
-    if (parseInt(item.has_imei) && !parseInt(item.imei_optional || 0)) {
+    if (parseInt(item.has_imei, 10)) {
         btn.style.display = 'inline-flex';
         btn.innerHTML = '<i class="bi bi-upc-scan"></i> Scan';
     } else {
@@ -294,7 +329,7 @@ function selectItem(rid, item) {
     var rows = document.querySelectorAll('#itemsBody tr');
     if (rows[rows.length - 1]?.id === rid) addRow();
 
-    setTimeout(function() { if (parseInt(item.has_imei) && !parseInt(item.imei_optional || 0)) openImeiModal(rid, item.name); }, 120);
+    setTimeout(function() { if (parseInt(item.has_imei, 10)) openImeiModal(rid, item.name); }, 120);
 }
 
 document.addEventListener('click', function(e) {
@@ -343,11 +378,25 @@ document.getElementById('itemsBody').addEventListener('keydown', function(e) {
 function calcRow(rid) {
     var qty   = parseFloat(document.getElementById('qty_'   + rid)?.value) || 0;
     var price = parseFloat(document.getElementById('price_' + rid)?.value) || 0;
+    var minPrice = parseFloat(document.getElementById('minPrice_' + rid)?.value) || 0;
+    var priceEl = document.getElementById('price_' + rid);
+    if (priceEl && isRetailCustomer() && minPrice > 0 && price < minPrice) {
+        priceEl.style.border = '2px solid #dc2626';
+        priceEl.style.background = '#fff5f5';
+    } else if (priceEl) {
+        priceEl.style.border = '';
+        priceEl.style.background = '';
+    }
     document.getElementById('amt_' + rid).textContent = (qty * price).toFixed(3);
     calcTotals();
 }
 
-function calcTotals() {
+function addItemCreditOver(subtotal) {
+    if (partyCreditLimit <= 0) return 0;
+    return (partyOutstanding + subtotal) - partyCreditLimit;
+}
+
+function currentAddSubtotal() {
     var subtotal = 0;
     document.querySelectorAll('#itemsBody tr').forEach(function(tr) {
         var rid = tr.dataset.rowId; if (!rid) return;
@@ -355,16 +404,41 @@ function calcTotals() {
         var price = parseFloat(document.getElementById('price_' + rid)?.value) || 0;
         subtotal += qty * price;
     });
+    return subtotal;
+}
+
+function refreshAddItemCredit() {
+    var warn = document.getElementById('aiCreditWarn');
+    var btn = document.querySelector('.ai-btn-save');
+    var subtotal = currentAddSubtotal();
+    var over = addItemCreditOver(subtotal);
+    if (over > 0.001) {
+        if (warn) {
+            warn.style.display = 'block';
+            warn.textContent = 'Over credit limit by ' + addItemCurrency + ' ' + over.toFixed(3)
+                + '. Collect payment first. This cannot be overridden (including admin).';
+        }
+        if (btn) btn.disabled = true;
+    } else {
+        if (warn) { warn.style.display = 'none'; warn.textContent = ''; }
+        if (btn) btn.disabled = false;
+    }
+}
+
+function calcTotals() {
+    var subtotal = currentAddSubtotal();
     document.getElementById('aiTotalDisplay').textContent = '<?= APP_CURRENCY ?> ' + subtotal.toFixed(3);
+    refreshAddItemCredit();
 }
 
 // IMEI MODAL
 function getImeiRule(row) {
-    var name     = (window.rowItemNameMap && window.rowItemNameMap[row]) || '';
-    var category = (window.rowCategoryMap && window.rowCategoryMap[row]) || '';
-    if (name.indexOf('h40') !== -1) return { min: 13, max: 13, label: '13' };
-    if (category.indexOf('bud') !== -1) return { min: 15, max: 18, label: '15-18' };
-    return { min: 15, max: 15, label: '15' };
+    return IqbalImei.rule(
+        (window.rowSerialKindMap && window.rowSerialKindMap[row]) || '',
+        (window.rowItemNameMap && window.rowItemNameMap[row]) || '',
+        (window.rowCategoryMap && window.rowCategoryMap[row]) || '',
+        { phoneMin: 15, phoneMax: 15 }
+    );
 }
 
 function openImeiModal(rid, itemName) {
@@ -401,9 +475,9 @@ function processPastedImeis() {
     var rule = getImeiRule(currentImeiRow);
     var added = 0, skipped = 0, invalid = 0;
     var allOther = getAllEnteredImeis(currentImeiRow);
-    list.forEach(function(imei) {
-        if (!/^\d+$/.test(imei)) { invalid++; return; }
-        if (imei.length < rule.min || imei.length > rule.max) { invalid++; return; }
+    list.forEach(function(raw) {
+        var imei = IqbalImei.normalize(raw);
+        if (!rule.test(imei)) { invalid++; return; }
         if (activeImeis.indexOf(imei) !== -1) { skipped++; return; }
         if (allOther.indexOf(imei) !== -1) { skipped++; return; }
         activeImeis.push(imei); added++;
@@ -417,20 +491,19 @@ function processPastedImeis() {
 var _imeiAutoTimer = null;
 function autoTriggerImei() {
     clearTimeout(_imeiAutoTimer);
-    var v = document.getElementById('imeiScanInput').value.trim();
+    var v = IqbalImei.normalize(document.getElementById('imeiScanInput').value);
     var rule = getImeiRule(currentImeiRow);
-    if (v.length >= rule.min && v.length <= rule.max) _imeiAutoTimer = setTimeout(confirmImei, 150);
+    if (IqbalImei.shouldAutoConfirm(v, rule)) _imeiAutoTimer = setTimeout(confirmImei, 150);
 }
 
 function confirmImei() {
     clearTimeout(_imeiAutoTimer);
     var input = document.getElementById('imeiScanInput');
-    var imei  = input.value.trim();
+    var imei  = IqbalImei.normalize(input.value);
     if (!imei) return;
     input.value = '';
     var rule = getImeiRule(currentImeiRow);
-    if (!/^\d+$/.test(imei)) { showImeiMsg('Not digits: ' + imei, 'err'); input.focus(); return; }
-    if (imei.length < rule.min || imei.length > rule.max) { showImeiMsg('Invalid length (' + imei.length + '). Need ' + rule.label, 'err'); input.focus(); return; }
+    if (!rule.test(imei)) { showImeiMsg('Need ' + rule.label + ': ' + imei, 'err'); input.focus(); return; }
     if (activeImeis.indexOf(imei) !== -1) { showImeiMsg('⚠ Duplicate', 'err'); input.focus(); return; }
     if (getAllEnteredImeis(currentImeiRow).indexOf(imei) !== -1) { showImeiMsg('⚠ Used in another row', 'err'); input.focus(); return; }
     activeImeis.push(imei);
@@ -492,15 +565,27 @@ document.getElementById('addItemForm').addEventListener('submit', function(e) {
         hasItem = true;
         var qty     = parseInt(document.getElementById('qty_' + rid)?.value) || 0;
         var hasImei = document.getElementById('hasImei_' + rid)?.value === '1';
-        var imeiOpt = document.getElementById('imeiOpt_' + rid)?.value === '1';
         var imeis   = (imeiData[rid] || []).length;
         if (qty <= 0) error = 'Quantity required for all items.';
-        if (hasImei && !imeiOpt && imeis !== qty) {
+        if (hasImei && imeis !== qty) {
             var name = tr.querySelector('.ai-item-search')?.value || 'item';
-            error = 'Item "' + name + '": must scan ' + qty + ' IMEIs (currently ' + imeis + ').';
+            error = 'Item "' + name + '": must scan ' + qty + ' IMEIs before selling (currently ' + imeis + ').';
+        }
+        if (isRetailCustomer()) {
+            var price = parseFloat(document.getElementById('price_' + rid)?.value) || 0;
+            var minPrice = parseFloat(document.getElementById('minPrice_' + rid)?.value) || 0;
+            if (minPrice > 0 && price < minPrice) {
+                error = 'Retail prices cannot go below wholesale + 0.500 (under 40 KWD) or + 1.000 (40 KWD+). You may increase the price.';
+            }
         }
     });
     if (!hasItem)  { e.preventDefault(); alert('Please add at least one item.'); return; }
-    if (error)     { e.preventDefault(); alert(error); }
+    if (error)     { e.preventDefault(); alert(error); return; }
+    var creditOver = addItemCreditOver(currentAddSubtotal());
+    if (creditOver > 0.001) {
+        e.preventDefault();
+        alert('This customer’s credit limit would be exceeded by ' + addItemCurrency + ' ' + creditOver.toFixed(3)
+            + '. Collect payment first. No user (including admin) can override this on the invoice.');
+    }
 });
 </script>

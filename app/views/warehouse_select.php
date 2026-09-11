@@ -99,7 +99,7 @@
 <body>
 <div class="wh-wrap">
     <div class="wh-header">
-        <div class="wh-logo"><i class="bi bi-boxes"></i> Inven<span>Track</span></div>
+        <div class="wh-logo"><i class="bi bi-boxes"></i> Iqbal<span>Erp</span></div>
         <p class="wh-subtitle">Select your warehouse to continue</p>
     </div>
 

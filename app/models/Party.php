@@ -6,6 +6,19 @@ require_once __DIR__ . '/../helpers/WarehouseScope.php';
 class Party extends BaseModel {
     protected string $table = 'parties';
 
+    public const CUSTOMER_KIND_WHOLESALE = 'wholesale';
+    public const CUSTOMER_KIND_RETAIL    = 'retail';
+
+    /** Wholesale list at or above this KWD uses the higher retail markup. */
+    public const RETAIL_PRICE_TIER_KWD = 40.0;
+    /** Retail add-on when wholesale is below 40 KWD. */
+    public const RETAIL_PRICE_MARKUP_LOW = 0.5;
+    /** Retail add-on when wholesale is 40 KWD or more. */
+    public const RETAIL_PRICE_MARKUP_HIGH = 1.0;
+
+    private static ?bool $tradeLicenseSchemaReady = null;
+    private static ?bool $customerKindSchemaReady = null;
+
     /** Outbound payments that reduce supplier payable (excludes blank ref_type PO advance duplicates). */
     private const SUPPLIER_PAYMENT_REF_TYPES = [
         'purchase',
@@ -45,14 +58,13 @@ class Party extends BaseModel {
      */
     private static function purchasePartyCreditSql(string $purchaseAlias = 'pur'): string {
         return 'CASE WHEN po_conv.id IS NOT NULL'
-            . ' THEN po_conv.subtotal_kwd + COALESCE(po_conv.other_charges_kwd, 0)'
+            . ' THEN po_conv.subtotal_kwd + COALESCE(po_conv.other_charges_kwd, 0) + COALESCE(po_conv.adjustment_kwd, 0)'
             . " ELSE {$purchaseAlias}.grand_total END";
     }
 
-    /** Outbound payments counted in party balance (excludes PO advances awaiting goods). */
+    /** Outbound payments counted in party balance (posted cash, including PO advances). */
     private static function balanceOutboundPaymentSql(string $refColumn = 'ref_type'): string {
-        return "payment_type = 'out' AND " . self::balancePaymentRefTypeSql($refColumn)
-            . " AND {$refColumn} != 'purchase_order'";
+        return "payment_type = 'out' AND " . self::balancePaymentRefTypeSql($refColumn);
     }
 
     public static function typeLabel(string $type): string {
@@ -63,6 +75,40 @@ class Party extends BaseModel {
             'freight_forwarder' => 'Freight forwarder',
             default             => ucfirst(str_replace('_', ' ', $type)),
         };
+    }
+
+    public static function normalizeCustomerKind(?string $kind, string $partyType = 'customer'): string {
+        if (!in_array($partyType, ['customer', 'both'], true)) {
+            return self::CUSTOMER_KIND_WHOLESALE;
+        }
+        $kind = strtolower(trim((string) $kind));
+        return $kind === self::CUSTOMER_KIND_RETAIL
+            ? self::CUSTOMER_KIND_RETAIL
+            : self::CUSTOMER_KIND_WHOLESALE;
+    }
+
+    public static function isRetailCustomer(?string $kind): bool {
+        return strtolower(trim((string) $kind)) === self::CUSTOMER_KIND_RETAIL;
+    }
+
+    public static function customerKindLabel(?string $kind): string {
+        return self::isRetailCustomer($kind) ? 'Retail' : 'Wholesale';
+    }
+
+    /** Extra KWD on retail: +0.500 below 40 wholesale, +1.000 at 40 and above. */
+    public static function retailMarkup(float $catalogSalePrice): float {
+        return $catalogSalePrice >= self::RETAIL_PRICE_TIER_KWD
+            ? self::RETAIL_PRICE_MARKUP_HIGH
+            : self::RETAIL_PRICE_MARKUP_LOW;
+    }
+
+    /** Catalog sale_price is wholesale. Retail floor is list + retailMarkup(). */
+    public static function unitPriceFloor(float $catalogSalePrice, ?string $customerKind): float {
+        $floor = max(0.0, $catalogSalePrice);
+        if (self::isRetailCustomer($customerKind)) {
+            $floor += self::retailMarkup($catalogSalePrice);
+        }
+        return $floor;
     }
 
     /** Supplier-side types where payable display uses the inverse of unified net balance. */
@@ -97,6 +143,8 @@ class Party extends BaseModel {
      * sales/purchase/payment/return in this branch — avoids duplicate names where
      * one record has invoices and another (same display name) is empty on the ledger.
      *
+     * Uncorrelated IN subqueries (one scan per table) — not per-row EXISTS.
+     *
      * @return array{0:string,1:array<int,int>}
      */
     private function warehouseVisibilitySqlAndParams(int $warehouseId): array {
@@ -106,10 +154,10 @@ class Party extends BaseModel {
         $sql = " AND (
             p.warehouse_id IS NULL
             OR p.warehouse_id = ?
-            OR EXISTS (SELECT 1 FROM sales s WHERE s.party_id = p.id AND s.warehouse_id = ? AND s.status != 'cancelled')
-            OR EXISTS (SELECT 1 FROM purchases pur WHERE pur.party_id = p.id AND pur.warehouse_id = ? AND pur.status != 'cancelled')
-            OR EXISTS (SELECT 1 FROM payments pay WHERE pay.party_id = p.id AND pay.warehouse_id = ?)
-            OR EXISTS (SELECT 1 FROM `returns` r WHERE r.party_id = p.id AND r.warehouse_id = ?)
+            OR p.id IN (SELECT party_id FROM sales WHERE warehouse_id = ? AND status != 'cancelled')
+            OR p.id IN (SELECT party_id FROM purchases WHERE warehouse_id = ? AND status != 'cancelled')
+            OR p.id IN (SELECT party_id FROM payments WHERE warehouse_id = ?)
+            OR p.id IN (SELECT party_id FROM `returns` WHERE warehouse_id = ?)
         )";
         return [$sql, [$warehouseId, $warehouseId, $warehouseId, $warehouseId, $warehouseId]];
     }
@@ -289,7 +337,53 @@ class Party extends BaseModel {
         return $this->computeBalanceAsOf($partyId, $dayBefore, $warehouseId);
     }
 
+    /** Ensure import_vendor_bills exists before balance/statement SQL that references it. */
+    private function ensureVendorBillsTable(): void {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+        $flagDir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_schema';
+        $flag = $flagDir . DIRECTORY_SEPARATOR . 'import_vendor_bills.ok';
+        if (is_file($flag)) {
+            return;
+        }
+        $path = __DIR__ . '/../services/PackingVendorBillService.php';
+        if (!is_readable($path)) {
+            // Partial deploy: Party Master list may still work from cache; detail must not fatal.
+            error_log('[Party] PackingVendorBillService.php missing — skip vendor-bill schema ensure');
+            return;
+        }
+        require_once $path;
+        if (class_exists('PackingVendorBillService', false)) {
+            PackingVendorBillService::ensureSchema($this->db);
+        }
+        if (!is_dir($flagDir)) {
+            @mkdir($flagDir, 0700, true);
+        }
+        @file_put_contents($flag, (string) time(), LOCK_EX);
+    }
+
+    private function dumpCreditsReady(): bool {
+        static $ready = null;
+        if ($ready !== null) {
+            return $ready;
+        }
+        $path = __DIR__ . '/DeviceDump.php';
+        if (!is_readable($path)) {
+            $ready = false;
+            return false;
+        }
+        require_once $path;
+        $ready = DeviceDump::ensureSchema($this->db);
+        return $ready;
+    }
+
     /**
+     * Unified party net for list/credit-check/Due. Empty $asOfDate means today
+     * (same cap as Party Statement / force-zero — future-dated rows are excluded).
+     *
      * @param list<int> $partyIds
      * @return array{0:string,1:list<int|string>}
      */
@@ -297,13 +391,21 @@ class Party extends BaseModel {
         if ($partyIds === []) {
             return ['', []];
         }
+        $this->ensureVendorBillsTable();
+        $dumpReady = $this->dumpCreditsReady();
+        if ($asOfDate === '') {
+            $asOfDate = date('Y-m-d');
+        }
         $ph = implode(',', array_fill(0, count($partyIds), '?'));
         [$whSql, $whParams] = $this->balanceTransactionWarehouseClause($warehouseId);
         [$purWhSql] = $this->balanceTransactionWarehouseClause($warehouseId, 'pur.warehouse_id');
         [$dateSql, $dateParams] = $this->batchBalanceDateClause($asOfDate);
         [$purDateSql] = $this->batchBalanceDateClause($asOfDate, 'pur.date');
+        [$billDateSql] = $this->batchBalanceDateClause($asOfDate, 'bill_date');
         $branchParams = array_merge($partyIds, $whParams, $dateParams);
 
+        // Aggregate per table first (one row per party per arm) then UNION.
+        // Inbound sale_payments = all `in` except expense/blank (discount is included).
         $sql = "SELECT party_id,
                     SUM(sales_total) as sales_total,
                     SUM(sale_payments) as sale_payments,
@@ -312,45 +414,143 @@ class Party extends BaseModel {
                     SUM(purchase_payments) as purchase_payments,
                     SUM(purchase_returns) as purchase_returns
              FROM (
-                SELECT party_id, grand_total as sales_total, 0 as sale_payments, 0 as sale_returns, 0 as purchase_total, 0 as purchase_payments, 0 as purchase_returns
+                SELECT party_id, SUM(grand_total) as sales_total, 0 as sale_payments, 0 as sale_returns, 0 as purchase_total, 0 as purchase_payments, 0 as purchase_returns
                 FROM sales WHERE party_id IN ($ph) AND status != 'cancelled'{$whSql}{$dateSql}
+                GROUP BY party_id
                 UNION ALL
-                SELECT party_id, 0, amount, 0, 0, 0, 0
-                FROM payments WHERE party_id IN ($ph) AND payment_type = 'in'
-                    AND " . self::balancePaymentRefTypeSql() . " AND status = 'active'{$whSql}{$dateSql}
+                SELECT party_id, 0,
+                    SUM(CASE WHEN payment_type = 'in' AND ref_type IS NOT NULL AND ref_type != '' AND ref_type != 'expense' THEN amount ELSE 0 END),
+                    0, 0,
+                    SUM(CASE WHEN " . self::balanceOutboundPaymentSql() . " THEN amount ELSE 0 END),
+                    0
+                FROM payments WHERE party_id IN ($ph) AND status = 'active'{$whSql}{$dateSql}
+                GROUP BY party_id
                 UNION ALL
-                SELECT party_id, 0, 0, grand_total, 0, 0, 0
-                FROM `returns` WHERE party_id IN ($ph) AND type = 'sale_return' AND status = 'approved'{$whSql}{$dateSql}
-                UNION ALL
-                SELECT pur.party_id, 0, 0, 0, " . self::purchasePartyCreditSql('pur') . ", 0, 0
+                SELECT party_id, 0, 0,
+                    SUM(CASE WHEN type = 'sale_return' THEN grand_total ELSE 0 END),
+                    0, 0,
+                    SUM(CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END)
+                FROM `returns` WHERE party_id IN ($ph) AND status = 'approved'
+                    AND type IN ('sale_return', 'purchase_return'){$whSql}{$dateSql}
+                GROUP BY party_id
+                " . ($dumpReady ? "UNION ALL
+                SELECT party_id, 0, 0, SUM(grand_total), 0, 0, 0
+                FROM device_dumps WHERE party_id IN ($ph) AND status = 'approved'{$whSql}{$dateSql}
+                GROUP BY party_id
+                " : "") . "UNION ALL
+                SELECT pur.party_id, 0, 0, 0, SUM(" . self::purchasePartyCreditSql('pur') . "), 0, 0
                 FROM purchases pur
                 LEFT JOIN purchase_orders po_conv ON po_conv.converted_to = pur.id AND po_conv.status = 'converted'
                 WHERE pur.party_id IN ($ph) AND pur.status != 'cancelled'{$purWhSql}{$purDateSql}
+                GROUP BY pur.party_id
                 UNION ALL
-                SELECT party_id, 0, 0, 0, amount, 0, 0
-                FROM import_payable_accruals WHERE party_id IN ($ph) AND status = 'open'{$whSql}{$dateSql}
+                SELECT party_id, 0, 0, 0, SUM(amount), 0, 0
+                FROM import_payable_accruals
+                WHERE party_id IN ($ph) AND status IN ('open', 'paid') AND leg != 'packing_dxb'{$whSql}{$dateSql}
+                GROUP BY party_id
                 UNION ALL
-                SELECT party_id, 0, 0, 0, 0, amount, 0
-                FROM payments WHERE party_id IN ($ph) AND " . self::balanceOutboundPaymentSql() . " AND status = 'active'{$whSql}{$dateSql}
-                UNION ALL
-                SELECT party_id, 0, 0, 0, 0, 0, grand_total
-                FROM `returns` WHERE party_id IN ($ph) AND type = 'purchase_return' AND status = 'approved'{$whSql}{$dateSql}
-                UNION ALL
-                SELECT party_id, 0, amount, 0, 0, 0, 0
-                FROM payments WHERE party_id IN ($ph) AND ref_type = 'discount' AND payment_type = 'in'
-                    AND status = 'active'{$whSql}{$dateSql}
+                SELECT party_id, 0, 0, 0, SUM(amount), 0, 0
+                FROM import_vendor_bills
+                WHERE party_id IN ($ph) AND status IN ('open', 'paid'){$whSql}{$billDateSql}
+                GROUP BY party_id
              ) t GROUP BY party_id";
+
+        $balanceParams = array_merge(
+            $branchParams,
+            $branchParams,
+            $branchParams
+        );
+        if ($dumpReady) {
+            $balanceParams = array_merge($balanceParams, $branchParams);
+        }
+        $balanceParams = array_merge(
+            $balanceParams,
+            $branchParams,
+            $branchParams,
+            $branchParams
+        );
 
         return [
             $sql,
-            array_merge($branchParams, $branchParams, $branchParams, $branchParams, $branchParams, $branchParams, $branchParams, $branchParams),
+            $balanceParams,
         ];
     }
 
     /**
-     * Receivable / payable totals across active parties (Dashboard, NetWorth, balance sheet header).
+     * Cash already sent on open POs (draft/paid, goods not in), keyed by party.
+     *
+     * @return array<int, float>
+     */
+    private function openPoPaidByParty(?int $warehouseId): array {
+        if ($warehouseId === null || $warehouseId <= 0) {
+            return [];
+        }
+        $rows = $this->db->fetchAll(
+            "SELECT party_id, COALESCE(SUM(paid_kwd), 0) AS paid_awaiting
+             FROM purchase_orders
+             WHERE warehouse_id = ?
+               AND status IN ('draft', 'paid')
+               AND paid_kwd > 0.001
+             GROUP BY party_id",
+            [(int) $warehouseId]
+        );
+        $map = [];
+        foreach ($rows as $row) {
+            $map[(int) $row['party_id']] = (float) $row['paid_awaiting'];
+        }
+        return $map;
+    }
+
+    /**
+     * Dashboard trade AR — customers/both only, after removing open-PO cash already sent.
+     * Supplier advances are not collectible receivables (prepaid goods in pipeline).
+     *
+     * @return array{rec_total: float, rec_count: int}
+     */
+    public function tradeReceivableTotals(?int $warehouseId = null): array {
+        $whForBalance = ($warehouseId !== null && $warehouseId > 0) ? (int) $warehouseId : null;
+        $parties      = $this->db->fetchAll(
+            "SELECT id, opening_balance, warehouse_id, type
+             FROM parties
+             WHERE is_active = 1 AND type IN ('customer', 'both')"
+        );
+        if ($parties === []) {
+            return ['rec_total' => 0.0, 'rec_count' => 0];
+        }
+
+        $ids = array_map(static fn(array $p): int => (int) $p['id'], $parties);
+        [$balanceSql, $balanceParams] = $this->batchBalanceUnionSql($ids, $whForBalance, '');
+        $balances = $balanceSql !== '' ? $this->db->fetchAll($balanceSql, $balanceParams) : [];
+
+        $balMap = [];
+        foreach ($balances as $b) {
+            $balMap[(int) $b['party_id']] = $b;
+        }
+        $poPaidMap = $this->openPoPaidByParty($whForBalance);
+
+        $recTotal = 0.0;
+        $recCount = 0;
+        foreach ($parties as $party) {
+            $pid  = (int) $party['id'];
+            $net  = $this->netBalanceFromComponents($party, $balMap[$pid] ?? null, $whForBalance);
+            $trade = $net - ($poPaidMap[$pid] ?? 0.0);
+            if ($trade > 0.001) {
+                $recTotal += $trade;
+                $recCount++;
+            }
+        }
+
+        return [
+            'rec_total' => round($recTotal, 3),
+            'rec_count' => $recCount,
+        ];
+    }
+
+    /**
+     * Receivable / payable totals across active parties (NetWorth, balance sheet header).
      *
      * Unified net: positive = they owe us (receivable); negative = we owe them (payable).
+     * Includes supplier PO advances — dashboard trade AR uses tradeReceivableTotals() instead.
      *
      * @return array{rec_total: float, pay_total: float, rec_count: int, pay_count: int}
      */
@@ -464,7 +664,7 @@ class Party extends BaseModel {
      * UNIFIED BALANCE LOGIC (single account per party):
      *
      * balance = opening_balance
-     *         + what they owe us  (sales - sale payments - sale returns)
+     *         + what they owe us  (sales - sale payments - sale returns - dump credits)
      *         - what we owe them  (purchases - purchase payments - purchase returns)
      *
      * Positive = they owe us
@@ -493,7 +693,9 @@ class Party extends BaseModel {
             if ($type === 'freight_forwarder') {
                 $where .= " AND p.type = 'freight_forwarder'";
             } elseif ($type === 'payment_out') {
-                $where .= " AND p.type IN ('supplier', 'both', 'freight_forwarder')";
+                $where .= " AND p.type IN ('customer', 'supplier', 'both', 'freight_forwarder')";
+            } elseif ($type === 'purchase') {
+                $where .= " AND p.type IN ('customer', 'supplier', 'both')";
             } else {
                 $where .= ' AND (p.type = ? OR p.type = \'both\')';
                 $params[] = $type;
@@ -555,29 +757,120 @@ class Party extends BaseModel {
     /** Drop cached filter dropdown lists after party create/update/deactivate. */
     public static function clearFilterListCache(): void {
         $cacheDir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_party_filter';
+        if (is_dir($cacheDir)) {
+            foreach (glob($cacheDir . DIRECTORY_SEPARATOR . 'parties_*.json') ?: [] as $file) {
+                if (is_file($file)) {
+                    @unlink($file);
+                }
+            }
+        }
+        self::clearBalanceListCache();
+    }
+
+    /** Drop Party Master balance list cache (after sales/payments/party writes). */
+    public static function clearBalanceListCache(): void {
+        $cacheDir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_party_balances';
         if (!is_dir($cacheDir)) {
             return;
         }
-        foreach (glob($cacheDir . DIRECTORY_SEPARATOR . 'parties_*.json') ?: [] as $file) {
+        foreach (glob($cacheDir . DIRECTORY_SEPARATOR . 'bal_*.json') ?: [] as $file) {
             if (is_file($file)) {
                 @unlink($file);
             }
         }
     }
 
-    // Get all parties of a specific type, scoped to current warehouse
-    public function getByType(string $type): array {
-        $wid = Auth::warehouseId();
+    /**
+     * Parties of a type, scoped to current warehouse.
+     *
+     * @param bool $withBalances When false, skip the ledger UNION (Party Master HTML paint).
+     */
+    public function getByType(string $type, bool $withBalances = true): array {
+        static $memory = [];
 
-        [$where, $params] = $this->typeFilterClause($type, $wid ? (int) $wid : null);
+        $wid    = Auth::warehouseId();
+        $widKey = $wid ? (int) $wid : 0;
+        $safeType = preg_replace('/[^a-z_]/', '', $type) ?: 'all';
+        $memKey = $safeType . ':' . $widKey . ':' . ($withBalances ? '1' : '0');
+        if (isset($memory[$memKey])) {
+            return $memory[$memKey];
+        }
 
-        // Fast: fetch parties first, then compute balances in one pass
-        $parties = $this->db->fetchAll("SELECT p.* FROM parties p {$where} ORDER BY p.name ASC", $params);
-        if (empty($parties)) return [];
+        $cacheDir  = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_party_balances';
+        $cacheFile = $cacheDir . DIRECTORY_SEPARATOR . 'bal_' . $safeType . '_' . $widKey . '.json';
+        $cacheTtl  = 90;
+        if ($withBalances && is_file($cacheFile) && (time() - (int) filemtime($cacheFile)) < $cacheTtl) {
+            $decoded = json_decode((string) file_get_contents($cacheFile), true);
+            // Older cache omitted statement_token — skip so the link button can appear.
+            if (is_array($decoded) && ($decoded === [] || array_key_exists('statement_token', $decoded[0] ?? []))) {
+                $memory[$memKey] = $decoded;
+                return $decoded;
+            }
+        }
 
+        $parties = $this->listRowsForType($type, $wid ? (int) $wid : null);
+        if ($parties === []) {
+            $memory[$memKey] = [];
+            return [];
+        }
+
+        if (!$withBalances) {
+            $memory[$memKey] = $parties;
+            return $parties;
+        }
+
+        $parties = $this->attachListBalances($parties, $type, $wid ? (int) $wid : null);
+
+        $memory[$memKey] = $parties;
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0700, true);
+        }
+        @file_put_contents($cacheFile, json_encode($parties), LOCK_EX);
+
+        return $parties;
+    }
+
+    /**
+     * Party Master rows without ledger totals (names, phones, tokens).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listRowsForType(string $type, ?int $warehouseId = null): array {
+        $wid = $warehouseId;
+        if ($wid === null) {
+            $sessionWid = Auth::warehouseId();
+            $wid = $sessionWid ? (int) $sessionWid : null;
+        }
+        [$where, $params] = $this->typeFilterClause($type, $wid);
+
+        $this->ensureCustomerKindSchema();
+        $parties = $this->db->fetchAll(
+            "SELECT p.id, p.party_code, p.name, p.type, p.customer_kind, p.phone, p.city, p.is_active,
+                    p.opening_balance, p.warehouse_id, p.credit_limit, p.statement_token
+             FROM parties p {$where}
+             ORDER BY p.name ASC",
+            $params
+        );
+        if ($parties === []) {
+            return [];
+        }
+        $this->backfillMissingStatementTokens($parties);
+
+        return $parties;
+    }
+
+    /**
+     * Attach unified net / display balance to Party Master rows.
+     *
+     * @param list<array<string,mixed>> $parties
+     * @return list<array<string,mixed>>
+     */
+    public function attachListBalances(array $parties, string $type, ?int $warehouseId = null): array {
+        if ($parties === []) {
+            return [];
+        }
         $ids = array_column($parties, 'id');
-        $whForBalance = $wid ? (int) $wid : null;
-        [$balanceSql, $balanceParams] = $this->batchBalanceUnionSql($ids, $whForBalance);
+        [$balanceSql, $balanceParams] = $this->batchBalanceUnionSql($ids, $warehouseId);
         $balances = $balanceSql !== ''
             ? $this->db->fetchAll($balanceSql, $balanceParams)
             : [];
@@ -591,7 +884,7 @@ class Party extends BaseModel {
             $net = $this->netBalanceFromComponents(
                 $p,
                 $balMap[$p['id']] ?? null,
-                $whForBalance
+                $warehouseId
             );
             $p['net_balance'] = $net;
             $display            = self::displayBalanceDue($p, $net, $type !== 'all' ? $type : null);
@@ -641,6 +934,33 @@ class Party extends BaseModel {
     }
 
     /**
+     * Date + recorded time for a statement line.
+     * Uses created_at when present; otherwise the document date (no fake midnight).
+     *
+     * @return array{day:string,time:string}
+     */
+    public static function statementWhenParts(?string $date, ?string $createdAt = null): array {
+        $createdAt = trim((string) $createdAt);
+        $date      = trim((string) $date);
+        $src       = $createdAt !== '' ? $createdAt : $date;
+        $ts        = $src !== '' ? strtotime($src) : false;
+        if ($ts === false) {
+            return ['day' => $date !== '' ? $date : '—', 'time' => ''];
+        }
+
+        return [
+            'day'  => date('d M Y', $ts),
+            'time' => $createdAt !== '' ? date('h:i A', $ts) : '',
+        ];
+    }
+
+    public static function statementWhenLabel(?string $date, ?string $createdAt = null): string {
+        $p = self::statementWhenParts($date, $createdAt);
+
+        return $p['time'] !== '' ? $p['day'] . ', ' . $p['time'] : $p['day'];
+    }
+
+    /**
      * Sort party statement rows by transaction date, then recorded time (created_at), then id.
      */
     public static function compareStatementTransactions(array $a, array $b): int {
@@ -667,6 +987,7 @@ class Party extends BaseModel {
         if ($warehouseId <= 0) {
             return [];
         }
+        $this->ensureVendorBillsTable();
 
         [$dateFilter, $dateParams] = $this->statementDateFilter($fromDate, $toDate);
         [$purDateFilter] = $this->statementDateFilter($fromDate, $toDate, 'pur.date');
@@ -689,13 +1010,24 @@ class Party extends BaseModel {
              WHERE pur.party_id = ? AND pur.status != 'cancelled' {$purDateFilter}{$purWhFilter}",
             array_merge([$partyId], $dateParams, $whParams)
         );
+        [$payDateFilter] = $this->statementDateFilter($fromDate, $toDate, 'py.date');
+        [$payWhFilter] = $this->statementTransactionWarehouseClause($warehouseId, 'py.warehouse_id');
         $payments = $this->db->fetchAll(
-            "SELECT id, 'payment' as txn_type, payment_no as ref_no, date,
-                    CASE WHEN status = 'cancelled' THEN 0 WHEN payment_type = 'out' THEN amount ELSE 0 END as debit,
-                    CASE WHEN status = 'cancelled' THEN 0 WHEN payment_type = 'in'  THEN amount ELSE 0 END as credit,
-                    notes, status, created_at
-             FROM payments WHERE party_id = ? AND " . self::balancePaymentRefTypeSql() . "
-                AND ref_type != 'purchase_order' {$dateFilter}{$whFilter}",
+            "SELECT py.id,
+                    CASE WHEN py.ref_type = 'purchase_order' THEN 'po_advance' ELSE 'payment' END as txn_type,
+                    py.payment_no as ref_no, py.date,
+                    CASE WHEN py.status = 'cancelled' THEN 0 WHEN py.payment_type = 'out' THEN py.amount ELSE 0 END as debit,
+                    CASE WHEN py.status = 'cancelled' THEN 0 WHEN py.payment_type = 'in'  THEN py.amount ELSE 0 END as credit,
+                    CASE
+                        WHEN py.notes IS NOT NULL AND TRIM(py.notes) != '' THEN py.notes
+                        WHEN py.ref_type = 'purchase_order' THEN CONCAT('Advance on ', COALESCE(po.po_no, 'PO'))
+                        ELSE py.notes
+                    END as notes,
+                    py.status, py.created_at
+             FROM payments py
+             LEFT JOIN purchase_orders po ON po.id = py.ref_id AND py.ref_type = 'purchase_order'
+             WHERE py.party_id = ? AND " . self::balancePaymentRefTypeSql('py.ref_type') . "
+                {$payDateFilter}{$payWhFilter}",
             array_merge([$partyId], $dateParams, $whParams)
         );
         $returns = $this->db->fetchAll(
@@ -706,12 +1038,33 @@ class Party extends BaseModel {
              FROM `returns` WHERE party_id = ? AND status = 'approved' {$dateFilter}{$whFilter}",
             array_merge([$partyId], $dateParams, $whParams)
         );
+        $dumps = [];
+        if ($this->dumpCreditsReady()) {
+            $dumps = $this->db->fetchAll(
+                "SELECT id, 'dump' as txn_type, dump_no as ref_no, date,
+                        0 as debit, grand_total as credit,
+                        reason as notes, status, created_at
+                 FROM device_dumps WHERE party_id = ? AND status = 'approved' {$dateFilter}{$whFilter}",
+                array_merge([$partyId], $dateParams, $whParams)
+            ) ?: [];
+        }
         $importPayables = $this->db->fetchAll(
             "SELECT id, 'import_payable' as txn_type, accrual_no as ref_no, date,
                     0 as debit, amount as credit, description as notes, status, created_at
              FROM import_payable_accruals
-             WHERE party_id = ? AND status = 'open' {$dateFilter}{$whFilter}",
+             WHERE party_id = ? AND status IN ('open', 'paid') AND leg != 'packing_dxb' {$dateFilter}{$whFilter}",
             array_merge([$partyId], $dateParams, $whParams)
+        );
+        [$billDateFilter, $billDateParams] = $this->statementDateFilter($fromDate, $toDate, 'bill_date');
+        [$billWhFilter, $billWhParams] = $this->statementTransactionWarehouseClause($warehouseId, 'warehouse_id');
+        $vendorBills = $this->db->fetchAll(
+            "SELECT id, 'vendor_bill' as txn_type, bill_no as ref_no, bill_date as date,
+                    0 as debit, amount as credit,
+                    CONCAT('Packing invoice', CASE WHEN vendor_invoice_ref IS NOT NULL AND vendor_invoice_ref != '' THEN CONCAT(' · ', vendor_invoice_ref) ELSE '' END) as notes,
+                    status, created_at
+             FROM import_vendor_bills
+             WHERE party_id = ? AND status IN ('open', 'paid') {$billDateFilter}{$billWhFilter}",
+            array_merge([$partyId], $billDateParams, $billWhParams)
         );
         [$discDateFilter, $discDateParams] = $this->statementDateFilter($fromDate, $toDate, 'py.date');
         [$discWhFilter] = $this->statementTransactionWarehouseClause($warehouseId, 'py.warehouse_id');
@@ -726,7 +1079,7 @@ class Party extends BaseModel {
                 {$discDateFilter}{$discWhFilter}",
             array_merge([$partyId], $discDateParams, $whParams)
         );
-        $transactions = array_merge($sales, $purchases, $payments, $returns, $importPayables, $discounts);
+        $transactions = array_merge($sales, $purchases, $payments, $returns, $dumps, $importPayables, $vendorBills, $discounts);
         usort($transactions, [self::class, 'compareStatementTransactions']);
 
         return $transactions;
@@ -764,14 +1117,20 @@ class Party extends BaseModel {
         return round($running, 3);
     }
 
-    // Party ledger — ALL transactions in one unified timeline
-    // BUG FIX: Date filter params must be replicated for each UNION ALL branch.
-    // Previously only one copy of date params was appended, but the SQL has 5 branches
-    // each with {$dateFilter} placeholders, causing PDO parameter count mismatch.
+    /**
+     * Party ledger — all transactions in one unified timeline (Party Master detail).
+     * Same debit/credit set as Party Statement / Due (no expenses). Capped at today
+     * when $toDate is empty so Closing matches Party Master Due.
+     * Separate queries (not SQL UNION) so mixed table collations cannot raise MySQL 1271.
+     */
     public function getLedger(int $partyId, string $fromDate = '', string $toDate = ''): array {
         $warehouseId = $this->resolveScopeWarehouseId($partyId, null);
         if ($warehouseId <= 0) {
             return [];
+        }
+        $this->ensureVendorBillsTable();
+        if ($toDate === '') {
+            $toDate = date('Y-m-d');
         }
 
         [$dateFilter, $dateParams] = $this->statementDateFilter($fromDate, $toDate);
@@ -779,58 +1138,79 @@ class Party extends BaseModel {
 
         [$whFilter, $whParam] = $this->statementTransactionWarehouseClause($warehouseId);
         [$purWhFilter] = $this->statementTransactionWarehouseClause($warehouseId, 'pur.warehouse_id');
-        $purWhParam = $whParam;
 
         [$discDateFilter, $discDateParams] = $this->statementDateFilter($fromDate, $toDate, 'py.date');
         [$discWhFilter] = $this->statementTransactionWarehouseClause($warehouseId, 'py.warehouse_id');
+        [$billDateFilter, $billDateParams] = $this->statementDateFilter($fromDate, $toDate, 'bill_date');
+        [$billWhFilter, $billWhParams] = $this->statementTransactionWarehouseClause($warehouseId, 'warehouse_id');
 
-        $params = array_merge(
-            [$partyId], $dateParams, $whParam,
-            [$partyId], $dateParams, $purWhParam,
-            [$partyId], $dateParams, $whParam,
-            [$partyId], $dateParams, $whParam,
-            [$partyId], $dateParams, $whParam,
-            [$partyId], $dateParams, $whParam,
-            [$partyId], $discDateParams, $whParam
-        );
+        $baseParams = array_merge([$partyId], $dateParams, $whParam);
 
-        $rows = $this->db->fetchAll(
+        $sales = $this->db->fetchAll(
             "SELECT 'sale' as type, id, invoice_no as ref_no, date, grand_total as debit, 0 as credit, balance, status, created_at
-             FROM sales WHERE party_id = ? AND status != 'cancelled' {$dateFilter}{$whFilter}
-             UNION ALL
-             SELECT 'purchase', pur.id, pur.invoice_no, pur.date, 0,
-                    " . self::purchasePartyCreditSql('pur') . ", pur.balance, pur.status, pur.created_at
+             FROM sales WHERE party_id = ? AND status != 'cancelled' {$dateFilter}{$whFilter}",
+            $baseParams
+        );
+        $purchases = $this->db->fetchAll(
+            "SELECT 'purchase' as type, pur.id, pur.invoice_no as ref_no, pur.date, 0 as debit,
+                    " . self::purchasePartyCreditSql('pur') . " as credit, pur.balance, pur.status, pur.created_at
              FROM purchases pur
              LEFT JOIN purchase_orders po_conv ON po_conv.converted_to = pur.id AND po_conv.status = 'converted'
-             WHERE pur.party_id = ? AND pur.status != 'cancelled' {$purDateFilter}{$purWhFilter}
-             UNION ALL
-             SELECT 'import_payable', id, accrual_no, date, 0, amount, 0, status, created_at
-             FROM import_payable_accruals WHERE party_id = ? AND status = 'open' {$dateFilter}{$whFilter}
-             UNION ALL
-             SELECT 'payment', id, payment_no, date,
-                    CASE WHEN status = 'cancelled' THEN 0 WHEN payment_type = 'out' THEN amount ELSE 0 END,
-                    CASE WHEN status = 'cancelled' THEN 0 WHEN payment_type = 'in' THEN amount ELSE 0 END,
-                    0, status, created_at
-             FROM payments WHERE party_id = ? AND " . self::balancePaymentRefTypeSql() . "
-                AND ref_type != 'purchase_order' {$dateFilter}{$whFilter}
-             UNION ALL
-             SELECT 'return', id, return_no, date,
-                    CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END,
-                    CASE WHEN type = 'sale_return' THEN grand_total ELSE 0 END,
-                    0, status, created_at
-             FROM `returns` WHERE party_id = ? AND status = 'approved' {$dateFilter}{$whFilter}
-             UNION ALL
-             SELECT 'expense', id, expense_no, date, amount, 0, 0, 'paid', created_at
-             FROM expenses WHERE party_id = ? {$dateFilter}{$whFilter}
-             UNION ALL
-             SELECT 'discount', py.id, " . self::discountRefNoFromNotesSql('py') . ", py.date,
-                    0, py.amount, 0, py.status, py.created_at
+             WHERE pur.party_id = ? AND pur.status != 'cancelled' {$purDateFilter}{$purWhFilter}",
+            $baseParams
+        );
+        $importPayables = $this->db->fetchAll(
+            "SELECT 'import_payable' as type, id, accrual_no as ref_no, date, 0 as debit, amount as credit, 0 as balance, status, created_at
+             FROM import_payable_accruals
+             WHERE party_id = ? AND status IN ('open', 'paid') AND leg != 'packing_dxb' {$dateFilter}{$whFilter}",
+            $baseParams
+        );
+        $vendorBills = $this->db->fetchAll(
+            "SELECT 'vendor_bill' as type, id, bill_no as ref_no, bill_date as date, 0 as debit, amount as credit, 0 as balance, status, created_at
+             FROM import_vendor_bills
+             WHERE party_id = ? AND status IN ('open', 'paid') {$billDateFilter}{$billWhFilter}",
+            array_merge([$partyId], $billDateParams, $billWhParams)
+        );
+        [$payDateFilter] = $this->statementDateFilter($fromDate, $toDate, 'py.date');
+        [$payWhFilter] = $this->statementTransactionWarehouseClause($warehouseId, 'py.warehouse_id');
+        $payments = $this->db->fetchAll(
+            "SELECT CASE WHEN py.ref_type = 'purchase_order' THEN 'po_advance' ELSE 'payment' END as type,
+                    py.id, py.payment_no as ref_no, py.date,
+                    CASE WHEN py.status = 'cancelled' THEN 0 WHEN py.payment_type = 'out' THEN py.amount ELSE 0 END as debit,
+                    CASE WHEN py.status = 'cancelled' THEN 0 WHEN py.payment_type = 'in' THEN py.amount ELSE 0 END as credit,
+                    0 as balance, py.status, py.created_at
+             FROM payments py
+             WHERE py.party_id = ? AND py.status = 'active' AND " . self::balancePaymentRefTypeSql('py.ref_type') . "
+                {$payDateFilter}{$payWhFilter}",
+            array_merge([$partyId], $dateParams, $whParam)
+        );
+        $returns = $this->db->fetchAll(
+            "SELECT 'return' as type, id, return_no as ref_no, date,
+                    CASE WHEN type = 'purchase_return' THEN grand_total ELSE 0 END as debit,
+                    CASE WHEN type = 'sale_return' THEN grand_total ELSE 0 END as credit,
+                    0 as balance, status, created_at
+             FROM `returns` WHERE party_id = ? AND status = 'approved' {$dateFilter}{$whFilter}",
+            $baseParams
+        );
+        $dumps = [];
+        if ($this->dumpCreditsReady()) {
+            $dumps = $this->db->fetchAll(
+                "SELECT 'dump' as type, id, dump_no as ref_no, date,
+                        0 as debit, grand_total as credit, 0 as balance, status, created_at
+                 FROM device_dumps WHERE party_id = ? AND status = 'approved' {$dateFilter}{$whFilter}",
+                $baseParams
+            ) ?: [];
+        }
+        $discounts = $this->db->fetchAll(
+            "SELECT 'discount' as type, py.id, " . self::discountRefNoFromNotesSql('py') . " as ref_no, py.date,
+                    0 as debit, py.amount as credit, 0 as balance, py.status, py.created_at
              FROM payments py
              WHERE py.party_id = ? AND py.ref_type = 'discount' AND py.status = 'active'
                 {$discDateFilter}{$discWhFilter}",
-            $params
+            array_merge([$partyId], $discDateParams, $whParam)
         );
 
+        $rows = array_merge($sales, $purchases, $importPayables, $vendorBills, $payments, $returns, $dumps, $discounts);
         usort($rows, [self::class, 'compareStatementTransactions']);
 
         return $rows;
@@ -852,18 +1232,150 @@ class Party extends BaseModel {
         return $yearPrefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
     }
 
+    private static function tradeLicenseSchemaFlagPath(): string {
+        $dir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_schema';
+        return $dir . DIRECTORY_SEPARATOR . 'parties_trade_license.ok';
+    }
+
+    private static function customerKindSchemaFlagPath(): string {
+        $dir = rtrim((string) sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'iqbal_erp_schema';
+        return $dir . DIRECTORY_SEPARATOR . 'parties_customer_kind.ok';
+    }
+
+    /** Ensure parties.customer_kind exists (wholesale | retail). Existing rows default to wholesale. */
+    public function ensureCustomerKindSchema(): void {
+        if (self::$customerKindSchemaReady === true) {
+            return;
+        }
+        if (self::$customerKindSchemaReady === false) {
+            return;
+        }
+
+        $flag = self::customerKindSchemaFlagPath();
+        if (is_file($flag)) {
+            self::$customerKindSchemaReady = true;
+            return;
+        }
+
+        try {
+            $col = $this->db->fetchOne(
+                "SELECT 1 AS ok FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'parties'
+                   AND COLUMN_NAME = 'customer_kind'
+                 LIMIT 1"
+            );
+            if (!$col) {
+                $this->db->execute(
+                    "ALTER TABLE parties
+                     ADD COLUMN customer_kind VARCHAR(16) NOT NULL DEFAULT 'wholesale' AFTER type"
+                );
+            }
+            $flagDir = dirname($flag);
+            if (!is_dir($flagDir)) {
+                @mkdir($flagDir, 0700, true);
+            }
+            @file_put_contents($flag, (string) time(), LOCK_EX);
+            self::$customerKindSchemaReady = true;
+        } catch (Throwable $e) {
+            error_log('[Party] ensureCustomerKindSchema failed: ' . $e->getMessage());
+            self::$customerKindSchemaReady = false;
+        }
+    }
+
+    /**
+     * Ensure trade license columns exist.
+     * After first success, skips information_schema via a temp-file flag (cheap on Hostinger).
+     */
+    public function ensureTradeLicenseSchema(): void {
+        if (self::$tradeLicenseSchemaReady === true) {
+            return;
+        }
+        if (self::$tradeLicenseSchemaReady === false) {
+            return;
+        }
+
+        $flag = self::tradeLicenseSchemaFlagPath();
+        if (is_file($flag)) {
+            self::$tradeLicenseSchemaReady = true;
+            return;
+        }
+
+        try {
+            $col = $this->db->fetchOne(
+                "SELECT 1 AS ok FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'parties'
+                   AND COLUMN_NAME = 'trade_license_expires_on'
+                 LIMIT 1"
+            );
+            if (!$col) {
+                $this->db->execute(
+                    "ALTER TABLE parties
+                     ADD COLUMN trade_license_file VARCHAR(255) NULL AFTER id_card,
+                     ADD COLUMN trade_license_expires_on DATE NULL AFTER trade_license_file"
+                );
+                try {
+                    $this->db->execute(
+                        "CREATE INDEX idx_parties_trade_license_expiry
+                         ON parties (trade_license_expires_on, type, is_active)"
+                    );
+                } catch (Throwable $e) {
+                    // Index may already exist
+                }
+            }
+            $flagDir = dirname($flag);
+            if (!is_dir($flagDir)) {
+                @mkdir($flagDir, 0700, true);
+            }
+            @file_put_contents($flag, (string) time(), LOCK_EX);
+            self::$tradeLicenseSchemaReady = true;
+        } catch (Throwable $e) {
+            error_log('[Party] ensureTradeLicenseSchema failed: ' . $e->getMessage());
+            self::$tradeLicenseSchemaReady = false;
+        }
+    }
+
+    /** Active suppliers / freight / both with trade license expiry set. */
+    public function tradeLicenseExpiryCounts(): array {
+        $this->ensureTradeLicenseSchema();
+        try {
+            $row = $this->db->fetchOne(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN trade_license_expires_on < CURDATE() THEN 1 ELSE 0 END), 0) AS expired,
+                    COALESCE(SUM(CASE WHEN trade_license_expires_on >= CURDATE()
+                        AND trade_license_expires_on <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END), 0) AS due_soon
+                 FROM parties
+                 WHERE is_active = 1
+                   AND type IN ('supplier', 'both', 'freight_forwarder')
+                   AND trade_license_expires_on IS NOT NULL"
+            );
+            return [
+                'expired'  => (int) ($row['expired'] ?? 0),
+                'due_soon' => (int) ($row['due_soon'] ?? 0),
+            ];
+        } catch (Throwable $e) {
+            return ['expired' => 0, 'due_soon' => 0];
+        }
+    }
+
     // Create party with auto-generated party_code
     public function create(array $data): int|false {
+        $this->ensureTradeLicenseSchema();
+        $this->ensureCustomerKindSchema();
         $code  = $this->nextPartyCode();
         $token = app_statement_token_new();
+        $type  = (string) ($data['type'] ?? 'customer');
+        $kind  = self::normalizeCustomerKind($data['customer_kind'] ?? null, $type);
         return $this->db->insert(
-            "INSERT INTO parties (party_code, name, contact_person, type, phone, phone2, email, address, city, country, tax_no, id_card, credit_limit, opening_balance, notes, warehouse_id, statement_token)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO parties (party_code, name, contact_person, type, customer_kind, phone, phone2, email, address, city, country, tax_no, id_card, trade_license_file, trade_license_expires_on, credit_limit, opening_balance, notes, warehouse_id, statement_token)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 $code,
                 $data['name'],
                 $data['contact_person'] ?: null,
-                $data['type'],
+                $type,
+                $kind,
                 $data['phone'] ?: null,
                 $data['phone2'] ?: null,
                 $data['email'] ?: null,
@@ -872,6 +1384,8 @@ class Party extends BaseModel {
                 $data['country'] ?? 'Kuwait',
                 $data['tax_no'] ?: null,
                 $data['id_card'] ?: null,
+                $data['trade_license_file'] ?? null,
+                $data['trade_license_expires_on'] ?? null,
                 (float) ($data['credit_limit'] ?? 0),
                 (float) ($data['opening_balance'] ?? 0),
                 $data['notes'] ?: null,
@@ -881,16 +1395,22 @@ class Party extends BaseModel {
         );
     }
 
-    // Update party
+    // Update party (opening_balance is locked — only PartyLedgerZeroService / dedicated SQL may change it)
     public function update(int $id, array $data): int {
+        $this->ensureTradeLicenseSchema();
+        $this->ensureCustomerKindSchema();
+        $type = (string) ($data['type'] ?? 'customer');
+        $kind = self::normalizeCustomerKind($data['customer_kind'] ?? null, $type);
         return $this->db->execute(
-            "UPDATE parties SET name=?, contact_person=?, type=?, phone=?, phone2=?, email=?, address=?,
-             city=?, country=?, tax_no=?, id_card=?, credit_limit=?, opening_balance=?, notes=?, is_active=?
+            "UPDATE parties SET name=?, contact_person=?, type=?, customer_kind=?, phone=?, phone2=?, email=?, address=?,
+             city=?, country=?, tax_no=?, id_card=?, trade_license_file=?, trade_license_expires_on=?,
+             credit_limit=?, notes=?, is_active=?
              WHERE id=?",
             [
                 $data['name'],
                 $data['contact_person'] ?: null,
-                $data['type'],
+                $type,
+                $kind,
                 $data['phone'] ?: null,
                 $data['phone2'] ?: null,
                 $data['email'] ?: null,
@@ -899,8 +1419,9 @@ class Party extends BaseModel {
                 $data['country'] ?? 'Kuwait',
                 $data['tax_no'] ?: null,
                 $data['id_card'] ?: null,
+                $data['trade_license_file'] ?? null,
+                $data['trade_license_expires_on'] ?? null,
                 (float) ($data['credit_limit'] ?? 0),
-                (float) ($data['opening_balance'] ?? 0),
                 $data['notes'] ?: null,
                 (int) ($data['is_active'] ?? 1),
                 $id,
@@ -908,66 +1429,161 @@ class Party extends BaseModel {
         );
     }
 
-    // Search parties (for autocomplete). Step 1: match 15 rows. Step 2: batch-compute
-    // unified net balance for matched IDs (same rules as Party Master / findWithBalance).
-    public function search(string $query, string $type = 'all'): array {
-        $like = "%{$query}%";
-        $params = [];
+    /**
+     * Search parties for autocomplete.
+     *
+     * Performance: match name/phone first with a cheap branch filter (home warehouse /
+     * unassigned only — no correlated EXISTS on sales/payments). Optionally batch-compute
+     * unified net balance for the small result set.
+     *
+     * Visibility via cross-branch ledger activity (EXISTS in warehouseVisibilitySqlAndParams)
+     * is intentionally omitted here; that path is for Party Master lists. Autocomplete
+     * must stay snappy on Receive Payment / New Sale.
+     *
+     * @param bool $withBalance When false, skip the 8-way balance union (names/phones only).
+     */
+    public function search(string $query, string $type = 'all', bool $withBalance = true): array {
+        $query = trim($query);
+        if ($query === '') {
+            return [];
+        }
+
+        $like       = '%' . $query . '%';
+        $prefixLike = $query . '%';
+        $params     = [];
         $typeClause = '';
 
         if ($type === 'payment_out') {
-            $typeClause = "AND p.type IN ('supplier', 'both', 'freight_forwarder')";
+            // Pay anyone on the ledger: suppliers, freight, both, or customer-only.
+            $typeClause = "AND p.type IN ('customer', 'supplier', 'both', 'freight_forwarder')";
+        } elseif ($type === 'purchase') {
+            // Buy from suppliers, both, or customer-only (trade-in / buy-back).
+            $typeClause = "AND p.type IN ('customer', 'supplier', 'both')";
         } elseif ($type !== 'all') {
             $typeClause = "AND (p.type = ? OR p.type = 'both')";
             $params[] = $type;
         }
 
         $wid = Auth::warehouseId();
+        // Cheap branch scope only — avoids 4× EXISTS per candidate row on every keystroke.
         $whClause = '';
         if ($wid) {
-            [$whSql, $whParams] = $this->warehouseVisibilitySqlAndParams((int) $wid);
-            $whClause = $whSql;
-            $params   = array_merge($params, $whParams);
+            $whClause = ' AND (p.warehouse_id IS NULL OR p.warehouse_id = ?)';
+            $params[] = (int) $wid;
         }
 
-        $params = array_merge($params, [$like, $like, $like, $like, $like]);
+        $params = array_merge($params, [
+            $like, $like, $like, $like, $like,
+            $prefixLike, $prefixLike, $prefixLike,
+        ]);
 
+        $this->ensureCustomerKindSchema();
         $parties = $this->db->fetchAll(
-            "SELECT p.id, p.name, p.phone, p.type, p.credit_limit, p.opening_balance, p.party_code
+            "SELECT p.id, p.name, p.phone, p.type, p.customer_kind, p.credit_limit, p.opening_balance, p.party_code
              FROM parties p
              WHERE p.is_active = 1 {$typeClause} {$whClause}
                AND (p.name LIKE ? OR p.phone LIKE ? OR p.phone2 LIKE ? OR p.id_card LIKE ? OR p.party_code LIKE ?)
-             ORDER BY p.name ASC
+             ORDER BY
+               CASE
+                 WHEN p.name LIKE ? THEN 0
+                 WHEN p.phone LIKE ? OR p.phone2 LIKE ? THEN 1
+                 ELSE 2
+               END,
+               p.name ASC
              LIMIT 15",
             $params
         );
 
-        if (empty($parties)) return [];
+        if ($parties === [] || !$withBalance) {
+            return $parties;
+        }
 
-        // Batch-compute unified net balance for matched IDs only (same components as getByType / findWithBalance).
-        // Previously this used sales-only math, so Party Master could show "Clear" while New Sale still showed
-        // "Due" for the same party after a credit purchase (purchase excluded from autocomplete balance).
-        $ids = array_column($parties, 'id');
-        $whForBalance = $wid ? (int) $wid : null;
-        [$balanceSql, $balanceParams] = $this->batchBalanceUnionSql($ids, $whForBalance);
+        return $this->attachSearchBalances($parties, $type, $wid ? (int) $wid : null);
+    }
+
+    /**
+     * Active party rows by id, preserving the given order (autocomplete enrich).
+     *
+     * @param list<int> $ids
+     * @return list<array<string,mixed>>
+     */
+    public function findActiveByIds(array $ids): array {
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $ids),
+            static fn(int $id): bool => $id > 0
+        )));
+        if ($ids === []) {
+            return [];
+        }
+
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $params = $ids;
+        $whClause = '';
+        $wid = Auth::warehouseId();
+        if ($wid) {
+            // Same cheap branch scope as search() — do not expose other-branch parties by id.
+            $whClause = ' AND (warehouse_id IS NULL OR warehouse_id = ?)';
+            $params[] = (int) $wid;
+        }
+
+        $this->ensureCustomerKindSchema();
+        $rows = $this->db->fetchAll(
+            "SELECT id, name, phone, type, customer_kind, credit_limit, opening_balance, party_code
+             FROM parties WHERE id IN ($ph) AND is_active = 1{$whClause}",
+            $params
+        );
+
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int) $row['id']] = $row;
+        }
+
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+            }
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * Attach unified net balances to autocomplete rows (same rules as Party Master).
+     *
+     * @param list<array<string,mixed>> $parties
+     * @return list<array<string,mixed>>
+     */
+    public function attachSearchBalances(array $parties, string $type = 'all', ?int $warehouseId = null): array {
+        if ($parties === []) {
+            return [];
+        }
+
+        $wid = $warehouseId;
+        if ($wid === null) {
+            $sessionWid = Auth::warehouseId();
+            $wid = $sessionWid ? (int) $sessionWid : null;
+        }
+
+        $ids = array_map(static fn(array $p): int => (int) $p['id'], $parties);
+        [$balanceSql, $balanceParams] = $this->batchBalanceUnionSql($ids, $wid);
         $bals = $balanceSql !== ''
             ? $this->db->fetchAll($balanceSql, $balanceParams)
             : [];
 
         $balMap = [];
         foreach ($bals as $b) {
-            $balMap[$b['party_id']] = $b;
+            $balMap[(int) $b['party_id']] = $b;
         }
 
         foreach ($parties as &$p) {
             $net = $this->netBalanceFromComponents(
                 $p,
-                $balMap[$p['id']] ?? null,
-                $whForBalance
+                $balMap[(int) $p['id']] ?? null,
+                $wid
             );
-            $p['balance'] = $type === 'payment_out'
-                ? self::displayBalanceDue($p, $net, 'supplier')['amount']
-                : $net;
+            // Payment Out: always payable view (positive = we owe), including customer-only parties.
+            $p['balance'] = $type === 'payment_out' ? (-1 * $net) : $net;
         }
         unset($p);
 
@@ -1022,6 +1638,66 @@ class Party extends BaseModel {
     }
 
     /**
+     * Public field-statement token for customer/both parties.
+     * Creates one when missing (legacy rows predate statement_token on create).
+     */
+    public function ensureStatementToken(int $partyId): ?string {
+        if ($partyId <= 0) {
+            return null;
+        }
+        $row = $this->db->fetchOne(
+            'SELECT id, type, statement_token FROM parties WHERE id = ?',
+            [$partyId]
+        );
+        if (!$row) {
+            return null;
+        }
+        if (!in_array((string) ($row['type'] ?? ''), ['customer', 'both'], true)) {
+            return null;
+        }
+        $existing = trim((string) ($row['statement_token'] ?? ''));
+        if ($existing !== '') {
+            return $existing;
+        }
+
+        $token = app_statement_token_new();
+        $this->db->execute(
+            "UPDATE parties SET statement_token = ?
+             WHERE id = ? AND (statement_token IS NULL OR statement_token = '')",
+            [$token, $partyId]
+        );
+        $again = $this->db->fetchOne(
+            'SELECT statement_token FROM parties WHERE id = ?',
+            [$partyId]
+        );
+        $final = trim((string) ($again['statement_token'] ?? ''));
+
+        return $final !== '' ? $final : $token;
+    }
+
+    /**
+     * Assign statement tokens to customer/both rows that still have none (in-place).
+     *
+     * @param list<array<string,mixed>> $parties
+     */
+    private function backfillMissingStatementTokens(array &$parties): void {
+        foreach ($parties as &$p) {
+            $type = (string) ($p['type'] ?? '');
+            if (!in_array($type, ['customer', 'both'], true)) {
+                continue;
+            }
+            if (trim((string) ($p['statement_token'] ?? '')) !== '') {
+                continue;
+            }
+            $token = $this->ensureStatementToken((int) ($p['id'] ?? 0));
+            if ($token !== null) {
+                $p['statement_token'] = $token;
+            }
+        }
+        unset($p);
+    }
+
+    /**
      * Party row + unified net balance for a public statement token.
      */
     public function findByStatementToken(string $token): array|false {
@@ -1054,8 +1730,10 @@ class Party extends BaseModel {
         $typeLabels = [
             'sale'     => 'Sale',
             'purchase' => 'Purchase',
-            'payment'  => 'Payment',
-            'return'   => 'Return',
+            'payment'    => 'Payment',
+            'po_advance' => 'PO Advance',
+            'return'     => 'Return',
+            'dump'       => 'Dump',
             'discount' => 'Discount',
         ];
 

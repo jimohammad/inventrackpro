@@ -6,14 +6,14 @@ class SettingsController extends BaseController {
     public function index(): void {
         Auth::authorize('settings', 'view');
         $db       = Database::getInstance();
-        $settings = [];
-        $rows     = $db->fetchAll("SELECT key_name, value FROM settings");
-        foreach ($rows as $r) { $settings[$r['key_name']] = $r['value']; }
+        $settings = self::getSettings();
 
         if ($this->isPost()) {
             // Whitelist allowed setting keys to prevent mass assignment
             $allowedKeys = [
-                'company_name', 'company_address', 'company_phone', 'company_email',
+                'company_name', 'company_name_ar', 'company_address', 'company_address_ar',
+                'company_cr', 'company_license',
+                'company_phone', 'company_email',
                 'company_logo', 'invoice_footer', 'invoice_terms', 'currency',
                 'decimal_places', 'whatsapp_phone_id', 'whatsapp_token', 'whatsapp_recipient',
                 'admin_pin', 'default_warehouse', 'default_account',
@@ -26,6 +26,9 @@ class SettingsController extends BaseController {
                 if ($key === 'admin_pin' && trim($val) === '') continue; // keep existing PIN
                 if ($key === 'admin_pin') {
                     $val = password_hash(trim((string) $val), PASSWORD_DEFAULT);
+                }
+                if ($key === 'company_name') {
+                    $val = trim((string) preg_replace('/\bW\.?L\.?L\.?\b/i', 'LLC', (string) $val));
                 }
                 $db->execute(
                     "INSERT INTO settings (key_name, value) VALUES (?,?)

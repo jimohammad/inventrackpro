@@ -10,10 +10,20 @@
         <span class="badge ms-2 px-2 py-1" style="background:#fef3c7;color:#92400e;border-radius:6px;">Pending Supplier</span>
         <?php endif; ?>
     </div>
-    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-printer me-1"></i> Print
-    </button>
+    <div>
+        <?php if (Auth::can('warranty', 'edit')): ?>
+        <a href="?page=warranty&action=edit&id=<?= (int)$wr['id'] ?>" class="btn btn-sm btn-primary me-2">
+            <i class="bi bi-pencil me-1"></i> Edit
+        </a>
+        <?php endif; ?>
+        <button type="button" id="wrPrintBtn" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i> Print
+        </button>
+    </div>
 </div>
+<script>
+document.getElementById('wrPrintBtn').addEventListener('click', function () { window.print(); });
+</script>
 
 <div class="row g-3">
 
@@ -28,7 +38,7 @@
                         <p class="mb-1" style="font-size:0.75rem;color:#94a3b8;font-weight:600;">CUSTOMER</p>
                         <p class="mb-0 fw-semibold"><?= htmlspecialchars($wr['customer_name']) ?></p>
                         <?php if ($wr['customer_phone']): ?>
-                        <p class="mb-0 text-muted" style="font-size:0.82rem;"><?= $wr['customer_phone'] ?></p>
+                        <p class="mb-0 text-muted" style="font-size:0.82rem;"><?= htmlspecialchars((string)$wr['customer_phone']) ?></p>
                         <?php endif; ?>
                     </div>
                     <div class="col-sm-4">

@@ -1,0 +1,9 @@
+# Incomplete partial forks — false inherits to main BaseController/models
+wf/
+wh2/
+
+# Asset noise — logos/icons add tokens, no architecture signal
+assets/img/
+assets/pwa/
+assets/uploads/
+imei/icons/

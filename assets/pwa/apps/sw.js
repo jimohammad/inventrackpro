@@ -1,9 +1,11 @@
 /* Unified customer PWA — hub at /apps; may navigate to /imei, /service, /pricelist. */
 'use strict';
 
-var CACHE_NAME = 'iqbal-apps-v1';
+var CACHE_NAME = 'iqbal-apps-v4';
 var PRECACHE = [
   '/apps',
+  '/order',
+  '/apps/order',
   '/assets/pwa/apps/manifest.webmanifest',
   '/assets/pwa/apps/nav.js',
   '/assets/pwa/apps/icons/icon-192.png',
@@ -12,7 +14,7 @@ var PRECACHE = [
   '/assets/pwa/apps/icons/apple-touch-icon.png'
 ];
 
-var PUBLIC_PREFIXES = ['/apps', '/imei', '/service', '/pricelist', '/assets/pwa/apps/'];
+var PUBLIC_PREFIXES = ['/apps', '/order', '/imei', '/service', '/pricelist', '/assets/pwa/apps/'];
 
 self.addEventListener('install', function (event) {
   event.waitUntil(
@@ -130,16 +132,46 @@ self.addEventListener('fetch', function (event) {
     }
   }
 
-  // Live pages (warranty / service / pricelist) — always network (prices & status must be fresh)
+  // Live pages (warranty / service / pricelist / order) — always network (status must be fresh)
   event.respondWith(
     fetch(request).catch(function () {
       if (url.pathname === '/apps' || url.pathname === '/apps/') {
         return offlineHub();
       }
+      if (url.pathname.indexOf('/apps/order') === 0 || url.pathname.indexOf('/order') === 0) {
+        return caches.match('/order').then(function (cached) {
+          return cached || caches.match('/apps/order').then(function (c2) {
+            return c2 || offlineHub();
+          });
+        });
+      }
       return new Response(
         '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title></head><body style="font-family:system-ui;padding:2rem;text-align:center"><h1>You are offline</h1><p><a href="/apps">Back to menu</a></p></body></html>',
         { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       );
+    })
+  );
+});
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  var target = '/apps/order';
+  var tag = event.notification && event.notification.tag ? String(event.notification.tag) : '';
+  if (tag.indexOf('order-') === 0) {
+    target = '/apps/order?token=' + encodeURIComponent(tag.slice(6));
+  }
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url && 'focus' in client) {
+          client.navigate(target);
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(target);
+      }
     })
   );
 });

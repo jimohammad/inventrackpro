@@ -39,20 +39,18 @@ class AccountBalanceService {
         return [$sql, $params];
     }
 
-    /** Active payment rows that affect account balance (excludes discount; skips cancelled PO/purchase refs). */
+    /** Active payment rows that affect account balance (excludes discount; skips cancelled purchase refs).
+     *  Posted PO advances stay in cash even if the PO is later cancelled — bank is not restored;
+     *  Recalculate unlinks those rows to unallocated purchase credit (ref_id = 0). */
     public static function sqlPaymentLedgerWhere(string $paymentAlias = 'p'): string {
         return " {$paymentAlias}.ref_type != 'discount'
              AND {$paymentAlias}.status = 'active'
              AND (
-                 {$paymentAlias}.ref_type NOT IN ('purchase', 'purchase_order')
-                 OR ({$paymentAlias}.ref_type = 'purchase' AND NOT EXISTS (
+                 {$paymentAlias}.ref_type != 'purchase'
+                 OR NOT EXISTS (
                      SELECT 1 FROM purchases pur
                      WHERE pur.id = {$paymentAlias}.ref_id AND pur.status = 'cancelled'
-                 ))
-                 OR ({$paymentAlias}.ref_type = 'purchase_order' AND NOT EXISTS (
-                     SELECT 1 FROM purchase_orders po
-                     WHERE po.id = {$paymentAlias}.ref_id AND po.status = 'cancelled'
-                 ))
+                 )
              )";
     }
 
@@ -210,8 +208,9 @@ class AccountBalanceService {
 
     /**
      * Cancel duplicate/stale active payments that inflate recalc (safe before recalculate).
+     * Cancelled-PO advances are unlinked (purchase / ref_id=0), not voided — bank stays posted.
      *
-     * @return string[] Payment numbers voided
+     * @return string[] Payment numbers voided or unlinked
      */
     public static function cleanupLedgerBeforeRecalc(Database $db, int $accountId): array {
         $voided = [];
@@ -278,8 +277,11 @@ class AccountBalanceService {
             [$accountId]
         );
         foreach ($stalePoRef as $row) {
-            $db->execute('UPDATE payments SET status = ? WHERE id = ?', ['cancelled', (int) $row['id']]);
-            $voided[] = (string) $row['payment_no'] . ' (payment on cancelled PO)';
+            $db->execute(
+                "UPDATE payments SET ref_type = 'purchase', ref_id = 0 WHERE id = ?",
+                [(int) $row['id']]
+            );
+            $voided[] = (string) $row['payment_no'] . ' (unlinked PO advance on cancelled order — bank stays posted)';
         }
 
         return $voided;

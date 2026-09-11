@@ -1,12 +1,26 @@
 <?php
 $grouped = [];
-$countryOrder = ['Dubai', 'Hongkong', 'China', 'Other'];
-$countryIcons = ['Dubai' => 'bi-building', 'Hongkong' => 'bi-globe-asia-australia', 'China' => 'bi-globe-asia-australia', 'Other' => 'bi-geo-alt'];
-$countryColors = ['Dubai' => '#f59e0b', 'Hongkong' => '#ef4444', 'China' => '#dc2626', 'Other' => '#6366f1'];
+$countryOrder = ['UAE', 'Hongkong', 'China', 'India', 'Netherlands', 'New Zealand', 'Other'];
+$countryIcons = ['UAE' => 'bi-building', 'Hongkong' => 'bi-globe-asia-australia', 'China' => 'bi-globe-asia-australia', 'India' => 'bi-globe-asia-australia', 'Netherlands' => 'bi-globe-europe-africa', 'New Zealand' => 'bi-globe-asia-australia', 'Other' => 'bi-geo-alt'];
+$countryColors = ['UAE' => '#f59e0b', 'Hongkong' => '#ef4444', 'China' => '#dc2626', 'India' => '#16a34a', 'Netherlands' => '#2563eb', 'New Zealand' => '#0d9488', 'Other' => '#6366f1'];
 $typeIcons = ['Mobile Phones' => 'bi-phone', 'Accessories' => 'bi-headset', 'Tablets' => 'bi-tablet', 'Mixed' => 'bi-box-seam'];
-foreach ($contacts as $c) { $grouped[$c['country']][$c['product_type']][] = $c; }
+foreach ($contacts as $c) {
+    $raw = trim((string) ($c['country'] ?? ''));
+    if ($raw === 'Dubai' || $raw === '') {
+        $country = ($raw === 'Dubai') ? 'UAE' : 'Other';
+    } else {
+        $country = $raw;
+    }
+    $grouped[$country][$c['product_type'] ?: 'Mixed'][] = $c;
+}
+// Keep any unexpected country values visible (do not hide saved contacts)
+foreach (array_keys($grouped) as $extraCountry) {
+    if (!in_array($extraCountry, $countryOrder, true)) {
+        $countryOrder[] = $extraCountry;
+    }
+}
 
-$phoneCodes = ['+971'=>'UAE','+852'=>'HK','+86'=>'CN','+965'=>'KW','+966'=>'SA','+91'=>'IN','+92'=>'PK','+44'=>'UK','+1'=>'US'];
+$phoneCodes = ['+971'=>'UAE','+852'=>'HK','+86'=>'CN','+965'=>'KW','+966'=>'SA','+91'=>'IN','+92'=>'PK','+31'=>'NL','+64'=>'NZ','+44'=>'UK','+1'=>'US'];
 $phoneOptions = '';
 foreach ($phoneCodes as $code => $label) {
     $phoneOptions .= '<option value="'.$code.'">'.$code.' '.$label.'</option>';
@@ -86,14 +100,40 @@ foreach ($phoneCodes as $code => $label) {
 .sc-btn-save { padding:11px 30px;background:linear-gradient(125deg,#4f46e5,#7c3aed);border:none;color:#fff;border-radius:11px;cursor:pointer;font-size:.92rem;font-weight:700;box-shadow:0 4px 14px rgba(79,70,229,.35);transition:transform .12s,box-shadow .15s; }
 .sc-btn-save:hover { transform:translateY(-1px);box-shadow:0 6px 20px rgba(79,70,229,.4); }
 .sc-empty { text-align:center;padding:40px;color:var(--text-muted); }
+
+.sc-toolbar { display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap; }
+.sc-toolbar .page-title { margin-bottom:2px; }
+.sc-search-wrap { position:relative;flex:1 1 240px;min-width:200px;max-width:440px; }
+.sc-search-wrap > .bi-search { position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:.9rem;pointer-events:none; }
+.sc-search-wrap input { width:100%;padding:10px 38px 10px 40px;border:1.5px solid var(--border-color);border-radius:10px;font-size:.9rem;background:var(--bg-card);color:var(--text-main);outline:none;font-family:inherit; }
+.sc-search-wrap input:focus { border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+.sc-search-clear { position:absolute;right:8px;top:50%;transform:translateY(-50%);width:26px;height:26px;border:none;border-radius:6px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:1.15rem;line-height:1;display:flex;align-items:center;justify-content:center;padding:0; }
+.sc-search-clear:hover { background:var(--bg-main);color:var(--text-main); }
+.sc-page .visually-hidden { position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important; }
+@media (max-width: 720px) {
+.sc-search-wrap { max-width:none;flex-basis:100%;order:3; }
+}
 </style>
 
 <div class="sc-page">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <?php
+    $scTotal = count($contacts);
+    $scCountryCount = count($grouped);
+    $scSubtitle = $scTotal . ' suppliers across ' . $scCountryCount . ' countries';
+    ?>
+    <div class="sc-toolbar">
         <div>
             <h1 class="page-title">Supplier Contacts</h1>
-            <p class="page-subtitle"><?= count($contacts) ?> suppliers across <?= count($grouped) ?> countries</p>
+            <p class="page-subtitle" id="scSubtitle" data-default="<?= htmlspecialchars($scSubtitle) ?>"><?= htmlspecialchars($scSubtitle) ?></p>
         </div>
+        <?php if (!empty($contacts)): ?>
+        <div class="sc-search-wrap">
+            <i class="bi bi-search"></i>
+            <label for="scSearch" class="visually-hidden">Find supplier contacts</label>
+            <input type="text" id="scSearch" placeholder="Find company, person, phone, email…" autocomplete="off" autocorrect="off" spellcheck="false">
+            <button type="button" class="sc-search-clear" id="scSearchClear" hidden aria-label="Clear search">&times;</button>
+        </div>
+        <?php endif; ?>
         <?php if (Auth::can('supplier_contacts', 'add')): ?>
         <button class="btn btn-primary btn-sm" onclick="openAddModal()"><i class="bi bi-plus-lg me-1"></i> Add Supplier</button>
         <?php endif; ?>
@@ -106,21 +146,46 @@ foreach ($phoneCodes as $code => $label) {
     </div>
     <?php endif; ?>
 
+    <div class="sc-empty" id="scSearchEmpty" hidden>
+        <i class="bi bi-search" style="font-size:2.5rem;display:block;margin-bottom:10px;opacity:.3;"></i>
+        No contacts match your search.
+    </div>
+
     <?php foreach ($countryOrder as $country):
-        if (!isset($grouped[$country])) continue;
         $color = $countryColors[$country] ?? '#6366f1';
         $cIcon = $countryIcons[$country] ?? 'bi-geo-alt';
+        $countryGroups = $grouped[$country] ?? [];
+        $countryCount = $countryGroups ? array_sum(array_map('count', $countryGroups)) : 0;
     ?>
-    <div class="sc-section">
+    <div class="sc-section" data-sc-section>
         <div class="sc-country-head" style="background:<?= $color ?>;">
             <i class="bi <?= $cIcon ?>"></i> <?= htmlspecialchars($country) ?>
-            <span style="background:rgba(255,255,255,.25);padding:2px 8px;border-radius:10px;font-size:.75rem;"><?= array_sum(array_map('count', $grouped[$country])) ?></span>
+            <span class="sc-country-count" style="background:rgba(255,255,255,.25);padding:2px 8px;border-radius:10px;font-size:.75rem;"><?= $countryCount ?></span>
         </div>
-        <?php foreach ($grouped[$country] as $type => $typeContacts): $tIcon = $typeIcons[$type] ?? 'bi-box-seam'; ?>
-        <div style="margin-left:12px;margin-bottom:14px;">
-            <div class="sc-type-head"><i class="bi <?= $tIcon ?>"></i> <?= htmlspecialchars($type) ?> <span style="margin-left:4px;font-size:.7rem;">(<?= count($typeContacts) ?>)</span></div>
-            <?php foreach ($typeContacts as $c): ?>
-            <div class="sc-card">
+        <?php if ($countryCount === 0): ?>
+        <div class="sc-empty-country" style="margin-left:12px;margin-bottom:8px;font-size:.8rem;color:var(--text-muted);">No suppliers yet</div>
+        <?php endif; ?>
+        <?php foreach ($countryGroups as $type => $typeContacts): $tIcon = $typeIcons[$type] ?? 'bi-box-seam'; ?>
+        <div class="sc-type-group" style="margin-left:12px;margin-bottom:14px;">
+            <div class="sc-type-head"><i class="bi <?= $tIcon ?>"></i> <?= htmlspecialchars($type) ?> <span class="sc-type-count" style="margin-left:4px;font-size:.7rem;">(<?= count($typeContacts) ?>)</span></div>
+            <?php foreach ($typeContacts as $c):
+                $searchHay = strtolower(trim(implode(' ', array_filter([
+                    $c['company_name'] ?? '',
+                    $c['contact_person'] ?? '',
+                    $c['contact_person_2'] ?? '',
+                    $c['mobile'] ?? '',
+                    $c['mobile_2'] ?? '',
+                    $c['email'] ?? '',
+                    $c['address'] ?? '',
+                    $c['wechat'] ?? '',
+                    $c['wechat_2'] ?? '',
+                    $country,
+                    $type,
+                    $c['notes'] ?? '',
+                ]))));
+                $phoneDigits = preg_replace('/\D+/', '', (string)($c['mobile'] ?? '') . (string)($c['mobile_2'] ?? ''));
+            ?>
+            <div class="sc-card" data-search="<?= htmlspecialchars($searchHay, ENT_QUOTES, 'UTF-8') ?>" data-phone="<?= htmlspecialchars((string)$phoneDigits, ENT_QUOTES, 'UTF-8') ?>">
                 <div class="sc-card-icon" style="background:<?= $color ?>15;color:<?= $color ?>;"><i class="bi bi-building"></i></div>
                 <div class="sc-card-body">
                     <div class="sc-company"><?= htmlspecialchars($c['company_name']) ?></div>
@@ -279,7 +344,7 @@ function openAddModal() { var m=document.getElementById('addModal'); m.querySele
 function openEditModal(c) {
     document.getElementById('editId').value = c.id;
     document.getElementById('editCompany').value = c.company_name||'';
-    document.getElementById('editCountry').value = c.country||'Dubai';
+    document.getElementById('editCountry').value = (c.country === 'Dubai' ? 'UAE' : (c.country||'UAE'));
     document.getElementById('editType').value = c.product_type||'Mobile Phones';
     document.getElementById('editEmail').value = c.email||'';
     document.getElementById('editAddress').value = c.address||'';
@@ -312,4 +377,81 @@ document.getElementById('editModal').querySelector('form').addEventListener('sub
     combPhone('editP2Code','editP2Num','editP2Full');
 });
 if (new URLSearchParams(window.location.search).get('action')==='add') openAddModal();
+
+(function() {
+    var input = document.getElementById('scSearch');
+    if (!input) return;
+    var clearBtn = document.getElementById('scSearchClear');
+    var emptyEl = document.getElementById('scSearchEmpty');
+    var subtitle = document.getElementById('scSubtitle');
+    var defaultSub = subtitle ? (subtitle.getAttribute('data-default') || subtitle.textContent) : '';
+
+    function applyFilter() {
+        var q = (input.value || '').trim().toLowerCase();
+        var qDigits = q.replace(/\D+/g, '');
+        var cards = document.querySelectorAll('.sc-card');
+        var shown = 0;
+
+        cards.forEach(function(card) {
+            var hay = card.getAttribute('data-search') || '';
+            var phone = card.getAttribute('data-phone') || '';
+            var ok = !q || hay.indexOf(q) !== -1 || (qDigits.length >= 3 && phone.indexOf(qDigits) !== -1);
+            card.style.display = ok ? '' : 'none';
+            if (ok) shown++;
+        });
+
+        document.querySelectorAll('.sc-type-group').forEach(function(group) {
+            var vis = 0;
+            group.querySelectorAll('.sc-card').forEach(function(c) {
+                if (c.style.display !== 'none') vis++;
+            });
+            group.style.display = vis ? '' : 'none';
+            var cnt = group.querySelector('.sc-type-count');
+            if (cnt) cnt.textContent = '(' + vis + ')';
+        });
+
+        var countriesShown = 0;
+        document.querySelectorAll('[data-sc-section]').forEach(function(sec) {
+            var vis = 0;
+            sec.querySelectorAll('.sc-card').forEach(function(c) {
+                if (c.style.display !== 'none') vis++;
+            });
+            var emptyLabel = sec.querySelector('.sc-empty-country');
+            if (q) {
+                sec.style.display = vis ? '' : 'none';
+                if (emptyLabel) emptyLabel.style.display = 'none';
+            } else {
+                sec.style.display = '';
+                if (emptyLabel) emptyLabel.style.display = vis ? 'none' : '';
+            }
+            var cnt = sec.querySelector('.sc-country-count');
+            if (cnt) cnt.textContent = vis;
+            if (vis) countriesShown++;
+        });
+
+        if (emptyEl) emptyEl.hidden = !(q && shown === 0);
+        if (clearBtn) clearBtn.hidden = !q;
+        if (subtitle) {
+            subtitle.textContent = q
+                ? (shown + ' of ' + cards.length + ' suppliers' + (countriesShown ? ' across ' + countriesShown + ' countries' : ''))
+                : defaultSub;
+        }
+    }
+
+    input.addEventListener('input', applyFilter);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && input.value) {
+            input.value = '';
+            applyFilter();
+            e.preventDefault();
+        }
+    });
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+            input.value = '';
+            applyFilter();
+            input.focus();
+        });
+    }
+})();
 </script>

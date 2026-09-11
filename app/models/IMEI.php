@@ -69,8 +69,9 @@ class IMEI extends BaseModel {
         return $row['status'] === 'in_stock';
     }
 
-    // Validate multiple IMEIs for a sale item — single batch query
-    public function validateList(array $imeis, int $itemId, ?int $warehouseId = null): array {
+    // Validate multiple IMEIs for a sale item — single batch query.
+    // $healStaleSold: persist sold→in_stock for stale rows. Must stay false on GET lookups.
+    public function validateList(array $imeis, int $itemId, ?int $warehouseId = null, bool $healStaleSold = true): array {
         $errors = [];
         $seen   = [];
         $clean  = [];
@@ -319,7 +320,7 @@ class IMEI extends BaseModel {
                 }
             }
         }
-        if (!empty($staleSoldToHeal)) {
+        if ($healStaleSold && !empty($staleSoldToHeal)) {
             $staleSoldToHeal = array_values(array_unique($staleSoldToHeal));
             $healPh          = implode(',', array_fill(0, count($staleSoldToHeal), '?'));
             $this->db->execute(
@@ -342,6 +343,7 @@ class IMEI extends BaseModel {
             $hasSameItemRecord    = false;
             $hasDifferentItemOnly = true;
             $hasBlockingSold      = false;
+            $isDumped             = false;
 
             foreach ($imeiRows as $row) {
                 $rowItemId = (int)($row['item_id'] ?? 0);
@@ -351,6 +353,10 @@ class IMEI extends BaseModel {
                 if ($rowItemId === $itemId) {
                     $hasSameItemRecord = true;
                     $hasDifferentItemOnly = false;
+                }
+
+                if ($rowItemId === $itemId && $status === 'dumped') {
+                    $isDumped = true;
                 }
 
                 if ($rowItemId === $itemId && in_array($status, ['in_stock', 'returned'], true)) {
@@ -367,6 +373,11 @@ class IMEI extends BaseModel {
             }
 
             if ($availableInCurrentWh) {
+                continue;
+            }
+
+            if ($isDumped) {
+                $errors[] = "IMEI {$imei} was dumped (credit issued) and cannot be sold.";
                 continue;
             }
 
@@ -392,5 +403,307 @@ class IMEI extends BaseModel {
         }
 
         return $errors;
+    }
+
+    /**
+     * Why attachToPurchase would fail (no write, no lock). Null = insert or buy-back restock would succeed.
+     */
+    public function attachToPurchaseBlockReason(string $imei, int $itemId, int $purchaseId): ?string {
+        $imei = strtoupper(trim($imei));
+        if ($imei === '' || $itemId <= 0 || $purchaseId <= 0) {
+            return 'Missing data.';
+        }
+
+        $existing = $this->db->fetchOne(
+            "SELECT id, item_id, purchase_id, status FROM imei_records WHERE imei = ?",
+            [$imei]
+        );
+        if (!$existing) {
+            return null;
+        }
+
+        return $this->attachBlockFromRow($existing, $itemId, $purchaseId);
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     */
+    private function attachBlockFromRow(array $existing, int $itemId, int $purchaseId): ?string {
+        $exItem     = (int) $existing['item_id'];
+        $exPurchase = (int) ($existing['purchase_id'] ?? 0);
+        $status     = (string) ($existing['status'] ?? '');
+
+        if ($exPurchase === $purchaseId && $exItem === $itemId && in_array($status, ['in_stock', 'returned'], true)) {
+            return 'Already scanned in this purchase.';
+        }
+        if (in_array($status, ['in_stock', 'returned'], true)) {
+            return 'IMEI already available in stock.';
+        }
+        if ($status === 'dumped') {
+            return 'IMEI was dumped (party credited). Void the dump first.';
+        }
+        if (!in_array($status, ['sold', 'transferred'], true)) {
+            return 'Not available — status: ' . ($status !== '' ? $status : 'unknown');
+        }
+        if ($exItem !== $itemId) {
+            return 'IMEI belongs to a different product.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Attach an IMEI to a purchase receive scan.
+     * Inserts a new in_stock row, or re-stocks a previously sold/transferred unit (buy-back).
+     * Caller must already be inside a DB transaction (uses FOR UPDATE).
+     *
+     * @return array{ok:bool,msg?:string,restocked?:bool,imei_id?:int,previous_status?:string}
+     */
+    public function attachToPurchase(string $imei, int $itemId, int $warehouseId, int $purchaseId): array {
+        $imei = strtoupper(trim($imei));
+        if ($imei === '' || $itemId <= 0 || $warehouseId <= 0 || $purchaseId <= 0) {
+            return ['ok' => false, 'msg' => 'Missing data.'];
+        }
+
+        $existing = $this->db->fetchOne(
+            "SELECT id, item_id, purchase_id, status, sale_id
+             FROM imei_records
+             WHERE imei = ?
+             FOR UPDATE",
+            [$imei]
+        );
+
+        if (!$existing) {
+            $id = $this->db->insert(
+                "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at)
+                 VALUES (?,?,?,?,'in_stock',NOW())",
+                [$imei, $itemId, $warehouseId, $purchaseId]
+            );
+            return ['ok' => true, 'restocked' => false, 'imei_id' => (int) $id];
+        }
+
+        $block = $this->attachBlockFromRow($existing, $itemId, $purchaseId);
+        if ($block !== null) {
+            return ['ok' => false, 'msg' => $block];
+        }
+
+        $exId   = (int) $existing['id'];
+        $status = (string) ($existing['status'] ?? '');
+
+        $this->db->execute(
+            "UPDATE imei_records
+             SET item_id = ?, warehouse_id = ?, purchase_id = ?, status = 'in_stock',
+                 sale_id = NULL, notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            [
+                $itemId,
+                $warehouseId,
+                $purchaseId,
+                'Re-stocked on purchase #' . $purchaseId . ' (was ' . $status . ')',
+                $exId,
+            ]
+        );
+
+        return [
+            'ok'              => true,
+            'restocked'       => true,
+            'imei_id'         => $exId,
+            'previous_status' => $status,
+        ];
+    }
+
+    /**
+     * Remove an IMEI from a purchase scan list.
+     * Deletes brand-new rows; restores sold/transferred when sale/return history exists (buy-back undo).
+     * Caller must already be inside a DB transaction (uses FOR UPDATE).
+     *
+     * @return array{ok:bool,msg?:string,deleted?:bool,restored?:bool}
+     */
+    public function detachFromPurchase(int $imeiId, int $purchaseId): array {
+        if ($imeiId <= 0 || $purchaseId <= 0) {
+            return ['ok' => false, 'msg' => 'Missing data.'];
+        }
+
+        $row = $this->db->fetchOne(
+            "SELECT id, imei, status, purchase_id
+             FROM imei_records
+             WHERE id = ?
+             FOR UPDATE",
+            [$imeiId]
+        );
+        if (!$row || (int) $row['purchase_id'] !== $purchaseId) {
+            return ['ok' => false, 'msg' => 'IMEI not found on this purchase.'];
+        }
+        if (($row['status'] ?? '') !== 'in_stock') {
+            return ['ok' => false, 'msg' => 'Cannot remove — status is ' . ($row['status'] ?? '')];
+        }
+
+        $hasSaleHistory = $this->db->fetchOne(
+            "SELECT 1 AS ok FROM sale_item_imei WHERE imei_id = ? LIMIT 1",
+            [$imeiId]
+        );
+        $hasReturnHistory = $this->db->fetchOne(
+            "SELECT 1 AS ok FROM return_item_imei WHERE imei_id = ? LIMIT 1",
+            [$imeiId]
+        );
+
+        if ($hasSaleHistory || $hasReturnHistory) {
+            $latestSale = $this->db->fetchOne(
+                "SELECT s.id
+                 FROM sale_item_imei sii
+                 JOIN sale_items si ON si.id = sii.sale_item_id
+                 JOIN sales s ON s.id = si.sale_id
+                 WHERE sii.imei_id = ? AND s.status != 'cancelled'
+                 ORDER BY s.date DESC, s.id DESC
+                 LIMIT 1",
+                [$imeiId]
+            );
+            if ($latestSale) {
+                $this->db->execute(
+                    "UPDATE imei_records
+                     SET status = 'sold', sale_id = ?, purchase_id = NULL,
+                         notes = 'Detached from purchase after buy-back scan undo', updated_at = NOW()
+                     WHERE id = ?",
+                    [(int) $latestSale['id'], $imeiId]
+                );
+            } else {
+                $this->db->execute(
+                    "UPDATE imei_records
+                     SET status = 'transferred', sale_id = NULL, purchase_id = NULL,
+                         notes = 'Detached from purchase (history preserved)', updated_at = NOW()
+                     WHERE id = ?",
+                    [$imeiId]
+                );
+            }
+            return ['ok' => true, 'deleted' => false, 'restored' => true];
+        }
+
+        $this->db->execute(
+            "DELETE FROM imei_records WHERE id = ? AND status = 'in_stock'",
+            [$imeiId]
+        );
+        return ['ok' => true, 'deleted' => true, 'restored' => false];
+    }
+
+    /**
+     * Leave this shop on a stock-only peer transfer. Caller must be in a transaction.
+     *
+     * @return array{ok:bool,msg?:string,imei_id?:int}
+     */
+    public function markTransferredOut(string $imei, int $itemId, int $warehouseId, string $transferNo): array {
+        $imei = strtoupper(trim($imei));
+        if ($imei === '' || $itemId <= 0 || $warehouseId <= 0) {
+            return ['ok' => false, 'msg' => 'Missing IMEI data.'];
+        }
+
+        $row = $this->db->fetchOne(
+            "SELECT id, item_id, warehouse_id, status FROM imei_records WHERE imei = ? FOR UPDATE",
+            [$imei]
+        );
+        if (!$row) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' is not registered.'];
+        }
+        if ((int) $row['item_id'] !== $itemId) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' belongs to a different product.'];
+        }
+        if ((int) $row['warehouse_id'] !== $warehouseId) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' is not in this warehouse.'];
+        }
+        if (!in_array((string) $row['status'], ['in_stock', 'returned'], true)) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' is not in stock (status: ' . $row['status'] . ').'];
+        }
+
+        $this->db->execute(
+            "UPDATE imei_records
+             SET status = 'transferred', sale_id = NULL,
+                 notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            ['Sent to other shop via ' . $transferNo, (int) $row['id']]
+        );
+
+        return ['ok' => true, 'imei_id' => (int) $row['id']];
+    }
+
+    /**
+     * Undo markTransferredOut when a pending/failed outbound is cancelled.
+     *
+     * @return array{ok:bool,msg?:string}
+     */
+    public function restoreFromIntershopOut(string $imei, int $itemId, int $warehouseId): array {
+        $imei = strtoupper(trim($imei));
+        $row = $this->db->fetchOne(
+            "SELECT id, item_id, status FROM imei_records WHERE imei = ? FOR UPDATE",
+            [$imei]
+        );
+        if (!$row) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' not found to restore.'];
+        }
+        if ((int) $row['item_id'] !== $itemId) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' belongs to a different product.'];
+        }
+        if ((string) $row['status'] !== 'transferred') {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' is ' . $row['status'] . ', not transferred.'];
+        }
+
+        $this->db->execute(
+            "UPDATE imei_records
+             SET status = 'in_stock', warehouse_id = ?, notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            [$warehouseId, 'Restored after cancelled shop transfer', (int) $row['id']]
+        );
+        return ['ok' => true];
+    }
+
+    /**
+     * Receive a serial from the other shop. Inserts or re-stocks sold/transferred.
+     * Caller must be in a transaction.
+     *
+     * @return array{ok:bool,msg?:string,imei_id?:int}
+     */
+    public function attachFromIntershop(string $imei, int $itemId, int $warehouseId, string $transferNo): array {
+        $imei = strtoupper(trim($imei));
+        if ($imei === '' || $itemId <= 0 || $warehouseId <= 0) {
+            return ['ok' => false, 'msg' => 'Missing IMEI data.'];
+        }
+
+        $existing = $this->db->fetchOne(
+            "SELECT id, item_id, status FROM imei_records WHERE imei = ? FOR UPDATE",
+            [$imei]
+        );
+        if (!$existing) {
+            $id = $this->db->insert(
+                "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at)
+                 VALUES (?,?,?,'in_stock',?,NOW())",
+                [$imei, $itemId, $warehouseId, 'Received from other shop via ' . $transferNo]
+            );
+            return ['ok' => true, 'imei_id' => (int) $id];
+        }
+
+        $status = (string) ($existing['status'] ?? '');
+        if ((int) $existing['item_id'] !== $itemId) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' already belongs to a different product on this shop.'];
+        }
+        if (in_array($status, ['in_stock', 'returned'], true)) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' is already in stock here.'];
+        }
+        if ($status === 'dumped') {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' was dumped. Void the dump first.'];
+        }
+        if (!in_array($status, ['sold', 'transferred'], true)) {
+            return ['ok' => false, 'msg' => 'IMEI ' . $imei . ' cannot enter stock (status: ' . ($status !== '' ? $status : 'unknown') . ').'];
+        }
+
+        $this->db->execute(
+            "UPDATE imei_records
+             SET warehouse_id = ?, status = 'in_stock', sale_id = NULL, purchase_id = NULL,
+                 notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            [
+                $warehouseId,
+                'Received from other shop via ' . $transferNo . ' (was ' . $status . ')',
+                (int) $existing['id'],
+            ]
+        );
+        return ['ok' => true, 'imei_id' => (int) $existing['id']];
     }
 }

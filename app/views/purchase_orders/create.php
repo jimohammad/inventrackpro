@@ -1,104 +1,135 @@
 <style>
 .sale-wrap{display:flex;flex-direction:column;gap:0;}
-.sale-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);border-radius:12px 12px 0 0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
+.sale-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#1e3a5f;border-radius:0;position:sticky;top:58px;z-index:90;}
 .sale-topbar .sale-title{font-size:1.05rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;}
-.topbar-actions{display:flex;align-items:flex-end;gap:14px;}
-.btn-new-item-link{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.16);color:#fff;text-decoration:none;font-size:0.78rem;font-weight:600;transition:all 0.15s;}
-.btn-new-item-link:hover{background:rgba(255,255,255,0.24);border-color:rgba(255,255,255,0.55);color:#fff;transform:translateY(-1px);}
-.branch-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:0.75rem;}
-.branch-wrap .branch-label{color:rgba(255,255,255,0.6);line-height:1;}
-.warehouse-select{padding:5px 12px;border-radius:8px;font-size:0.8rem;font-weight:600;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;cursor:pointer;outline:none;}
-.warehouse-select option{background:#1e3a5f;color:#fff;}
-.customer-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
-.customer-search-wrap{position:relative;flex:1;min-width:300px;max-width:560px;}
-.customer-search-wrap .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;}
-.customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #94a3b8;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
-.customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
-.customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
-.customer-search-wrap.inv-field{max-width:260px;flex:0 0 auto;}
-.customer-search-wrap.inv-field-narrow{max-width:180px;flex:0 0 auto;}
-.customer-search-wrap.inv-field-auto{margin-left:auto;}
-.supplier-currency-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:320px;max-width:660px;}
-.supplier-currency-wrap .customer-search-wrap{min-width:0;}
-.customer-search-wrap.meta{flex:0 0 auto;min-width:0;}
-.customer-search-wrap.meta .search-icon{font-size:0.92rem;left:10px;}
-.customer-search-wrap.meta input,
-.customer-search-wrap.meta select{
-    width:100%;
-    padding:7px 10px 7px 34px;
-    min-height:36px;
-    border-width:1.5px;
-    border-radius:9px;
-    font-size:0.92rem;
+.sale-composer{background:#fff;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;border-top:none;border-bottom:none;}
+.sale-composer-row{
+    display:grid;
+    grid-template-columns:minmax(220px,1.8fr) 108px minmax(160px,1fr) 148px 150px;
+    gap:10px;align-items:stretch;
+    padding:12px 20px;
+    position:relative;z-index:3;
 }
-.customer-search-wrap.meta input:focus,
-.customer-search-wrap.meta select:focus{box-shadow:0 0 0 3px rgba(99,102,241,0.10);}
-.customer-search-wrap.currency-mini{max-width:92px;flex:0 0 92px;}
-.customer-search-wrap.currency-mini select{cursor:pointer;}
-.items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:visible;}
-table.items-tbl{width:100%;border-collapse:collapse;font-size:0.94rem;}
-table.items-tbl th{padding:11px 12px;font-size:0.76rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
-table.items-tbl td{border-bottom:1px solid #e2e8f0;padding:8px 10px;vertical-align:middle;}
-table.items-tbl tbody tr{background:#fff;transition:background 0.1s;}
-table.items-tbl tbody tr:hover{background:#f8faff;}
-table.items-tbl tbody tr[id^="porow_"]{min-height:44px;}
-table.items-tbl input{border:none;outline:none;background:transparent;width:100%;font-size:0.94rem;font-weight:500;color:#1e293b;padding:6px 4px;line-height:1.35;}
-table.items-tbl input::placeholder{color:#94a3b8;font-weight:400;font-size:0.9rem;}
-table.items-tbl input:focus{background:#eff6ff;border-radius:6px;}
-table.items-tbl tfoot tr{background:#f8f9ff;}
-table.items-tbl tfoot td{font-size:0.94rem;}
-.col-num{width:36px;text-align:center;color:#94a3b8;font-size:0.88rem;font-weight:600;}
-.col-item{min-width:220px;position:relative;}
-.col-qty{width:82px;text-align:center;}
-.col-fprice{width:128px;text-align:right;}
-.col-price{width:138px;text-align:right;}
-.col-ktotal{width:138px;text-align:right;}
+.sale-field{position:relative;min-width:0;z-index:2;}
+.sale-field .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;}
+.sale-field input:not([type="hidden"]){
+    width:100%;height:44px;min-height:44px;padding:0 12px 0 40px;
+    border:1.5px solid #e2e8f0;border-radius:0;
+    font-size:0.92rem;font-weight:600;color:#1a1a2e;background:#fff;
+    transition:border-color .15s,box-shadow .15s;outline:none;
+}
+.sale-field input:not([type="hidden"]):focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,0.12);}
+.sale-field input.selected{border-color:#10b981;background:#f0fdf4;color:#065f46;}
+.sale-field input::placeholder{font-family:inherit;font-size:0.82rem;font-weight:500;color:#94a3b8;}
+.sale-chip{
+    height:44px;min-height:44px;display:flex;flex-direction:column;justify-content:center;
+    padding:0 12px;border-radius:0;background:#f8fafc;border:1.5px solid #e2e8f0;
+}
+.sale-chip-label{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;line-height:1.1;}
+.sale-chip-value{font-size:0.82rem;font-weight:800;color:#4338ca;letter-spacing:0.03em;line-height:1.25;}
+.sale-chip-date,.sale-chip-currency{padding:3px 10px 3px 12px;}
+.sale-chip-date input[type="date"]{
+    width:100%;border:none;background:transparent;outline:none;padding:0;height:auto;min-height:0;
+    font-size:0.82rem;font-weight:700;color:#334155;color-scheme:light;
+}
+.sale-chip-currency select{
+    width:100%;border:none;background:transparent;outline:none;
+    padding:0 16px 0 0;margin:0;height:auto;min-height:0;
+    font-size:0.82rem;font-weight:800;color:#1d4ed8;cursor:pointer;
+    font-family:inherit;appearance:none;-webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath fill='%2364748b' d='M1.6 5.2 8 11.6l6.4-6.4'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right center;
+}
+.sale-chip-currency select:focus{color:#4338ca;}
+#supplierSearchWrap input{padding-right:40px;}
+#supplierComboToggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:none;background:transparent;color:#64748b;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;border-radius:0;padding:0;}
+#supplierComboToggle:hover{color:#4338ca;background:#eef2ff;}
+#supplierSearchWrap.open #supplierComboToggle{color:#4338ca;}
+#supplierSearchWrap.open #supplierComboToggle i{transform:rotate(180deg);transition:transform 0.15s;}
+#supplierComboToggle i{transition:transform 0.15s;display:inline-block;}
+@media (max-width:960px){
+    .sale-composer-row{grid-template-columns:1fr 1fr;}
+    .sale-field-primary{grid-column:1/-1;}
+}
+.items-card{border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;border-top:none;border-bottom:1px solid #e5e7eb;border-radius:0;background:#fff;overflow:visible;}
+table.items-tbl{width:100%;table-layout:fixed;border-collapse:collapse;border-spacing:0;font-size:0.92rem;border:1px solid #e2e8f0;}
+table.items-tbl th,table.items-tbl td{box-shadow:none !important;}
+table.items-tbl th{
+    padding:8px 8px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;
+    color:#4338ca;background:#eef2ff;white-space:nowrap;border:1px solid #c7d2fe !important;
+}
+table.items-tbl th.col-num{color:#6366f1;padding-left:8px;}
+table.items-tbl th.col-act{padding-right:8px;}
+table.items-tbl tbody td{padding:0 !important;vertical-align:middle;background:#fff;border:1px solid #e2e8f0 !important;height:48px;}
+table.items-tbl tbody tr{background:#fff;}
+table.items-tbl tbody tr:hover td.col-num,
+table.items-tbl tbody tr:hover td.col-item,
+table.items-tbl tbody tr:hover td.col-qty,
+table.items-tbl tbody tr:hover td.col-act{background:#f8faff;}
+table.items-tbl tfoot td{background:#fff !important;border:none !important;}
+.col-num{width:36px;text-align:center;color:#94a3b8;font-size:0.85rem;font-weight:600;background:#f8fafc;}
+table.items-tbl tbody td.col-num{background:#f8fafc;line-height:48px;}
+.col-item{width:auto;min-width:180px;position:relative;}
+.col-qty{width:72px;text-align:center;}
+.col-fprice{width:110px;text-align:right;}
+.col-price{width:110px;text-align:right;}
+.col-ktotal{width:118px;text-align:right;}
 .col-act{width:36px;text-align:center;}
-.po-row-remove{font-size:1.25rem!important;line-height:1;padding:2px 4px;}
-.sale-bottom{display:flex;justify-content:flex-end;border:1px solid #e5e7eb;border-top:none;background:linear-gradient(135deg,#f8faff,#f5f7ff);border-radius:0 0 12px 12px;overflow:hidden;padding:0;}
-.po-summary-panel{min-width:380px;max-width:440px;width:100%;background:#fff;border-left:1px solid #e0e7ff;box-shadow:-4px 0 24px rgba(30,58,95,0.06);}
-.po-summary-head{display:flex;align-items:center;gap:8px;padding:12px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);color:#fff;font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
-.po-summary-head i{font-size:0.95rem;opacity:0.85;}
-.po-summary-body{padding:4px 0 8px;}
-.po-sum-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 20px;font-size:0.88rem;color:#475569;border-bottom:1px solid #f1f5f9;}
-.po-sum-row:last-child{border-bottom:none;}
-.po-sum-row .sum-label{display:flex;align-items:center;gap:6px;font-weight:600;color:#64748b;white-space:nowrap;}
-.po-sum-row .sum-label i{color:#6366f1;font-size:0.9rem;}
-.po-sum-row .sum-val{font-weight:700;color:#1e293b;font-variant-numeric:tabular-nums;min-width:90px;text-align:right;}
-.po-sum-row .sum-input{width:130px;text-align:right;border:1.5px solid #dbe2f0;border-radius:8px;padding:7px 10px;font-size:0.9rem;font-weight:700;color:#1e293b;background:#fafbff;outline:none;transition:border-color 0.15s,box-shadow 0.15s;}
-.po-sum-row .sum-input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
-.po-sum-row .sum-select{width:100%;max-width:200px;border:1.5px solid #dbe2f0;border-radius:8px;padding:7px 10px;font-size:0.85rem;font-weight:600;color:#1e293b;background:#fafbff;outline:none;cursor:pointer;transition:border-color 0.15s,box-shadow 0.15s;}
-.po-sum-row .sum-select:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
-.po-sum-row.subtotal .sum-val{color:#6366f1;}
-.po-sum-row.grand{background:linear-gradient(135deg,#f0f4ff,#eef2ff);padding:14px 20px;margin-top:2px;}
-.po-sum-row.grand .sum-label{font-size:0.92rem;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.3px;}
-.po-sum-row.grand .sum-val{font-size:1.35rem;font-weight:800;color:#1e3a5f;}
-.po-sum-row.payment{background:#fafbff;}
-.po-sum-row.payment .sum-control{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:1;max-width:200px;}
-.po-sum-row.payment .sum-control .sum-select,.po-sum-row.payment .sum-control .sum-input{width:100%;max-width:200px;}
-.po-sum-divider{height:1px;background:linear-gradient(90deg,transparent,#c7d2fe,transparent);margin:6px 20px;}
-.po-balance-wrap{padding:6px 16px 14px;}
-.po-balance-box{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-radius:10px;border:1.5px solid transparent;transition:background 0.2s,border-color 0.2s,box-shadow 0.2s;}
-.po-balance-left{display:flex;align-items:center;gap:11px;min-width:0;}
-.po-balance-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0;}
-.po-balance-text{display:flex;flex-direction:column;gap:1px;}
-.po-balance-label{font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.45px;line-height:1.2;}
-.po-balance-hint{font-size:0.72rem;font-weight:600;line-height:1.2;}
-.po-balance-amt{font-size:1.28rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:0.3px;flex-shrink:0;}
-.po-balance-box.zero{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-color:#6ee7b7;box-shadow:0 2px 8px rgba(5,150,105,0.08);}
-.po-balance-box.zero .po-balance-icon{background:rgba(5,150,105,0.14);color:#059669;}
-.po-balance-box.zero .po-balance-label,.po-balance-box.zero .po-balance-amt{color:#065f46;}
-.po-balance-box.zero .po-balance-hint{color:#059669;}
-.po-balance-box.due{background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fcd34d;box-shadow:0 2px 8px rgba(180,83,9,0.08);}
-.po-balance-box.due .po-balance-icon{background:rgba(180,83,9,0.12);color:#b45309;}
-.po-balance-box.due .po-balance-label,.po-balance-box.due .po-balance-amt{color:#92400e;}
-.po-balance-box.due .po-balance-hint{color:#b45309;}
-.full-toggle{display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.72rem;color:#6366f1;font-weight:700;margin-left:6px;}
-.full-toggle input{accent-color:#6366f1;width:14px;height:14px;cursor:pointer;margin:0;}
-@media(max-width:760px){.sale-bottom{justify-content:stretch;}.po-summary-panel{max-width:none;border-left:none;border-top:1px solid #e0e7ff;box-shadow:none;}}
-.save-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:2px solid #e0e7ff;border-radius:0 0 12px 12px;position:sticky;bottom:0;z-index:90;box-shadow:0 -4px 12px rgba(0,0,0,0.06);margin-top:-1px;}
-.btn-save-sale{padding:8px 28px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
-.btn-save-sale:hover{transform:translateY(-1px);}
+.po-cell-input{
+    display:block;width:100%;height:48px;box-sizing:border-box;
+    border:none !important;border-radius:0;background:#fff;outline:none;
+    font-size:0.92rem;font-weight:500;color:#1e293b;
+    padding:0 10px;line-height:48px;box-shadow:none !important;
+}
+.po-cell-input::placeholder{color:#94a3b8;font-weight:400;font-size:0.85rem;}
+.po-cell-input:focus{background:#fff;outline:2px solid #6366f1;outline-offset:-2px;position:relative;z-index:2;}
+.po-cell-input.item-search{font-weight:400;padding-left:10px;}
+.po-cell-input.qty{text-align:center;font-variant-numeric:tabular-nums;}
+.po-cell-input.qty::-webkit-inner-spin-button,
+.po-cell-input.qty::-webkit-outer-spin-button,
+.po-cell-input.foreign::-webkit-inner-spin-button,
+.po-cell-input.foreign::-webkit-outer-spin-button,
+.po-cell-input.unit::-webkit-inner-spin-button,
+.po-cell-input.unit::-webkit-outer-spin-button,
+.po-cell-input.total::-webkit-inner-spin-button,
+.po-cell-input.total::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.po-cell-input.qty,.po-cell-input.foreign,.po-cell-input.unit,.po-cell-input.total{-moz-appearance:textfield;appearance:textfield;}
+.po-cell-input.foreign{text-align:right;color:#b45309;background:#fffbeb;font-variant-numeric:tabular-nums;}
+.po-cell-input.foreign:focus{background:#fffbeb;}
+.po-cell-input.unit{text-align:right;color:#1e3a5f;font-variant-numeric:tabular-nums;}
+.po-cell-input.total{text-align:right;color:#4338ca;background:#eef2ff;font-weight:700;font-variant-numeric:tabular-nums;}
+.po-cell-input.total:focus{background:#eef2ff;}
+.po-row-remove{
+    display:flex;align-items:center;justify-content:center;
+    width:100%;height:48px;border-radius:0;
+    background:none;border:none;color:#94a3b8;cursor:pointer;
+    font-size:1.15rem;line-height:1;padding:0;
+}
+.po-row-remove:hover{color:#dc2626;background:#fef2f2;}
+@media(max-width:900px){
+    .col-qty{width:64px;}.col-fprice,.col-price{width:96px;}.col-ktotal{width:104px;}
+    .gt-card{width:100%;min-height:64px;}
+    #grandKwd{font-size:1.25rem;}
+    .gt-qty,.gt-foreign{font-size:0.85rem;}
+}
+.sale-gt-cell{padding:10px 0 0 !important;vertical-align:top;background:#fff !important;}
+.sale-btns-cell{padding:8px 0 12px !important;vertical-align:middle;background:#fff !important;}
+.sale-cancel-cell{padding:8px 8px 12px 0 !important;text-align:right;vertical-align:middle;background:#fff !important;}
+.gt-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;width:100%;min-height:64px;box-sizing:border-box;background:#1e3a5f;border-radius:0;box-shadow:none;position:relative;overflow:hidden;}
+.gt-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0;background:#818cf8;}
+.gt-meta{display:flex;flex-direction:column;gap:2px;padding-left:8px;min-width:0;}
+.gt-label{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.62);line-height:1.2;}
+.gt-qty{font-size:0.82rem;font-weight:800;color:#e0e7ff;letter-spacing:0.01em;line-height:1.2;}
+.gt-foreign{font-size:0.78rem;font-weight:700;color:#fcd34d;letter-spacing:0.01em;line-height:1.2;font-variant-numeric:tabular-nums;}
+.gt-amount{display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.gt-currency{font-size:0.82rem;font-weight:700;color:#a5b4fc;letter-spacing:0.04em;}
+#grandKwd{font-size:1.45rem;font-weight:800;color:#fff;letter-spacing:-0.03em;line-height:1;}
+.save-actions{display:flex;align-items:stretch;gap:8px;width:100%;}
+.btn-cancel-sale{padding:0 18px;border-radius:0;font-size:0.88rem;height:48px;min-height:48px;border:1px solid #e2e8f0;color:#64748b;background:#fff;cursor:pointer;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;box-sizing:border-box;}
+.btn-cancel-sale:hover{border-color:#94a3b8;background:#f8fafc;}
+.btn-save-sale{flex:1 1 0;min-width:0;height:48px;min-height:48px;padding:0 14px;border-radius:0;font-size:0.9rem;font-weight:700;white-space:nowrap;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;background:#2563eb;box-shadow:none;}
+.btn-save-sale:hover{background:#1d4ed8;}
+.btn-save-sale:disabled{opacity:0.5;cursor:not-allowed;}
 .autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;margin-top:4px;min-width:100%;}
 .autocomplete-box.item-dropdown{position:fixed;margin-top:0;min-width:380px;width:auto;right:auto;z-index:10050;}
 .autocomplete-item{padding:10px 14px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid #f1f5f9;color:#1e293b;transition:background 0.1s;line-height:1.35;}
@@ -112,7 +143,7 @@ table.items-tbl tfoot td{font-size:0.94rem;}
 <form method="POST" action="?page=purchaseorders&action=store" id="poForm">
     <?= Auth::csrfField() ?>
     <input type="hidden" name="party_id" id="partyIdInput">
-    <input type="hidden" name="exchange_rate" value="1">
+    <input type="hidden" name="warehouse_id" id="whSelect" value="<?= (int) Auth::warehouseId() ?>">
 
 <div class="sale-wrap">
 
@@ -121,67 +152,62 @@ table.items-tbl tfoot td{font-size:0.94rem;}
         <div class="sale-title">
             <i class="bi bi-file-earmark-text"></i> New Purchase Order
         </div>
-        <div class="topbar-actions">
-            <?php if (Auth::can('inventory','add')): ?>
-            <a href="?page=items&action=create" class="btn-new-item-link">
-                <i class="bi bi-plus-lg"></i> Create Item
-            </a>
-            <?php endif; ?>
-            <div class="branch-wrap">
-                <span class="branch-label">Branch</span>
-                <select name="warehouse_id" class="warehouse-select" id="whSelect">
-                    <?php foreach ($warehouses as $wh): ?>
-                    <option value="<?= $wh['id'] ?>" <?= Auth::warehouseId() == $wh['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($wh['name']) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-        </div>
     </div>
 
     <!-- SUPPLIER + META -->
-    <div class="customer-bar">
-        <div class="supplier-currency-wrap">
-            <div class="customer-search-wrap">
-                <i class="bi bi-building search-icon"></i>
-                <input type="text" id="supplierSearch" placeholder="Search supplier..." autocomplete="off">
-                <div class="autocomplete-box" id="supplierDrop" style="display:none;"></div>
+    <div class="sale-composer">
+        <div class="sale-composer-row">
+            <div class="sale-field sale-field-primary customer-search-wrap" id="supplierSearchWrap">
+                <i class="bi bi-person-circle search-icon"></i>
+                <input type="text" id="supplierSearch" placeholder="Search supplier..." autocomplete="off"
+                    autofocus role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="supplierDrop">
+                <button type="button" id="supplierComboToggle" tabindex="-1" aria-label="Search suppliers">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                <div class="autocomplete-box" id="supplierDrop" style="display:none;" role="listbox"></div>
             </div>
-            <div class="customer-search-wrap meta currency-mini">
-                <i class="bi bi-currency-exchange search-icon" style="color:#1d4ed8;"></i>
-                <select name="currency" id="poCurrency" style="padding-left:34px;" title="Foreign currency for the supplier price (record only)">
+            <div class="sale-chip sale-chip-currency">
+                <label class="sale-chip-label" for="poCurrency">Currency</label>
+                <select name="currency" id="poCurrency" title="Foreign currency for the supplier price (record only)">
                     <option value="AED">AED</option>
                     <option value="USD">USD</option>
                     <option value="KWD">KWD</option>
                 </select>
             </div>
-        </div>
-        <div class="customer-search-wrap inv-field meta" style="max-width:220px;">
-            <i class="bi bi-file-earmark-text search-icon" style="color:#f59e0b;"></i>
-            <input type="text" id="supplierRefInput" name="supplier_ref" placeholder="Proforma / Ref No" style="padding-left:34px;">
-        </div>
-        <div class="customer-search-wrap inv-field inv-field-narrow inv-field-auto meta" style="max-width:160px;">
-            <i class="bi bi-hash search-icon" style="color:#6366f1;"></i>
-            <input type="text" value="<?= $nextPoNo ?>" readonly
-                style="padding-left:36px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#6366f1;font-weight:700;letter-spacing:0.5px;cursor:default;">
-        </div>
-        <div class="customer-search-wrap inv-field inv-field-narrow meta" style="max-width:165px;">
-            <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
-            <input type="date" name="date" value="<?= date('Y-m-d') ?>" style="padding-left:36px;">
+            <div class="sale-field">
+                <i class="bi bi-file-earmark-text search-icon"></i>
+                <input type="text" id="supplierRefInput" name="supplier_ref" placeholder="Proforma / Ref No">
+            </div>
+            <div class="sale-chip" title="Next purchase order number">
+                <span class="sale-chip-label">PO No</span>
+                <span class="sale-chip-value"><?= htmlspecialchars((string) $nextPoNo) ?></span>
+            </div>
+            <div class="sale-chip sale-chip-date">
+                <label class="sale-chip-label" for="poDateInput">Date</label>
+                <input type="date" name="date" id="poDateInput" value="<?= date('Y-m-d') ?>">
+            </div>
         </div>
     </div>
 
     <!-- ITEMS TABLE -->
     <div class="items-card">
         <table class="items-tbl">
+            <colgroup>
+                <col style="width:36px">
+                <col>
+                <col style="width:72px">
+                <col style="width:110px">
+                <col style="width:110px">
+                <col style="width:118px">
+                <col style="width:36px">
+            </colgroup>
             <thead>
                 <tr>
                     <th class="col-num">#</th>
                     <th class="col-item">Item</th>
                     <th class="col-qty" style="text-align:center;">Qty</th>
-                    <th class="col-fprice" style="text-align:right;">Price (<span id="fcurLabel">AED</span>)</th>
-                    <th class="col-price" style="text-align:right;">Price (KWD)</th>
+                    <th class="col-fprice" style="text-align:right;">Foreign (<span id="fcurLabel">AED</span>)</th>
+                    <th class="col-price" style="text-align:right;">Unit (KWD)</th>
                     <th class="col-ktotal" style="text-align:right;">Total (KWD)</th>
                     <th class="col-act"></th>
                 </tr>
@@ -190,86 +216,36 @@ table.items-tbl tfoot td{font-size:0.94rem;}
             <tfoot>
                 <tr>
                     <td colspan="3"></td>
-                    <td style="text-align:right;font-weight:600;color:#b45309;padding:10px 10px;font-size:0.94rem;" id="subtotalForeign">0.000</td>
-                    <td style="padding:10px 10px;font-size:0.78rem;color:#94a3b8;text-align:right;font-weight:700;letter-spacing:0.4px;">SUBTOTAL</td>
-                    <td style="text-align:right;font-weight:700;color:#6366f1;padding:10px 10px;font-size:0.98rem;" id="subtotalKwd">0.000</td>
+                    <td colspan="3" class="sale-gt-cell">
+                        <div class="gt-card" id="poGrandTotalCard">
+                            <div class="gt-meta">
+                                <span class="gt-label">Grand Total</span>
+                                <span class="gt-qty" id="poGtQtyHint">Total qty 0</span>
+                                <span class="gt-foreign">Total foreign <span id="subtotalForeignDisplay">0.000</span> <span id="sumFcurLabel">AED</span></span>
+                            </div>
+                            <div class="gt-amount">
+                                <span class="gt-currency">KWD</span>
+                                <span id="grandKwd">0.000</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td colspan="3" class="sale-cancel-cell">
+                        <a href="?page=purchaseorders" class="btn-cancel-sale">Cancel</a>
+                    </td>
+                    <td colspan="3" class="sale-btns-cell">
+                        <div class="save-actions">
+                            <button type="submit" class="btn-save-sale" id="poSaveBtn" disabled>
+                                <i class="bi bi-check-lg"></i> Save Purchase Order
+                            </button>
+                        </div>
+                    </td>
                     <td></td>
                 </tr>
             </tfoot>
         </table>
-    </div>
-
-    <input type="hidden" name="notes" value="">
-
-    <!-- BOTTOM: right-aligned ERP summary -->
-    <div class="sale-bottom">
-        <div class="po-summary-panel">
-            <div class="po-summary-head">
-                <i class="bi bi-calculator"></i> Payment &amp; Summary
-            </div>
-            <div class="po-summary-body">
-                <div class="po-sum-row subtotal">
-                    <span class="sum-label">Items Subtotal (KWD)</span>
-                    <span class="sum-val" id="subtotalKwdDisplay">0.000</span>
-                </div>
-                <div class="po-sum-row">
-                    <span class="sum-label"><i class="bi bi-truck"></i> Other Charges</span>
-                    <input type="number" name="other_charges_kwd" id="otherChargesKwd" class="sum-input" step="0.001" min="0" value="0"
-                        title="Delivery or other supplier charges">
-                </div>
-                <div class="po-sum-row grand">
-                    <span class="sum-label">Total Amount</span>
-                    <span class="sum-val" id="grandKwd">0.000</span>
-                </div>
-                <div class="po-sum-divider"></div>
-                <div class="po-sum-row payment">
-                    <span class="sum-label"><i class="bi bi-bank"></i> Pay From Account</span>
-                    <div class="sum-control">
-                        <select name="account_id" id="payAccount" class="sum-select">
-                            <option value="">— None / On Credit —</option>
-                            <?php foreach ($accounts as $acc): ?>
-                            <option value="<?= $acc['id'] ?>" <?= strcasecmp(trim($acc['name']), 'NBK Bank Account') === 0 ? 'selected' : '' ?>><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-                <div class="po-sum-row payment">
-                    <span class="sum-label">
-                        <i class="bi bi-cash-coin"></i> Amount Paid
-                        <label class="full-toggle">
-                            <input type="checkbox" id="fullPayChk" checked>
-                            Full
-                        </label>
-                    </span>
-                    <div class="sum-control">
-                        <input type="number" name="paid_kwd" id="paidKwd" class="sum-input" step="0.001" min="0" value="0">
-                    </div>
-                </div>
-            </div>
-            <div class="po-balance-wrap">
-                <div class="po-balance-box zero" id="balanceRow">
-                    <div class="po-balance-left">
-                        <span class="po-balance-icon" id="balanceIcon"><i class="bi bi-check-circle-fill"></i></span>
-                        <div class="po-balance-text">
-                            <span class="po-balance-label">Balance Due</span>
-                            <span class="po-balance-hint" id="balanceHint">Fully paid</span>
-                        </div>
-                    </div>
-                    <span class="po-balance-amt" id="balanceKwd">0.000</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- SAVE BAR -->
-    <div class="save-bar">
-        <a href="?page=purchaseorders"
-           style="padding:8px 20px;border-radius:8px;font-size:0.88rem;border:1.5px solid #e5e7eb;color:#64748b;background:#fff;text-decoration:none;display:inline-flex;align-items:center;">
-            Cancel
-        </a>
-        <button type="submit" class="btn-save-sale" id="poSaveBtn" disabled>
-            <i class="bi bi-check-lg"></i> Save Purchase Order
-        </button>
     </div>
 
 </div>
@@ -280,14 +256,41 @@ let rowCount   = 0;
 let supplierId = 0;
 const itemStore    = {};
 const searchTimers = {};
+const poItemSearchAbort = {};
 
-// ── Supplier autocomplete ────────────────────────────────────────────────────
-const suppliers = <?= json_encode($suppliers) ?>;
+function escPoHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// ── Supplier combobox (AJAX — type to search) ────────────────────────────────
 let supplierMatches = [];
 let supplierHighlightIdx = -1;
+let supplierTimer = null;
+let supplierSearchAbort = null;
+
+function setSupplierDropOpen(open) {
+    const wrap = document.getElementById('supplierSearchWrap');
+    const input = document.getElementById('supplierSearch');
+    const drop = document.getElementById('supplierDrop');
+    if (wrap) wrap.classList.toggle('open', !!open);
+    if (input) input.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (drop) drop.style.display = open ? 'block' : 'none';
+    if (!open) supplierHighlightIdx = -1;
+}
+
+function supplierTypeLabel(type) {
+    if (type === 'customer') return 'Customer';
+    if (type === 'both') return 'Customer & Supplier';
+    return 'Supplier';
+}
 
 function updateSupplierHighlight() {
     const drop = document.getElementById('supplierDrop');
+    if (!drop) return;
     drop.querySelectorAll('.autocomplete-item').forEach(el => {
         el.classList.toggle('active', parseInt(el.dataset.idx, 10) === supplierHighlightIdx);
     });
@@ -297,45 +300,152 @@ function updateSupplierHighlight() {
 
 function renderSupplierDropdown(matches) {
     const drop = document.getElementById('supplierDrop');
-    if (!matches.length) { drop.style.display = 'none'; supplierHighlightIdx = -1; return; }
-    supplierMatches = matches;
+    if (!drop) return;
+    supplierMatches = Array.isArray(matches) ? matches : [];
     supplierHighlightIdx = -1;
-    drop.innerHTML = matches.map((s, idx) =>
-        `<div class="autocomplete-item" data-idx="${idx}"><strong>${s.name}</strong></div>`
-    ).join('');
+    if (!supplierMatches.length) {
+        drop.innerHTML = '<div style="padding:12px 14px;color:#94a3b8;font-size:0.85rem;">No matching supplier</div>';
+        setSupplierDropOpen(true);
+        return;
+    }
+    drop.innerHTML = supplierMatches.map((s, idx) => {
+        const typeLbl = supplierTypeLabel(s.type);
+        const typeHtml = typeLbl !== 'Supplier'
+            ? `<small>${escPoHtml(typeLbl)}</small>`
+            : '';
+        return `<div class="autocomplete-item" data-idx="${idx}" role="option">
+            <strong>${escPoHtml(s.name)}</strong>
+            ${typeHtml}
+        </div>`;
+    }).join('');
     drop.querySelectorAll('.autocomplete-item').forEach(el => {
         el.addEventListener('mousedown', function(e) {
             e.preventDefault();
             const s = supplierMatches[parseInt(this.dataset.idx, 10)];
-            selectSupplier(s.id, s.name);
+            if (s) selectSupplier(s.id, s.name);
         });
         el.addEventListener('mouseenter', function() {
             supplierHighlightIdx = parseInt(this.dataset.idx, 10);
             updateSupplierHighlight();
         });
     });
-    drop.style.display = 'block';
+    setSupplierDropOpen(true);
 }
 
-document.getElementById('supplierSearch').addEventListener('input', function() {
-    const q = this.value.trim().toLowerCase();
-    if (!q) {
-        document.getElementById('supplierDrop').style.display = 'none';
-        supplierHighlightIdx = -1;
+function showSupplierTypeHint() {
+    const drop = document.getElementById('supplierDrop');
+    if (!drop) return;
+    supplierMatches = [];
+    supplierHighlightIdx = -1;
+    drop.innerHTML = '<div style="padding:12px 14px;color:#94a3b8;font-size:0.85rem;">Type a name to search</div>';
+    setSupplierDropOpen(true);
+}
+
+function runSupplierSearch() {
+    const input = document.getElementById('supplierSearch');
+    if (!input) return;
+    clearTimeout(supplierTimer);
+    const q = input.value.trim();
+    if (q.length < 1) {
+        showSupplierTypeHint();
         return;
     }
-    renderSupplierDropdown(suppliers.filter(s => s.name.toLowerCase().includes(q)).slice(0, 10));
+    supplierTimer = setTimeout(function () {
+        const qNow = input.value.trim();
+        if (qNow.length < 1) {
+            showSupplierTypeHint();
+            return;
+        }
+        if (supplierSearchAbort) supplierSearchAbort.abort();
+        supplierSearchAbort = new AbortController();
+        const signal = supplierSearchAbort.signal;
+        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=purchase&balances=0', { signal })
+            .then(function (r) { return r.json(); })
+            .then(function (parties) {
+                if (input.value.trim() !== qNow) return;
+                renderSupplierDropdown(Array.isArray(parties) ? parties : []);
+            })
+            .catch(function (err) {
+                if (err && err.name === 'AbortError') return;
+                renderSupplierDropdown([]);
+            });
+    }, 300);
+}
+
+function openSupplierDropdown() {
+    const input = document.getElementById('supplierSearch');
+    if (!input) return;
+    const q = input.value.trim();
+    if (q.length < 1) {
+        showSupplierTypeHint();
+        return;
+    }
+    if (supplierMatches.length && document.getElementById('supplierDrop')?.innerHTML.trim()) {
+        setSupplierDropOpen(true);
+        return;
+    }
+    runSupplierSearch();
+}
+
+function closeSupplierDropdown() {
+    setSupplierDropOpen(false);
+}
+
+function clearSupplierSelection() {
+    supplierId = 0;
+    const idEl = document.getElementById('partyIdInput');
+    if (idEl) idEl.value = '';
+    document.getElementById('supplierSearch')?.classList.remove('selected');
+    checkSaveBtn();
+}
+
+let skipNextSupplierFocus = true;
+document.getElementById('supplierSearch').addEventListener('input', function() {
+    clearSupplierSelection();
+    runSupplierSearch();
+});
+document.getElementById('supplierSearch').addEventListener('focus', function() {
+    if (skipNextSupplierFocus) { skipNextSupplierFocus = false; return; }
+    openSupplierDropdown();
+});
+document.getElementById('supplierSearch').addEventListener('click', function() {
+    openSupplierDropdown();
+});
+document.getElementById('supplierComboToggle').addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    const drop = document.getElementById('supplierDrop');
+    const open = drop && drop.style.display !== 'none';
+    const input = document.getElementById('supplierSearch');
+    if (open) {
+        closeSupplierDropdown();
+        return;
+    }
+    input.focus();
+    openSupplierDropdown();
 });
 document.getElementById('supplierSearch').addEventListener('keydown', function(e) {
     if (e.key === 'Tab' && !e.shiftKey && document.getElementById('partyIdInput').value) {
         e.preventDefault();
+        closeSupplierDropdown();
         focusFirstPoItem();
         return;
     }
 
     const drop = document.getElementById('supplierDrop');
-    const visible = drop.style.display !== 'none';
-    if (!visible || !supplierMatches.length) return;
+    const visible = drop && drop.style.display !== 'none';
+
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !visible) {
+        e.preventDefault();
+        openSupplierDropdown();
+        return;
+    }
+    if (!visible || !supplierMatches.length) {
+        if (e.key === 'Escape' && visible) {
+            e.preventDefault();
+            closeSupplierDropdown();
+        }
+        return;
+    }
 
     if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -350,11 +460,10 @@ document.getElementById('supplierSearch').addEventListener('keydown', function(e
         e.stopPropagation();
         const idx = supplierHighlightIdx >= 0 ? supplierHighlightIdx : 0;
         const s = supplierMatches[idx];
-        selectSupplier(s.id, s.name);
+        if (s) selectSupplier(s.id, s.name);
     } else if (e.key === 'Escape') {
         e.preventDefault();
-        drop.style.display = 'none';
-        supplierHighlightIdx = -1;
+        closeSupplierDropdown();
     }
 }, true);
 document.getElementById('supplierRefInput').addEventListener('keydown', function(e) {
@@ -362,9 +471,6 @@ document.getElementById('supplierRefInput').addEventListener('keydown', function
         e.preventDefault();
         focusFirstPoItem();
     }
-});
-document.getElementById('supplierSearch').addEventListener('blur', () => {
-    setTimeout(() => document.getElementById('supplierDrop').style.display = 'none', 200);
 });
 function focusFirstPoItem() {
     const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
@@ -386,9 +492,9 @@ function selectSupplier(id, name) {
     supplierId = id;
     document.getElementById('partyIdInput').value = id;
     const inp = document.getElementById('supplierSearch');
-    inp.value = name; inp.className = 'selected';
-    document.getElementById('supplierDrop').style.display = 'none';
-    supplierHighlightIdx = -1;
+    inp.value = name;
+    inp.classList.add('selected');
+    closeSupplierDropdown();
     checkSaveBtn();
     setTimeout(focusFirstPoItem, 0);
 }
@@ -403,36 +509,35 @@ function addRow(noFocus) {
     tr.innerHTML = `
         <td class="col-num">${rowCount}</td>
         <td class="col-item" style="position:relative;">
-            <input type="text" class="item-search" placeholder="Search item..." autocomplete="off" data-row="${rid}">
+            <input type="text" class="po-cell-input item-search" placeholder="Search item by name or SKU…" autocomplete="off" data-row="${rid}">
             <input type="hidden" name="items[${rowCount}][item_id]" id="itemId_${rid}">
-            <input type="hidden" name="items[${rowCount}][unit_price]" value="0">
             <div class="autocomplete-box item-dropdown" id="itemDrop_${rid}" style="display:none;"></div>
         </td>
         <td class="col-qty">
-            <input type="number" name="items[${rowCount}][quantity]" id="qty_${rid}"
-                value="1" min="1" style="text-align:center;" data-row="${rid}" data-calc="price">
+            <input type="number" class="po-cell-input qty" name="items[${rowCount}][quantity]" id="qty_${rid}"
+                value="1" min="1" data-row="${rid}" data-calc="price">
         </td>
         <td class="col-fprice">
-            <input type="number" name="items[${rowCount}][foreign_price]" id="fprice_${rid}"
-                value="" step="0.001" min="0" placeholder="Foreign" style="text-align:right;font-weight:600;color:#b45309;"
+            <input type="number" class="po-cell-input foreign" name="items[${rowCount}][foreign_price]" id="fprice_${rid}"
+                value="" step="0.001" min="0" placeholder="0.000"
                 data-row="${rid}" data-calc="foreign">
         </td>
         <td class="col-price">
-            <input type="number" name="items[${rowCount}][kwd_price]" id="kwdprice_${rid}"
-                value="" step="0.001" placeholder="Unit" style="text-align:right;font-weight:600;color:#1e3a5f;"
+            <input type="number" class="po-cell-input unit" name="items[${rowCount}][kwd_price]" id="kwdprice_${rid}"
+                value="" step="0.001" min="0" placeholder="after TT"
                 data-row="${rid}" data-calc="price">
         </td>
         <td class="col-ktotal">
-            <input type="number" name="items[${rowCount}][kwd_total]" id="kwdtotal_${rid}"
-                value="" step="0.001" placeholder="Total" style="text-align:right;font-weight:700;color:#6366f1;"
+            <input type="number" class="po-cell-input total" name="items[${rowCount}][kwd_total]" id="kwdtotal_${rid}"
+                value="" step="0.001" min="0" placeholder="after TT"
                 data-row="${rid}" data-calc="total">
         </td>
         <td class="col-act">
-            <button type="button" class="po-row-remove" data-row="${rid}"
-                style="background:none;border:none;color:#94a3b8;cursor:pointer;">×</button>
+            <button type="button" class="po-row-remove" data-row="${rid}" title="Remove row" aria-label="Remove row">×</button>
         </td>
     `;
     document.getElementById('poTbody').appendChild(tr);
+    refreshKwdPlaceholders();
     if (!noFocus) tr.querySelector('.item-search').focus();
 }
 
@@ -504,16 +609,30 @@ function searchItem(input, rid) {
     const q    = input.value.trim();
     const drop = document.getElementById('itemDrop_' + rid);
     if (!drop) return;
-    if (q.length < 1) { drop.style.display = 'none'; poItemHighlightIdx[rid] = -1; return; }
-    const whId = document.getElementById('whSelect').value;
+    if (q.length < 1) { drop.style.display = 'none'; poItemHighlightIdx[rid] = -1; itemStore[rid] = []; return; }
+    const whEl = document.getElementById('whSelect');
+    const whId = whEl ? whEl.value : '';
     searchTimers[rid] = setTimeout(() => {
-        fetch(`?page=purchaseorders&action=searchItems&q=${encodeURIComponent(q)}&warehouse_id=${encodeURIComponent(whId)}`)
+        const reqQ = input.value.trim();
+        if (reqQ.length < 1) { drop.style.display = 'none'; poItemHighlightIdx[rid] = -1; return; }
+        if (poItemSearchAbort[rid]) poItemSearchAbort[rid].abort();
+        poItemSearchAbort[rid] = new AbortController();
+        fetch(`?page=purchaseorders&action=searchItems&q=${encodeURIComponent(reqQ)}&warehouse_id=${encodeURIComponent(whId)}`, { signal: poItemSearchAbort[rid].signal })
             .then(r => {
                 if (!r.ok) throw new Error('search failed');
                 return r.json();
             })
             .then(items => {
-                if (!Array.isArray(items) || !items.length) { drop.style.display = 'none'; return; }
+                // Ignore stale responses when the user kept typing
+                if (input.value.trim() !== reqQ) return;
+                if (!Array.isArray(items) || !items.length) {
+                    itemStore[rid] = [];
+                    poItemHighlightIdx[rid] = -1;
+                    drop.innerHTML = `<div style="padding:12px 14px;color:#94a3b8;font-size:0.85rem;">No items found for “${escPoHtml(reqQ)}”</div>`;
+                    positionPoItemDrop(input, drop);
+                    if (document.activeElement === input) drop.style.display = 'block';
+                    return;
+                }
                 itemStore[rid] = items;
                 drop.innerHTML = items.map((it, idx) => {
                     const aed = parseFloat(it.price_aed||0);
@@ -524,18 +643,25 @@ function searchItem(input, rid) {
                     ].filter(Boolean).join(' ');
                     return `
                     <div class="autocomplete-item" data-rid="${rid}" data-idx="${idx}">
-                        <strong>${it.name}</strong>
-                        ${it.sku ? `<small style="color:#94a3b8;"> · ${it.sku}</small>` : ''}
+                        <strong>${escPoHtml(it.name)}</strong>
+                        ${it.sku ? `<small style="color:#94a3b8;"> · ${escPoHtml(it.sku)}</small>` : ''}
                         <small style="float:right;color:#6366f1;font-weight:600;">KWD ${parseFloat(it.purchase_price||0).toFixed(3)}</small>
-                        <br><small style="color:#94a3b8;">Stock: ${it.current_stock}</small>
+                        <br><small style="color:#94a3b8;">Stock: ${escPoHtml(it.current_stock)}</small>
                         ${foreignBadges ? `&nbsp;${foreignBadges}` : ''}
                     </div>`;
                 }).join('');
                 bindPoItemDropdown(rid, drop);
                 positionPoItemDrop(input, drop);
-                drop.style.display = 'block';
+                if (document.activeElement === input) drop.style.display = 'block';
             })
-            .catch(() => { drop.style.display = 'none'; });
+            .catch((err) => {
+                if (err && err.name === 'AbortError') return;
+                if (input.value.trim() !== reqQ) return;
+                itemStore[rid] = [];
+                drop.innerHTML = `<div style="padding:12px 14px;color:#ef4444;font-size:0.85rem;">Item search failed. Try again.</div>`;
+                positionPoItemDrop(input, drop);
+                if (document.activeElement === input) drop.style.display = 'block';
+            });
     }, 250);
 }
 
@@ -553,13 +679,43 @@ document.getElementById('poTbody').addEventListener('input', function(e) {
     const rid = t.dataset.row;
     if (!rid) return;
     const calc = t.dataset.calc;
-    if (calc === 'price') calcFromPrice(rid);
-    else if (calc === 'total') calcFromTotal(rid);
+    // While typing: update the other field only — never rewrite the active input
+    // (rewriting with toFixed on every keystroke blocks editing).
+    if (calc === 'price') calcFromPrice(rid, false);
+    else if (calc === 'total') calcFromTotal(rid, false);
     else if (calc === 'foreign') calcForeign(rid);
+});
+document.getElementById('poTbody').addEventListener('focusout', function(e) {
+    const t = e.target;
+    const rid = t.dataset.row;
+    if (!rid) return;
+    const calc = t.dataset.calc;
+    if (calc === 'price') calcFromPrice(rid, true);
+    else if (calc === 'total') calcFromTotal(rid, true);
+});
+function reopenPoItemDropdown(input) {
+    if (!input || !input.classList.contains('item-search')) return;
+    const rid = input.dataset.row || input.closest('tr[id^="porow_"]')?.id;
+    if (!rid) return;
+    const drop = document.getElementById('itemDrop_' + rid);
+    if (!drop) return;
+    if (document.getElementById('itemId_' + rid)?.value) return;
+    if (input.value.trim().length < 1) return;
+    if (drop.style.display !== 'none') return;
+    if (drop.innerHTML.trim()) {
+        positionPoItemDrop(input, drop);
+        drop.style.display = 'block';
+        return;
+    }
+    searchItem(input, rid);
+}
+document.getElementById('poTbody').addEventListener('focusin', function(e) {
+    reopenPoItemDropdown(e.target);
 });
 document.getElementById('poTbody').addEventListener('click', function(e) {
     const btn = e.target.closest('.po-row-remove');
     if (btn?.dataset.row) removeRow(btn.dataset.row);
+    reopenPoItemDropdown(e.target);
 });
 window.addEventListener('scroll', function() {
     document.querySelectorAll('#poTbody .item-search').forEach(function(input) {
@@ -607,10 +763,8 @@ document.addEventListener('mousedown', function(e) {
     if (!e.target.closest('.item-dropdown') && !e.target.closest('.item-search')) {
         hideAllDropdowns();
     }
-    if (!e.target.closest('.customer-search-wrap')) {
-        const drop = document.getElementById('supplierDrop');
-        if (drop) drop.style.display = 'none';
-        supplierHighlightIdx = -1;
+    if (!e.target.closest('#supplierSearchWrap')) {
+        closeSupplierDropdown();
     }
 }, true);
 
@@ -628,18 +782,24 @@ function prefillForeign(rid, item) {
 }
 
 function selectItem(rid, item) {
-    const kwd = parseFloat(item.purchase_price || 0);
     document.querySelector('#' + rid + ' .item-search').value = item.name;
     document.getElementById('itemId_'   + rid).value = item.id;
-    document.getElementById('kwdprice_' + rid).value = kwd.toFixed(3);
     const drop = document.getElementById('itemDrop_' + rid);
     if (drop) drop.style.display = 'none';
     poItemHighlightIdx[rid] = -1;
     prefillForeign(rid, item);
-    calcFromPrice(rid);
+    if (poIsForeignCurrency()) {
+        document.getElementById('kwdprice_' + rid).value = '';
+        const tot = document.getElementById('kwdtotal_' + rid);
+        if (tot) tot.value = '';
+        recalcTotals();
+    } else {
+        const kwd = parseFloat(item.purchase_price || 0);
+        document.getElementById('kwdprice_' + rid).value = kwd > 0 ? kwd.toFixed(3) : '';
+        calcFromPrice(rid, true);
+    }
     const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
     if (rows[rows.length - 1]?.id === rid) addRow();
-    // Load price history for this item
     loadPriceHistory(rid, item.id, item.name);
 }
 
@@ -674,7 +834,7 @@ function loadPriceHistory(rid, itemId, itemName) {
                     <td style="padding:3px 8px;color:#334155;font-size:0.75rem;font-weight:600;">${sup}</td>
                     <td style="padding:3px 8px;text-align:center;color:#475569;font-size:0.75rem;">${qty}</td>
                     <td style="padding:3px 8px;text-align:right;color:#b45309;font-weight:700;font-size:0.75rem;">${foreignCell}</td>
-                    <td style="padding:3px 8px;text-align:right;color:#1e3a5f;font-weight:700;font-size:0.75rem;">${price} KWD</td>
+                    <td style="padding:3px 8px;text-align:right;color:#1e3a5f;font-weight:700;font-size:0.75rem;">${parseFloat(r.unit_price_kwd||0) > 0 ? price + ' KWD' : '—'}</td>
                 </tr>`;
             }).join('');
 
@@ -704,19 +864,47 @@ function loadPriceHistory(rid, itemId, itemName) {
 }
 
 // ── Calculations ─────────────────────────────────────────────────────────────
-function calcFromPrice(rid) {
-    const qty      = parseFloat(document.getElementById('qty_'      + rid)?.value || 0);
-    const kwdPrice = parseFloat(document.getElementById('kwdprice_' + rid)?.value || 0);
-    const kwdTotal = qty * kwdPrice;
-    document.getElementById('kwdtotal_' + rid).value = kwdTotal > 0 ? kwdTotal.toFixed(3) : '';
+function round3(n) {
+    return Math.round((n + Number.EPSILON) * 1000) / 1000;
+}
+
+function poIsForeignCurrency() {
+    return document.getElementById('poCurrency')?.value !== 'KWD';
+}
+
+function refreshKwdPlaceholders() {
+    const ph = poIsForeignCurrency() ? 'after TT' : '0.000';
+    document.querySelectorAll('#poTbody .po-cell-input.unit, #poTbody .po-cell-input.total').forEach(function(el) {
+        el.placeholder = ph;
+    });
+}
+
+// snap=true: format the edited field to 3dp (blur / programmatic). snap=false: leave it alone while typing.
+function calcFromPrice(rid, snap) {
+    const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
+    const priceEl = document.getElementById('kwdprice_' + rid);
+    const totalEl = document.getElementById('kwdtotal_' + rid);
+    const kwdPrice = round3(parseFloat(priceEl?.value || 0));
+    const kwdTotal = round3(qty * kwdPrice);
+    if (snap && priceEl && priceEl.value !== '' && !Number.isNaN(kwdPrice)) {
+        priceEl.value = kwdPrice.toFixed(3);
+    }
+    if (totalEl) totalEl.value = kwdTotal > 0 ? kwdTotal.toFixed(3) : '';
     recalcTotals();
 }
 
-function calcFromTotal(rid) {
-    const qty      = parseFloat(document.getElementById('qty_'      + rid)?.value || 1);
-    const kwdTotal = parseFloat(document.getElementById('kwdtotal_' + rid)?.value || 0);
-    const kwdPrice = qty > 0 ? kwdTotal / qty : 0;
-    document.getElementById('kwdprice_' + rid).value = kwdPrice > 0 ? kwdPrice.toFixed(3) : '';
+function calcFromTotal(rid, snap) {
+    const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 1) || 1;
+    const priceEl = document.getElementById('kwdprice_' + rid);
+    const totalEl = document.getElementById('kwdtotal_' + rid);
+    let kwdTotal = round3(parseFloat(totalEl?.value || 0));
+    const kwdPrice = qty > 0 ? round3(kwdTotal / qty) : 0;
+    if (priceEl) priceEl.value = kwdPrice > 0 ? kwdPrice.toFixed(3) : '';
+    // Only re-snap total from qty × unit when leaving the field (or programmatic).
+    if (snap) {
+        kwdTotal = round3(qty * kwdPrice);
+        if (totalEl) totalEl.value = kwdTotal > 0 ? kwdTotal.toFixed(3) : '';
+    }
     recalcTotals();
 }
 
@@ -726,9 +914,12 @@ function calcForeign(rid) {
 }
 
 function recalcTotals() {
-    let sumK = 0;
-    document.querySelectorAll('[id^="kwdtotal_porow_"]').forEach(el => {
-        sumK += parseFloat(el.value || 0);
+    let sumK = 0, totalQty = 0;
+    document.querySelectorAll('#poTbody tr[id^="porow_"]').forEach(tr => {
+        const rid = tr.dataset.rowId; if (!rid) return;
+        const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
+        if (document.getElementById('itemId_' + rid)?.value) totalQty += qty;
+        sumK += parseFloat(document.getElementById('kwdtotal_' + rid)?.value || 0);
     });
     let sumF = 0;
     document.querySelectorAll('[id^="fprice_porow_"]').forEach(el => {
@@ -736,65 +927,61 @@ function recalcTotals() {
         const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
         sumF += (parseFloat(el.value || 0) * qty);
     });
-    const otherCharges = parseFloat(document.getElementById('otherChargesKwd')?.value || 0);
-    const grand = sumK + otherCharges;
-    document.getElementById('subtotalForeign').textContent = sumF.toFixed(3);
-    document.getElementById('subtotalKwd').textContent = sumK.toFixed(3);
-    document.getElementById('subtotalKwdDisplay').textContent = sumK.toFixed(3);
-    document.getElementById('grandKwd').textContent = grand.toFixed(3);
-    if (document.getElementById('fullPayChk').checked) {
-        document.getElementById('paidKwd').value = grand.toFixed(3);
-    }
-    updateBalanceDisplay(grand);
+    const foreignEl = document.getElementById('subtotalForeignDisplay');
+    if (foreignEl) foreignEl.textContent = sumF.toFixed(3);
+    const qtyEl = document.getElementById('poGtQtyHint');
+    if (qtyEl) qtyEl.textContent = 'Total qty ' + totalQty;
+    const grandEl = document.getElementById('grandKwd');
+    if (grandEl) grandEl.textContent = (sumK > 0.0005) ? sumK.toFixed(3) : (poIsForeignCurrency() ? '—' : '0.000');
+    const gtCard = document.getElementById('poGrandTotalCard');
+    if (gtCard) gtCard.classList.toggle('has-amount', sumK > 0.0005);
     checkSaveBtn();
 }
 
-function toggleFullPay() {
-    if (document.getElementById('fullPayChk').checked) recalcTotals();
-}
-
-function updateBalanceDisplay(grand) {
-    const paid = parseFloat(document.getElementById('paidKwd')?.value || 0);
-    const balance = Math.max(0, grand - paid);
-    const isPaid = balance <= 0.0005;
-    const balanceEl = document.getElementById('balanceKwd');
-    const balanceRow = document.getElementById('balanceRow');
-    const balanceHint = document.getElementById('balanceHint');
-    const balanceIcon = document.getElementById('balanceIcon');
-    if (balanceEl) balanceEl.textContent = balance.toFixed(3);
-    if (balanceRow) {
-        balanceRow.classList.toggle('zero', isPaid);
-        balanceRow.classList.toggle('due', !isPaid);
-    }
-    if (balanceHint) balanceHint.textContent = isPaid ? 'Fully paid' : 'Outstanding amount';
-    if (balanceIcon) {
-        balanceIcon.innerHTML = isPaid
-            ? '<i class="bi bi-check-circle-fill"></i>'
-            : '<i class="bi bi-wallet2"></i>';
-    }
-}
-
 function checkSaveBtn() {
-    const hasItems = [...document.querySelectorAll('[id^="itemId_porow_"]')].some(el => el.value !== '');
-    document.getElementById('poSaveBtn').disabled = !hasItems || !supplierId;
+    const rows = [...document.querySelectorAll('#poTbody tr[id^="porow_"]')];
+    const filled = rows.filter(tr => document.getElementById('itemId_' + tr.id)?.value);
+    const pricesOk = filled.length > 0 && filled.every(tr => {
+        const rid = tr.id;
+        const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
+        if (qty < 1) return false;
+        if (poIsForeignCurrency()) {
+            return parseFloat(document.getElementById('fprice_' + rid)?.value || 0) > 0;
+        }
+        return parseFloat(document.getElementById('kwdprice_' + rid)?.value || 0) > 0
+            || parseFloat(document.getElementById('kwdtotal_' + rid)?.value || 0) > 0;
+    });
+    document.getElementById('poSaveBtn').disabled = !pricesOk || !supplierId;
 }
 
 // Keep the foreign-price column header label in sync with the chosen currency.
 document.getElementById('poCurrency').addEventListener('change', function() {
     document.getElementById('fcurLabel').textContent = this.value;
-});
-
-// Start with 2 empty rows (no auto-focus on items — supplier first)
-document.getElementById('otherChargesKwd')?.addEventListener('input', recalcTotals);
-document.getElementById('paidKwd')?.addEventListener('input', function() {
-    document.getElementById('fullPayChk').checked = false;
+    const sumLabel = document.getElementById('sumFcurLabel');
+    if (sumLabel) sumLabel.textContent = this.value;
+    refreshKwdPlaceholders();
     recalcTotals();
 });
-document.getElementById('fullPayChk')?.addEventListener('change', toggleFullPay);
+
+function focusSupplierField() {
+    const el = document.getElementById('supplierSearch');
+    if (el) el.focus();
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     addRow(true); addRow(true);
+    refreshKwdPlaceholders();
     recalcTotals();
-    document.getElementById('supplierSearch').focus();
+    focusSupplierField();
+    // Body is visibility:hidden during iq-boot, so the first focus is dropped.
+    const prevReveal = window.iqbalReveal;
+    window.iqbalReveal = function () {
+        if (typeof prevReveal === 'function') prevReveal();
+        focusSupplierField();
+        setTimeout(focusSupplierField, 40);
+    };
+    if (!document.documentElement.classList.contains('iq-boot')) {
+        setTimeout(focusSupplierField, 0);
+    }
 });
 </script>

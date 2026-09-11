@@ -65,6 +65,23 @@ class DashboardController extends BaseController {
         $accounts = $db->fetchAll(
             "SELECT id, name, type, current_balance FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
         );
+        require_once __DIR__ . '/../services/AccountBalanceService.php';
+        $whForCash = $whId > 0 ? (int) $whId : null;
+        $cashAsOf = date('Y-m-d');
+        foreach ($accounts as &$accRow) {
+            try {
+                $ledger = AccountBalanceService::computeFromLedgerAsOf(
+                    $db,
+                    (int) $accRow['id'],
+                    $cashAsOf,
+                    $whForCash
+                );
+                $accRow['current_balance'] = $ledger['balance'];
+            } catch (Throwable $e) {
+                error_log('[Dashboard] account ledger rebuild failed id=' . (int) $accRow['id'] . ': ' . $e->getMessage());
+            }
+        }
+        unset($accRow);
         $todayCashFresh = $db->fetchOne(
             "SELECT
                 COALESCE(SUM(py.amount),0) as total_received,
@@ -95,6 +112,47 @@ class DashboardController extends BaseController {
             'bank_total' => (float)($todayCashFresh['bank_total'] ?? 0),
         ];
 
+        // Always-fresh: today's Main Cash receipts grouped by the app user who recorded them.
+        $cashByUserRows = $db->fetchAll(
+            "SELECT
+                py.created_by,
+                COALESCE(NULLIF(TRIM(MAX(u.name)), ''), 'Unknown') as user_name,
+                COALESCE(SUM(py.amount), 0) as total_received,
+                COUNT(*) as payment_count
+             FROM payments py
+             JOIN accounts a ON a.id = py.account_id
+             LEFT JOIN users u ON u.id = py.created_by
+             WHERE py.date = CURDATE()
+               AND py.payment_type = 'in'
+               AND py.ref_type != 'discount'
+               AND py.warehouse_id = ?
+               AND py.status = 'active'
+               AND a.type = 'cash'
+               AND (a.is_default = 1 OR LOWER(TRIM(a.name)) = 'main cash')
+             GROUP BY py.created_by
+             ORDER BY total_received DESC, user_name ASC",
+            [$whId]
+        );
+        $cashByUserUsers = [];
+        $cashByUserTotal = 0.0;
+        $cashByUserCount = 0;
+        foreach ($cashByUserRows as $row) {
+            $amount = (float) ($row['total_received'] ?? 0);
+            $count = (int) ($row['payment_count'] ?? 0);
+            $cashByUserUsers[] = [
+                'name' => (string) ($row['user_name'] ?? 'Unknown'),
+                'total' => $amount,
+            ];
+            $cashByUserTotal += $amount;
+            $cashByUserCount += $count;
+        }
+        $myReceived = [
+            'total' => $cashByUserTotal,
+            'count' => $cashByUserCount,
+            'users' => $cashByUserUsers,
+            'user_count' => count($cashByUserUsers),
+        ];
+
         // Always-fresh data: today's sales card must update immediately after a sale.
         $todaySalesFresh = $db->fetchOne(
             "SELECT
@@ -111,20 +169,29 @@ class DashboardController extends BaseController {
             'count' => (int)($todaySalesFresh['sales_count'] ?? 0),
         ];
 
-        // Always-fresh: pending PO card must update immediately after convert/cancel/create.
+        // Always-fresh: cash already sent on open POs (goods not in). Not order value.
         $pendingPOsFresh = $db->fetchOne(
-            "SELECT COALESCE(SUM(subtotal_kwd + COALESCE(other_charges_kwd, 0)),0) as total, COUNT(*) as count
-             FROM purchase_orders WHERE status IN ('draft','paid') AND warehouse_id = ?",
+            "SELECT
+                COALESCE(SUM(CASE WHEN paid_kwd > 0.001 THEN paid_kwd ELSE 0 END), 0) AS paid_total,
+                COALESCE(SUM(CASE WHEN paid_kwd > 0.001 THEN 1 ELSE 0 END), 0) AS paid_count,
+                COALESCE(SUM(CASE WHEN status = 'draft' AND paid_kwd <= 0.001 THEN 1 ELSE 0 END), 0) AS unpaid_draft_count
+             FROM purchase_orders
+             WHERE status IN ('draft', 'paid') AND warehouse_id = ?",
             [$whId]
         );
         $pendingPOs = [
-            'total' => (float)($pendingPOsFresh['total'] ?? 0),
-            'count' => (int)($pendingPOsFresh['count'] ?? 0),
+            'total'              => (float) ($pendingPOsFresh['paid_total'] ?? 0),
+            'count'              => (int) ($pendingPOsFresh['paid_count'] ?? 0),
+            'unpaid_draft_count' => (int) ($pendingPOsFresh['unpaid_draft_count'] ?? 0),
         ];
 
-        $expectedKeys = ['todayExpenses','stockValue','pendingReceivables','pendingPayables','monthCompare','recentSales','topItems'];
+        $expectedKeys = ['stockValue','pendingReceivables','monthCompare','recentSales','topItems'];
         // Invalidate stale caches written before the "receipts" comparison was added.
         if ($cached && (!isset($cached['monthCompare']['receipts']))) {
+            $cached = null;
+        }
+        // Invalidate caches from before trade-only (customer) receivables.
+        if ($cached && (($cached['pendingReceivables']['kind'] ?? '') !== 'trade')) {
             $cached = null;
         }
 
@@ -135,17 +202,6 @@ class DashboardController extends BaseController {
             }
             $usedCache = true;
         } else {
-            // Today's expenses — filtered by warehouse
-            $todayTotals = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(amount),0) as expenses_total
-                 FROM expenses
-                 WHERE date = CURDATE()
-                   AND warehouse_id = ?",
-                [$whId]
-            );
-            $todayExpenses = ['total' => (float)$todayTotals['expenses_total']];
-
             // Stock value — filtered by warehouse
             $stockValue = $db->fetchOne(
                 "SELECT COALESCE(SUM(s.quantity * i.purchase_price), 0) as total,
@@ -156,16 +212,13 @@ class DashboardController extends BaseController {
                 [$whId]
             );
 
-            // Receivables / payables — Party model unified balance (same rules as Party Master).
+            // Trade receivables — customers/both only; open-PO cash stripped (not collectible).
             $partyModel = new Party();
-            $rpRow      = $partyModel->receivablePayableTotals($whId > 0 ? (int) $whId : null);
+            $rpRow      = $partyModel->tradeReceivableTotals($whId > 0 ? (int) $whId : null);
             $pendingReceivables = [
                 'total' => (float) ($rpRow['rec_total'] ?? 0),
                 'count' => (int) ($rpRow['rec_count'] ?? 0),
-            ];
-            $pendingPayables = [
-                'total' => (float) ($rpRow['pay_total'] ?? 0),
-                'count' => (int) ($rpRow['pay_count'] ?? 0),
+                'kind'  => 'trade',
             ];
 
             // This month vs last month — sales, purchases, expenses (warehouse scoped)
@@ -231,7 +284,7 @@ class DashboardController extends BaseController {
 
             // Recent sales — filtered by warehouse
             $recentSales = $db->fetchAll(
-                "SELECT s.invoice_no, p.name as party_name, s.grand_total, s.status, s.date
+                "SELECT s.invoice_no, p.name as party_name, s.grand_total
                  FROM sales s
                  JOIN parties p ON p.id = s.party_id
                  WHERE s.warehouse_id = ?
@@ -253,8 +306,8 @@ class DashboardController extends BaseController {
 
             // Cache results (excluding accounts, todayCash, todaySales, pendingPOs — fetched live above)
             $toCache = compact(
-                'todayExpenses','stockValue',
-                'pendingReceivables','pendingPayables','monthCompare',
+                'stockValue',
+                'pendingReceivables','monthCompare',
                 'recentSales','topItems'
             );
             @file_put_contents($cacheFile, json_encode($toCache), LOCK_EX);
@@ -278,6 +331,58 @@ class DashboardController extends BaseController {
                 ];
             } catch (Throwable $e) {
                 $mandoobInvDash = null;
+            }
+        }
+
+        // Service: devices still Pending / In Progress more than 7 days after received_date
+        $serviceOverdueDash = null;
+        if (Auth::can('service', 'view')) {
+            try {
+                $svRow = $db->fetchOne(
+                    "SELECT COUNT(*) AS overdue_count
+                     FROM service_records
+                     WHERE warehouse_id = ?
+                       AND status IN ('Pending', 'In Progress')
+                       AND COALESCE(received_date, DATE(created_at)) <= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
+                    [$whId]
+                );
+                $serviceOverdueDash = [
+                    'count' => (int) ($svRow['overdue_count'] ?? 0),
+                ];
+            } catch (Throwable $e) {
+                $serviceOverdueDash = null;
+            }
+        }
+
+        // Employee residence expiry
+        $employeeResidenceDash = null;
+        if (Auth::can('employees', 'view')) {
+            try {
+                require_once __DIR__ . '/../models/Employee.php';
+                $empModel = new Employee();
+                if (Employee::ensureSchema($db)) {
+                    $empCounts = $empModel->residenceExpiryCounts((int) $whId);
+                    $employeeResidenceDash = [
+                        'expired'  => (int) ($empCounts['expired'] ?? 0),
+                        'due_soon' => (int) ($empCounts['due_soon'] ?? 0),
+                    ];
+                }
+            } catch (Throwable $e) {
+                $employeeResidenceDash = null;
+            }
+        }
+
+        // Supplier trade license expiry (party master)
+        $tradeLicenseDash = null;
+        if (Auth::can('suppliers', 'view')) {
+            try {
+                $tlCounts = (new Party())->tradeLicenseExpiryCounts();
+                $tradeLicenseDash = [
+                    'expired'  => (int) ($tlCounts['expired'] ?? 0),
+                    'due_soon' => (int) ($tlCounts['due_soon'] ?? 0),
+                ];
+            } catch (Throwable $e) {
+                $tradeLicenseDash = null;
             }
         }
 
@@ -355,19 +460,21 @@ class DashboardController extends BaseController {
             ];
         }
 
-        // Search purchases — warehouse scoped
-        $purchases = $db->fetchAll(
-            "SELECT id, invoice_no, grand_total, status FROM purchases
-             WHERE warehouse_id = ? AND (invoice_no LIKE ? OR invoice_no LIKE ?) LIMIT 3",
-            [$whId, $prefix, $like]
-        );
-        foreach ($purchases as $p) {
-            $results[] = [
-                'type'  => 'Purchase',
-                'label' => $p['invoice_no'],
-                'sub'   => APP_CURRENCY . ' ' . number_format($p['grand_total'], DECIMAL_PLACES),
-                'url'   => '?page=purchases&action=detail&id=' . $p['id'],
-            ];
+        // Search purchases — warehouse scoped (hidden from salesman / users without purchases)
+        if (Auth::can('purchases', 'view')) {
+            $purchases = $db->fetchAll(
+                "SELECT id, invoice_no, grand_total, status FROM purchases
+                 WHERE warehouse_id = ? AND (invoice_no LIKE ? OR invoice_no LIKE ?) LIMIT 3",
+                [$whId, $prefix, $like]
+            );
+            foreach ($purchases as $p) {
+                $results[] = [
+                    'type'  => 'Purchase',
+                    'label' => $p['invoice_no'],
+                    'sub'   => APP_CURRENCY . ' ' . number_format($p['grand_total'], DECIMAL_PLACES),
+                    'url'   => '?page=purchases&action=detail&id=' . $p['id'],
+                ];
+            }
         }
 
         // Search IMEI — warehouse scoped
@@ -389,19 +496,49 @@ class DashboardController extends BaseController {
             ];
         }
 
-        // Search parties
-        $parties = $db->fetchAll(
-            "SELECT id, name, phone, type FROM parties 
-             WHERE name LIKE ? OR phone LIKE ? OR name LIKE ? OR phone LIKE ? LIMIT 3",
-            [$prefix, $prefix, $like, $like]
-        );
-        foreach ($parties as $pa) {
-            $results[] = [
-                'type'  => ucfirst($pa['type']),
-                'label' => $pa['name'],
-                'sub'   => $pa['phone'],
-                'url'   => '?page=parties&action=detail&id=' . $pa['id'],
-            ];
+        // Search parties (salesman: customers only — never suppliers / freight)
+        if (Auth::canAny(['parties', 'customers', 'suppliers'], 'view')) {
+            $partyTypeSql = Auth::can('suppliers', 'view')
+                ? ''
+                : " AND type IN ('customer', 'both')";
+            $parties = $db->fetchAll(
+                "SELECT id, name, phone, type FROM parties 
+                 WHERE (name LIKE ? OR phone LIKE ? OR name LIKE ? OR phone LIKE ?){$partyTypeSql} LIMIT 3",
+                [$prefix, $prefix, $like, $like]
+            );
+            foreach ($parties as $pa) {
+                $results[] = [
+                    'type'  => ucfirst($pa['type']),
+                    'label' => $pa['name'],
+                    'sub'   => $pa['phone'],
+                    'url'   => '?page=parties&action=detail&id=' . $pa['id'],
+                ];
+            }
+        }
+
+        // Search returns — so cashiers/salesmen find admin-created credit notes (RET-…)
+        if (Auth::can('returns', 'view')) {
+            $returns = $db->fetchAll(
+                "SELECT r.id, r.return_no, r.grand_total, r.status, r.type, p.name AS party_name
+                 FROM returns r
+                 LEFT JOIN parties p ON p.id = r.party_id
+                 WHERE r.warehouse_id = ?
+                   AND r.status != 'cancelled'
+                   AND (r.return_no LIKE ? OR r.return_no LIKE ? OR p.name LIKE ? OR p.name LIKE ?)
+                 ORDER BY r.created_at DESC
+                 LIMIT 3",
+                [$whId, $prefix, $like, $prefix, $like]
+            );
+            foreach ($returns as $ret) {
+                $typeLabel = (($ret['type'] ?? '') === 'purchase_return') ? 'Purchase return' : 'Sale return';
+                $results[] = [
+                    'type'  => 'Return',
+                    'label' => $ret['return_no'],
+                    'sub'   => $typeLabel . ' · ' . ($ret['party_name'] ?? '') . ' · '
+                        . APP_CURRENCY . ' ' . number_format((float) $ret['grand_total'], DECIMAL_PLACES),
+                    'url'   => '?page=returns&action=detail&id=' . (int) $ret['id'],
+                ];
+            }
         }
 
         $payload = json_encode(['results' => $results]);

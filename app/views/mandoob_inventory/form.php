@@ -56,7 +56,7 @@ $currentPartyId = $isEdit ? (int) ($row['party_id'] ?? 0) : 0;
             <div class="mb-3">
                 <label class="form-label fw-semibold">Reminder interval (months)</label>
                 <input type="number" name="interval_months" class="form-control" min="1" max="24" value="<?= $months ?>">
-                <div class="form-text">Default 3 — used when you press “Counted today” and when next due is auto-filled from last count.</div>
+                <div class="form-text">Default 3 — used when you record inventory and when next due is auto-filled from last count.</div>
             </div>
             <div class="row g-3 mb-3">
                 <div class="col-md-6">

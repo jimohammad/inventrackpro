@@ -60,7 +60,9 @@ switch ($method) {
         $total    = $db->fetchOne("SELECT COUNT(*) as c FROM items i {$where}", $params)['c'];
         $products = $db->fetchAll(
             "SELECT i.id, i.name, i.sku, i.barcode, i.brand, i.model,
-                    i.sale_price, i.purchase_price, i.has_imei, i.unit,
+                    i.sale_price, i.purchase_price, i.has_imei,
+                    COALESCE(i.has_nfc, 0) AS has_nfc,
+                    COALESCE(i.max_sale_qty, 0) AS max_sale_qty, i.unit,
                     c.name as category,
                     COALESCE(SUM(s.quantity), 0) as stock
              FROM items i
@@ -90,11 +92,13 @@ switch ($method) {
         $data = getInput();
         if (empty($data['name'])) apiError(422, 'Product name is required.');
 
+        $nameAr = trim((string) ($data['name_ar'] ?? ''));
         $id = $db->insert(
-            "INSERT INTO items (name, sku, barcode, category_id, brand, model, unit, has_imei, purchase_price, sale_price, min_stock)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO items (name, name_ar, sku, barcode, category_id, brand, model, unit, has_imei, has_nfc, purchase_price, sale_price, min_stock, max_sale_qty)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 $data['name'],
+                $nameAr !== '' ? $nameAr : null,
                 $data['sku'] ?? null,
                 $data['barcode'] ?? null,
                 $data['category_id'] ?? null,
@@ -102,9 +106,11 @@ switch ($method) {
                 $data['model'] ?? null,
                 $data['unit'] ?? 'pcs',
                 (int) ($data['has_imei'] ?? 0),
+                (int) ($data['has_nfc'] ?? 0),
                 (float) ($data['purchase_price'] ?? 0),
                 (float) ($data['sale_price'] ?? 0),
                 (int) ($data['min_stock'] ?? 0),
+                max(0, (int) ($data['max_sale_qty'] ?? 0)),
             ]
         );
 
@@ -129,11 +135,18 @@ switch ($method) {
 
         // Only update fields that are present in the payload (allows explicit null to clear nullable columns).
         if (array_key_exists('name', $data)) { $fields[] = "name = ?"; $params[] = $data['name']; }
+        if (array_key_exists('name_ar', $data)) {
+            $ar = trim((string) ($data['name_ar'] ?? ''));
+            $fields[] = "name_ar = ?";
+            $params[] = $ar !== '' ? $ar : null;
+        }
         if (array_key_exists('sku', $data)) { $fields[] = "sku = ?"; $params[] = $data['sku']; }
         if (array_key_exists('brand', $data)) { $fields[] = "brand = ?"; $params[] = $data['brand']; }
         if (array_key_exists('sale_price', $data)) { $fields[] = "sale_price = ?"; $params[] = ($data['sale_price'] === null ? null : (float)$data['sale_price']); }
         if (array_key_exists('purchase_price', $data)) { $fields[] = "purchase_price = ?"; $params[] = ($data['purchase_price'] === null ? null : (float)$data['purchase_price']); }
         if (array_key_exists('min_stock', $data)) { $fields[] = "min_stock = ?"; $params[] = ($data['min_stock'] === null ? null : (int)$data['min_stock']); }
+        if (array_key_exists('max_sale_qty', $data)) { $fields[] = "max_sale_qty = ?"; $params[] = max(0, (int) ($data['max_sale_qty'] ?? 0)); }
+        if (array_key_exists('has_nfc', $data)) { $fields[] = "has_nfc = ?"; $params[] = (int)$data['has_nfc']; }
 
         if (empty($fields)) {
             apiError(422, 'No updatable fields provided.');

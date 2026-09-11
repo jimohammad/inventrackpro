@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS parties (
     country         VARCHAR(100) DEFAULT 'Kuwait',
     tax_no          VARCHAR(100),
     id_card         VARCHAR(20),
+    trade_license_file VARCHAR(255) DEFAULT NULL,
+    trade_license_expires_on DATE DEFAULT NULL,
     opening_balance DECIMAL(15,3) DEFAULT 0.000,
     credit_limit    DECIMAL(15,3) DEFAULT 0.000,
     is_active       TINYINT(1) DEFAULT 1,
@@ -154,6 +156,7 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE TABLE IF NOT EXISTS items (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
+    name_ar         VARCHAR(255) DEFAULT NULL,
     sku             VARCHAR(100) UNIQUE,
     barcode         VARCHAR(100),
     category_id     INT,
@@ -161,11 +164,14 @@ CREATE TABLE IF NOT EXISTS items (
     model           VARCHAR(100),
     unit            VARCHAR(50) DEFAULT 'pcs',
     has_imei        TINYINT(1) DEFAULT 0,
+    imei_optional   TINYINT(1) DEFAULT 0,
+    has_nfc         TINYINT(1) DEFAULT 0,
     purchase_price  DECIMAL(15,3) DEFAULT 0.000,
     sale_price      DECIMAL(15,3) DEFAULT 0.000,
     price_aed       DECIMAL(15,3) DEFAULT 0.000,
     price_usd       DECIMAL(15,3) DEFAULT 0.000,
     min_stock       INT DEFAULT 0,
+    max_sale_qty    INT NOT NULL DEFAULT 0,
     description     TEXT,
     is_active       TINYINT(1) DEFAULT 1,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -192,7 +198,7 @@ CREATE TABLE IF NOT EXISTS imei_records (
     imei2           VARCHAR(20),
     item_id         INT NOT NULL,
     warehouse_id    INT,
-    status          ENUM('in_stock', 'sold', 'returned', 'transferred', 'defective') DEFAULT 'in_stock',
+    status          ENUM('in_stock', 'sold', 'returned', 'transferred', 'defective', 'dumped') DEFAULT 'in_stock',
     purchase_id     INT DEFAULT NULL,
     sale_id         INT DEFAULT NULL,
     notes           TEXT,
@@ -217,6 +223,20 @@ CREATE TABLE IF NOT EXISTS opening_stock_log (
     FOREIGN KEY (item_id) REFERENCES items(id),
     FOREIGN KEY (created_by) REFERENCES users(id),
     UNIQUE KEY unique_item_warehouse (item_id, warehouse_id)
+);
+
+-- Stock qty write-offs (missing units vs IMEI count). Included in rebuild.
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    warehouse_id    INT NOT NULL,
+    item_id         INT NOT NULL,
+    quantity_delta  INT NOT NULL,
+    reason          VARCHAR(64) NOT NULL DEFAULT 'imei_pending_writeoff',
+    notes           VARCHAR(500) NULL,
+    created_by      INT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_sa_item_wh (item_id, warehouse_id),
+    INDEX idx_sa_wh (warehouse_id)
 );
 
 -- ============================================================
@@ -289,6 +309,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     subtotal_foreign DECIMAL(15,3) DEFAULT 0.000,
     subtotal_kwd     DECIMAL(15,3) DEFAULT 0.000,
     other_charges_kwd DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+    adjustment_kwd   DECIMAL(15,3) NOT NULL DEFAULT 0.000,
     paid_foreign     DECIMAL(15,3) DEFAULT 0.000,
     paid_kwd         DECIMAL(15,3) DEFAULT 0.000,
     status           VARCHAR(20) DEFAULT 'draft',
@@ -317,6 +338,25 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     total_kwd          DECIMAL(15,3) DEFAULT 0.000,
     FOREIGN KEY (po_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES items(id)
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_documents (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    po_id           INT NOT NULL,
+    warehouse_id    INT NOT NULL,
+    doc_type        VARCHAR(40) NOT NULL DEFAULT 'other',
+    original_name   VARCHAR(255) NOT NULL,
+    stored_path     VARCHAR(255) NOT NULL,
+    mime_type       VARCHAR(100) NOT NULL,
+    file_size       INT NOT NULL DEFAULT 0,
+    notes           VARCHAR(500) DEFAULT NULL,
+    uploaded_by     INT DEFAULT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_po_docs_po (po_id),
+    INDEX idx_po_docs_wh (warehouse_id),
+    FOREIGN KEY (po_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (uploaded_by) REFERENCES users(id)
 );
 
 -- ============================================================
@@ -522,6 +562,7 @@ CREATE TABLE IF NOT EXISTS customer_discounts (
     discount_no VARCHAR(50) NOT NULL UNIQUE,
     party_id    INT NOT NULL,
     item_id     INT,
+    sale_id     INT,
     amount      DECIMAL(15,3) NOT NULL,
     reason      TEXT,
     date        DATE NOT NULL,
@@ -529,6 +570,7 @@ CREATE TABLE IF NOT EXISTS customer_discounts (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (party_id) REFERENCES parties(id),
     FOREIGN KEY (item_id) REFERENCES items(id),
+    FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL,
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
@@ -722,6 +764,31 @@ CREATE TABLE IF NOT EXISTS import_payable_accruals (
     INDEX idx_ipa_shipment (shipment_id)
 );
 
+-- Vendor bills: packing invoice AP (estimates stay on IPA / shipment lines only)
+CREATE TABLE IF NOT EXISTS import_vendor_bills (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    bill_no             VARCHAR(50) NOT NULL,
+    party_id            INT NOT NULL,
+    leg                 ENUM('packing_dxb') NOT NULL DEFAULT 'packing_dxb',
+    period_ym           CHAR(7) NULL,
+    bill_date           DATE NOT NULL,
+    amount              DECIMAL(15,3) NOT NULL,
+    erp_estimate        DECIMAL(15,3) NOT NULL DEFAULT 0,
+    vendor_invoice_ref  VARCHAR(100) NULL,
+    warehouse_id        INT NULL,
+    status              ENUM('open', 'paid', 'cancelled') NOT NULL DEFAULT 'open',
+    payment_id          INT NULL,
+    notes               VARCHAR(500) NULL,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_ivb_bill_no (bill_no),
+    UNIQUE KEY uq_ivb_payment (payment_id),
+    INDEX idx_ivb_party_status (party_id, status),
+    INDEX idx_ivb_period (period_ym),
+    FOREIGN KEY (party_id) REFERENCES parties(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL
+);
+
 -- ============================================================
 -- API KEYS
 -- ============================================================
@@ -909,3 +976,4 @@ INSERT INTO permissions (user_id, module, can_view, can_add, can_edit, can_delet
 (1, 'finance',      1,1,1,1),
 (1, 'reports',      1,1,1,1),
 (1, 'settings',     1,1,1,1);
+

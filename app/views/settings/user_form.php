@@ -58,12 +58,15 @@
                 </div>
                 <div class="mb-0">
                     <label class="form-label" style="font-weight:600;font-size:0.82rem;">Role</label>
-                    <select name="role" class="form-select" id="roleSelect" onchange="applyPreset(this.value)">
+                    <select name="role" class="form-select" id="roleSelect"<?= isset($editUser) ? '' : ' onchange="applyPreset(this.value)"' ?>>
                         <option value="cashier" <?= (isset($editUser) && $editUser['role']==='cashier') ? 'selected':'' ?>>Cashier</option>
                         <option value="manager" <?= (isset($editUser) && $editUser['role']==='manager') ? 'selected':'' ?>>Manager</option>
                         <option value="viewer"  <?= (isset($editUser) && $editUser['role']==='viewer')  ? 'selected':'' ?>>Viewer</option>
                         <option value="admin"   <?= (isset($editUser) && $editUser['role']==='admin')   ? 'selected':'' ?>>Admin</option>
                     </select>
+                    <?php if (isset($editUser)): ?>
+                    <small class="text-muted d-block mt-1">Changing role does not reset module checkboxes — edit them below.</small>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -117,17 +120,23 @@
                         'returns'   => ['Returns',    'bi-arrow-return-left'],
                         'inventory' => ['Inventory',  'bi-boxes'],
                         'stock'     => ['Stock List', 'bi-clipboard-data'],
+                        'intershop' => ['Shop transfer', 'bi-shop-window'],
                         'payments'  => ['Payment In',  'bi-credit-card'],
                         'payments_out' => ['Payment Out', 'bi-arrow-up-circle'],
                         'expenses'  => ['Expenses',   'bi-cash-stack'],
+                        'parties'   => ['Party Master', 'bi-people-fill'],
                         'customers' => ['Customers',  'bi-people'],
                         'suppliers' => ['Suppliers',  'bi-truck'],
+                        'discounts' => ['Discounts',  'bi-tag'],
+                        'import_logistics' => ['Import Logistics', 'bi-globe2'],
                         'reports'   => ['Reports (master)', 'bi-bar-chart-line'],
                         'imei'      => ['IMEI Scanner',  'bi-upc-scan'],
                         'service'   => ['Service Center',  'bi-tools'],
                         'warranty'  => ['Warranty Replace', 'bi-shield-check'],
+                        'dumps'     => ['Dump Credit', 'bi-recycle'],
                         'supplier_contacts' => ['Supplier Contacts', 'bi-building'],
                         'mandoob_inventory' => ['Mandoob Inventory', 'bi-truck-front'],
+                        'employees' => ['Employees',  'bi-person-badge'],
                         'settings'  => ['Settings',   'bi-gear'],
                     ];
                     foreach ($modules as $mod => [$label, $icon]):
@@ -189,6 +198,8 @@
                         'rpt_purchase_orders' => ['Purchase Orders Report', 'bi-file-earmark-text'],
                         'rpt_balance_sheet' => ['Balance Sheet',         'bi-clipboard-data'],
                         'rpt_customer_imei' => ['Customer IMEI Report',  'bi-phone'],
+                        'rpt_return_imei'   => ['Return IMEI Report',    'bi-phone-flip'],
+                        'rpt_bank_kyc'      => ['Official documents (Bank / Manpower)', 'bi-bank2'],
                         'rpt_purchase_imei' => ['Purchase IMEI Report',  'bi-phone-fill'],
                         'rpt_partner_profit' => ['Partner Profit Report', 'bi-handshake'],
                     ];
@@ -211,10 +222,10 @@
 
 <script>
 const presets = {
-    admin:   { dashboard:[1,1,1,1], sales:[1,1,1,1], purchases:[1,1,1,1], returns:[1,1,1,1], inventory:[1,1,1,1], stock:[1,1,1,1], payments:[1,1,1,1], payments_out:[1,1,1,1], expenses:[1,1,1,1], customers:[1,1,1,1], suppliers:[1,1,1,1], reports:[1,1,1,1], imei:[1,1,1,1], service:[1,1,1,1], warranty:[1,1,1,1], supplier_contacts:[1,1,1,1], mandoob_inventory:[1,1,1,1], settings:[1,1,1,1] },
-    manager: { dashboard:[1,0,0,0], sales:[1,1,1,0], purchases:[1,1,1,0], returns:[1,1,1,0], inventory:[1,1,1,0], stock:[1,0,0,0], payments:[1,1,0,0], payments_out:[1,1,0,0], expenses:[1,1,0,0], customers:[1,1,1,0], suppliers:[1,1,1,0], reports:[1,0,0,0], imei:[1,1,1,0], service:[1,1,1,0], warranty:[1,1,1,0], supplier_contacts:[1,1,1,0], mandoob_inventory:[1,1,1,0], settings:[0,0,0,0] },
-    cashier: { dashboard:[1,0,0,0], sales:[1,1,0,0], purchases:[0,0,0,0], returns:[1,1,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,1,0,0], payments_out:[0,0,0,0], expenses:[0,0,0,0], customers:[1,1,0,0], suppliers:[0,0,0,0], reports:[0,0,0,0], imei:[1,1,0,0], service:[1,1,1,0], warranty:[1,1,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[0,0,0,0], settings:[0,0,0,0] },
-    viewer:  { dashboard:[1,0,0,0], sales:[1,0,0,0], purchases:[1,0,0,0], returns:[1,0,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], payments:[1,0,0,0], payments_out:[0,0,0,0], expenses:[1,0,0,0], customers:[1,0,0,0], suppliers:[1,0,0,0], reports:[1,0,0,0], imei:[1,0,0,0], service:[1,0,0,0], warranty:[1,0,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[1,0,0,0], settings:[0,0,0,0] },
+    admin:   { dashboard:[1,1,1,1], sales:[1,1,1,1], purchases:[1,1,1,1], returns:[1,1,1,1], inventory:[1,1,1,1], stock:[1,1,1,1], intershop:[1,1,1,1], payments:[1,1,1,1], payments_out:[1,1,1,1], expenses:[1,1,1,1], parties:[1,1,1,1], customers:[1,1,1,1], suppliers:[1,1,1,1], discounts:[1,1,1,1], import_logistics:[1,1,1,1], reports:[1,1,1,1], imei:[1,1,1,1], service:[1,1,1,1], warranty:[1,1,1,1], dumps:[1,1,1,1], supplier_contacts:[1,1,1,1], mandoob_inventory:[1,1,1,1], employees:[1,1,1,1], settings:[1,1,1,1] },
+    manager: { dashboard:[1,0,0,0], sales:[1,1,1,0], purchases:[1,1,1,0], returns:[1,1,1,0], inventory:[1,1,1,0], stock:[1,0,0,0], intershop:[1,1,0,0], payments:[1,1,0,0], payments_out:[1,1,0,0], expenses:[1,1,0,0], parties:[1,1,1,0], customers:[1,1,1,0], suppliers:[1,1,1,0], discounts:[1,1,0,0], import_logistics:[1,1,0,0], reports:[1,0,0,0], imei:[1,1,1,0], service:[1,1,1,0], warranty:[1,1,1,0], dumps:[1,1,0,0], supplier_contacts:[1,1,1,0], mandoob_inventory:[1,1,1,0], employees:[1,1,1,0], settings:[0,0,0,0] },
+    cashier: { dashboard:[1,0,0,0], sales:[1,1,0,0], purchases:[0,0,0,0], returns:[1,1,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], intershop:[0,0,0,0], payments:[1,1,0,0], payments_out:[0,0,0,0], expenses:[0,0,0,0], parties:[1,1,0,0], customers:[1,1,0,0], suppliers:[0,0,0,0], discounts:[0,0,0,0], import_logistics:[0,0,0,0], reports:[0,0,0,0], imei:[1,1,0,0], service:[1,1,1,0], warranty:[1,1,0,0], dumps:[0,0,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[0,0,0,0], employees:[0,0,0,0], settings:[0,0,0,0] },
+    viewer:  { dashboard:[1,0,0,0], sales:[1,0,0,0], purchases:[1,0,0,0], returns:[1,0,0,0], inventory:[1,0,0,0], stock:[1,0,0,0], intershop:[0,0,0,0], payments:[1,0,0,0], payments_out:[0,0,0,0], expenses:[1,0,0,0], parties:[1,0,0,0], customers:[1,0,0,0], suppliers:[0,0,0,0], discounts:[0,0,0,0], import_logistics:[0,0,0,0], reports:[1,0,0,0], imei:[1,0,0,0], service:[1,0,0,0], warranty:[1,0,0,0], dumps:[0,0,0,0], supplier_contacts:[0,0,0,0], mandoob_inventory:[1,0,0,0], employees:[0,0,0,0], settings:[0,0,0,0] },
 };
 const rptPresets = {
     admin:   1,

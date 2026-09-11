@@ -13,7 +13,7 @@
             <i class="bi bi-printer me-1"></i> Print
         </button>
         <?php if (!empty($party['statement_token'])): ?>
-        <button type="button" onclick="copyStatementLink('<?= $party['statement_token'] ?>', this)"
+        <button type="button" onclick="copyStatementLink('<?= htmlspecialchars((string) $party['statement_token'], ENT_QUOTES, 'UTF-8') ?>', this)"
             class="btn btn-sm" style="background:rgba(99,102,241,0.12);color:#6366f1;border:1px solid rgba(99,102,241,0.3);">
             <i class="bi bi-link-45deg me-1"></i> Copy Field Link
         </button>

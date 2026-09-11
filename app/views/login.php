@@ -79,7 +79,7 @@
         <div class="text-center mb-4">
             <div class="login-logo">
                 <i class="bi bi-boxes"></i>
-                Inven<span>Track</span>
+                Iqbal<span>Erp</span>
             </div>
             <p class="text-secondary mt-2 mb-0" style="font-size:0.875rem;">Sign in to your account</p>
         </div>

@@ -2,7 +2,9 @@
 function money($v) { return APP_CURRENCY . ' ' . number_format($v, DECIMAL_PLACES); }
 $totalQty = 0;
 foreach ($sale['items'] as $item) $totalQty += (int)$item['quantity'];
-$hasBalance = $sale['balance'] > 0.001;
+$invoiceAr   = Sale::deriveInvoiceAr((float) ($sale['grand_total'] ?? 0), (float) ($sale['paid_amount'] ?? 0));
+$hasBalance  = $invoiceAr['balance'] > 0.001;
+$displayStatus = ($sale['status'] ?? '') === 'cancelled' ? 'cancelled' : $invoiceAr['status'];
 ?>
 
 <!-- Header -->
@@ -12,9 +14,15 @@ $hasBalance = $sale['balance'] > 0.001;
     <span class="badge px-3 py-1" style="border-radius:20px;font-size:0.78rem;font-weight:700;
         background:<?= $hasBalance ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)' ?>;
         color:<?= $hasBalance ? '#d97706' : '#059669' ?>;">
-        <?= ucfirst($sale['status']) ?>
+        <?= ucfirst($displayStatus) ?>
     </span>
     <div class="ms-auto d-flex gap-2">
+        <?php if ($hasBalance && ($sale['status'] ?? '') !== 'cancelled' && Auth::can('payments', 'add')): ?>
+        <a href="?page=payments&action=receive&ref_type=sale&ref_id=<?= (int) $sale['id'] ?>"
+           class="btn btn-sm btn-success">
+            <i class="bi bi-cash-coin me-1"></i> Receive Payment
+        </a>
+        <?php endif; ?>
         <a href="?page=sales&action=print&id=<?= $sale['id'] ?>&thermal=1&autoprint=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
         </a>
@@ -24,7 +32,12 @@ $hasBalance = $sale['balance'] > 0.001;
         <a href="?page=sales&action=print&id=<?= $sale['id'] ?>&autopdf=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">
             <i class="bi bi-file-earmark-pdf me-1"></i> PDF
         </a>
-        <?php if (Auth::isAdmin() && $sale['status'] !== 'cancelled'): ?>
+        <?php if (($sale['status'] ?? '') !== 'cancelled'): ?>
+        <a href="?page=sales&action=exportInvoice&id=<?= (int) $sale['id'] ?>" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-download me-1"></i> Export invoice
+        </a>
+        <?php endif; ?>
+        <?php if (!empty($canSaleEditNow) && $sale['status'] !== 'cancelled'): ?>
         <a href="?page=sales&action=edit&id=<?= $sale['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
@@ -38,6 +51,58 @@ $hasBalance = $sale['balance'] > 0.001;
         <?php endif; ?>
     </div>
 </div>
+
+<?php
+$saleStatus = (string) ($sale['status'] ?? '');
+$isCashierViewer = Auth::role() === 'cashier';
+$pendingReq = $saleEditPending ?? null;
+$unlockReq  = $saleEditUnlock ?? null;
+$latestReq  = $saleEditLatest ?? null;
+?>
+<?php if ($saleStatus !== 'cancelled' && ($isCashierViewer || (Auth::isAdmin() && !empty($pendingReq)))): ?>
+<div class="alert mb-3" style="border-radius:12px;<?php
+    if (!empty($unlockReq)) {
+        echo 'background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.35);';
+    } elseif (!empty($pendingReq)) {
+        echo 'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);';
+    } else {
+        echo 'background:var(--bg-card);border:1px solid var(--border-color);';
+    }
+?>">
+    <?php if (!empty($unlockReq)): ?>
+        <strong>Edit unlocked</strong> until <?= htmlspecialchars((string) $unlockReq['unlocked_until']) ?>.
+        Use <strong>Edit</strong> now. Saving the invoice closes this unlock.
+    <?php elseif (!empty($pendingReq)): ?>
+        <strong>Waiting for admin</strong>
+        <?php if (!empty($pendingReq['requested_by_name'])): ?>
+            — requested by <?= htmlspecialchars((string) $pendingReq['requested_by_name']) ?>
+        <?php endif; ?>
+        <?php if (Auth::isAdmin()): ?>
+            <a class="btn btn-sm btn-warning ms-2" href="?page=saleedits&action=view&id=<?= (int) $pendingReq['id'] ?>">Review</a>
+        <?php endif; ?>
+    <?php elseif ($isCashierViewer): ?>
+        <?php if (!empty($latestReq) && ($latestReq['status'] ?? '') === 'rejected'): ?>
+            <div class="mb-2"><strong>Last request was rejected.</strong>
+                <?php if (!empty($latestReq['staff_note'])): ?>
+                    <?= htmlspecialchars((string) $latestReq['staff_note']) ?>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+        <form method="POST" action="?page=saleedits&action=request" class="d-flex flex-wrap gap-2 align-items-end mb-0">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="sale_id" value="<?= (int) $sale['id'] ?>">
+            <div class="flex-grow-1" style="min-width:220px;">
+                <label class="form-label mb-1" style="font-size:0.78rem;font-weight:600;">Request edit (admin must approve)</label>
+                <input type="text" name="reason" class="form-control form-control-sm" required minlength="5" maxlength="500"
+                       placeholder="Why does this invoice need to change?">
+            </div>
+            <button type="submit" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-unlock me-1"></i> Request edit
+            </button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php if (($sale['status'] ?? '') === 'cancelled'): ?>
 <div class="alert alert-secondary border mb-3" style="border-radius:12px;">
@@ -228,6 +293,68 @@ $hasBalance = $sale['balance'] > 0.001;
                 </div>
             </div>
         </div>
+
+        <?php if (!empty($linkedReturns)): ?>
+        <?php
+        $linkedReturnTotal = 0.0;
+        foreach ($linkedReturns as $lrSum) {
+            $linkedReturnTotal += (float) ($lrSum['grand_total'] ?? 0);
+        }
+        ?>
+        <div class="card mb-3" style="border:none;border:1px solid rgba(220,38,38,0.2);">
+            <div class="card-body px-0 py-0">
+                <div style="padding:10px 20px;border-bottom:1px solid var(--border-color);font-weight:700;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center;background:rgba(220,38,38,0.06);">
+                    <span><i class="bi bi-arrow-return-left me-1" style="color:#dc2626;"></i> Sale returns (credit notes)</span>
+                    <span style="color:#dc2626;font-size:0.75rem;"><?= count($linkedReturns) ?> · <?= money($linkedReturnTotal) ?></span>
+                </div>
+                <p class="small mb-0 px-3 pt-2" style="color:#7f1d1d;line-height:1.45;">
+                    These returns already reduced <strong>Customer Outstanding</strong> for <strong>this customer</strong>.
+                    They do <strong>not</strong> change <strong>Invoice Balance</strong> — that stays unpaid until cash is received on this invoice.
+                </p>
+                <table style="width:100%;border-collapse:collapse;font-size:0.8rem;margin-top:4px;">
+                    <thead>
+                        <tr style="background:rgba(220,38,38,0.04);">
+                            <th style="padding:6px 12px 6px 20px;font-weight:600;font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);">Return</th>
+                            <th style="padding:6px 8px;font-weight:600;font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);">Date</th>
+                            <th style="padding:6px 8px;text-align:right;font-weight:600;font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);">Amount</th>
+                            <th style="padding:6px 20px 6px 8px;font-weight:600;font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($linkedReturns as $lr): ?>
+                        <tr style="border-bottom:1px solid var(--border-color);">
+                            <td style="padding:8px 12px 8px 20px;font-weight:700;">
+                                <?php if (Auth::can('returns', 'view')): ?>
+                                <a href="?page=returns&action=detail&id=<?= (int) $lr['id'] ?>" style="color:#dc2626;text-decoration:none;">
+                                    <?= htmlspecialchars((string) $lr['return_no']) ?>
+                                </a>
+                                <?php else: ?>
+                                <?= htmlspecialchars((string) $lr['return_no']) ?>
+                                <?php endif; ?>
+                                <?php if (!empty($lr['created_by_name'])): ?>
+                                <div class="small text-muted" style="font-weight:500;">by <?= htmlspecialchars((string) $lr['created_by_name']) ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td style="padding:8px;">
+                                <span style="background:#e0f2fe;color:#0369a1;padding:3px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;white-space:nowrap;">
+                                    <?= date('m/d/Y', strtotime((string) ($lr['created_at'] ?? $lr['date']))) ?>
+                                </span>
+                            </td>
+                            <td style="padding:8px;text-align:right;font-weight:700;color:#dc2626;">
+                                <?= money((float) ($lr['grand_total'] ?? 0)) ?>
+                            </td>
+                            <td style="padding:8px 20px 8px 8px;">
+                                <span class="badge px-2 py-1" style="border-radius:6px;background:rgba(16,185,129,0.15);color:#059669;">
+                                    <?= htmlspecialchars(ucfirst((string) ($lr['status'] ?? ''))) ?>
+                                </span>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <?php if ($sale['notes']): ?>
         <div style="margin-top:12px;padding:10px 20px;font-size:0.82rem;color:var(--text-muted);">

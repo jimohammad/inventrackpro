@@ -2,17 +2,23 @@
 
 require_once __DIR__ . '/BaseModel.php';
 require_once __DIR__ . '/Payment.php';
+require_once __DIR__ . '/IMEI.php';
+require_once __DIR__ . '/../helpers/ImeiFormat.php';
 
 class Purchase extends BaseModel {
     protected string $table = 'purchases';
 
     /**
-     * @param array{search?:string,status?:string,from_date?:string,to_date?:string} $filters
+     * Rows painted on the Purchases list (newest first).
+     * Filters still find older invoices; this is a DOM cap, not a data cap.
      */
+    public const INDEX_LIST_LIMIT = 25;
+
     /**
+     * @param array{search?:string,status?:string,from_date?:string,to_date?:string} $filters
      * @return array{items:list<array<string,mixed>>,truncated:bool,limit:int}
      */
-    public function getIndexList(array $filters, ?int $warehouseId, int $limit = ListPage::MAX_ROWS): array {
+    public function getIndexList(array $filters, ?int $warehouseId, int $limit = self::INDEX_LIST_LIMIT): array {
         $where  = "WHERE p.status != 'cancelled'";
         $params = [];
 
@@ -100,14 +106,37 @@ class Purchase extends BaseModel {
         return PURCHASE_PREFIX . str_pad((string) ($num + 1), 6, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * Prior import of the same source invoice number (stored as supplier_invoice_no).
+     *
+     * @return array<string, mixed>|false
+     */
+    public function findDuplicateImported(string $supplierInvoiceNo, int $warehouseId): array|false {
+        $no = trim($supplierInvoiceNo);
+        if ($no === '' || $warehouseId <= 0) {
+            return false;
+        }
+
+        return $this->db->fetchOne(
+            "SELECT id, invoice_no, date, grand_total
+             FROM purchases
+             WHERE warehouse_id = ?
+               AND status != 'cancelled'
+               AND supplier_invoice_no = ?
+             ORDER BY id DESC
+             LIMIT 1",
+            [$warehouseId, $no]
+        );
+    }
+
     public function findBlockingOpenPurchaseOrder(int $partyId, ?int $warehouseId, float $grandTotal): array|false {
         return $this->db->fetchOne(
-            "SELECT id, po_no, subtotal_kwd, other_charges_kwd, paid_kwd, status
+            "SELECT id, po_no, subtotal_kwd, other_charges_kwd, adjustment_kwd, paid_kwd, status
              FROM purchase_orders
              WHERE party_id = ?
                AND warehouse_id = ?
                AND status IN ('draft','paid')
-               AND ABS((subtotal_kwd + COALESCE(other_charges_kwd, 0)) - ?) < 0.001
+               AND ABS((subtotal_kwd + COALESCE(other_charges_kwd, 0) + COALESCE(adjustment_kwd, 0)) - ?) < 0.001
              ORDER BY id DESC
              LIMIT 1",
             [$partyId, $warehouseId, $grandTotal]
@@ -353,9 +382,11 @@ class Purchase extends BaseModel {
     }
 
     public function getImeiScanLines(int $purchaseId): array {
+        Item::ensureSerialKindColumn();
         $cond = self::imeiScannableCondition('i', 'c');
         return $this->db->fetchAll(
             "SELECT pi.id as pi_id, pi.item_id, pi.quantity, i.name as item_name,
+                    COALESCE(i.serial_kind, 'phone') AS serial_kind,
                     COALESCE(c.name, '') AS category_name,
                     (SELECT COUNT(*) FROM imei_records WHERE purchase_id = pi.purchase_id AND item_id = pi.item_id) as scanned
              FROM purchase_items pi
@@ -417,6 +448,7 @@ class Purchase extends BaseModel {
                 ]
             );
 
+            $imeiModel = new IMEI();
             foreach ($items as $item) {
                 $lineTotal = $item['unit_price'] * $item['quantity'];
                 $this->db->insert(
@@ -441,17 +473,19 @@ class Purchase extends BaseModel {
                     );
                 }
 
-                foreach ($item['imeis'] as $imei) {
-                    if (!$imei) {
+                foreach ($item['imeis'] ?? [] as $rawImei) {
+                    $imei = ImeiFormat::normalize((string) $rawImei);
+                    if ($imei === '') {
                         continue;
                     }
-                    $exists = $this->db->fetchOne("SELECT id FROM imei_records WHERE imei = ?", [$imei]);
-                    if (!$exists) {
-                        $this->db->insert(
-                            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status)
-                             VALUES (?,?,?,?,'in_stock')",
-                            [$imei, $item['item_id'], $warehouseId, $purchaseId]
-                        );
+                    $attached = $imeiModel->attachToPurchase(
+                        $imei,
+                        (int) $item['item_id'],
+                        $warehouseId,
+                        $purchaseId
+                    );
+                    if (empty($attached['ok'])) {
+                        throw new Exception($attached['msg'] ?? ('Could not attach IMEI ' . $imei));
                     }
                 }
 

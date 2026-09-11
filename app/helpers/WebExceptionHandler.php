@@ -25,6 +25,14 @@ final class WebExceptionHandler {
             http_response_code(500);
             header('Content-Type: text/html; charset=UTF-8');
 
+            if (isset($_GET['erp_diag']) && (string) $_GET['erp_diag'] === '1') {
+                echo '<!-- ERP-UNCAUGHT ' . htmlspecialchars(
+                    get_class($e) . ': ' . $msg . ' @ ' . basename($file) . ':' . $line,
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) . ' -->';
+            }
+
             $view = __DIR__ . '/../views/errors/500.php';
             if (is_readable($view)) {
                 include $view;

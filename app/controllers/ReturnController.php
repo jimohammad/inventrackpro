@@ -78,7 +78,7 @@ class ReturnController extends BaseController {
         }
         $out = [];
         foreach ($lines as $line) {
-            $imei = trim((string)$line);
+            $imei = ImeiFormat::normalize((string) $line);
             if ($imei !== '') {
                 $out[] = $imei;
             }
@@ -87,17 +87,17 @@ class ReturnController extends BaseController {
     }
 
     /**
-     * Validate scanned numeric IMEI/serial length (matches sales/returns UI: H40=13, phones=15–18).
+     * Accept phone IMEI (13 or 15–18 digits) or tablet serial (8–20 alnum with a letter).
      */
     private function validateScannedImei(string $imei): ?string {
-        if ($imei === '' || !ctype_digit($imei)) {
-            return 'IMEI must contain digits only.';
+        $imei = ImeiFormat::normalize($imei);
+        if ($imei === '') {
+            return 'Serial is empty.';
         }
-        $len = strlen($imei);
-        if ($len === 13 || ($len >= 15 && $len <= 18)) {
+        if (ImeiFormat::isPlausible($imei)) {
             return null;
         }
-        return 'Invalid IMEI length (H40 uses 13 digits; phones use 15–18).';
+        return 'Not a phone IMEI (13 or 15–18 digits) or tablet serial (11–20 letters/numbers).';
     }
 
     /**
@@ -168,6 +168,14 @@ class ReturnController extends BaseController {
             'sales',
             'invoice_no'
         );
+    }
+
+    /** UI preview only — no lock; assigned number may differ if another return saves first. */
+    private function previewNextReturnNo(): string {
+        $db   = Database::getInstance();
+        $last = $db->fetchOne('SELECT return_no FROM returns ORDER BY id DESC LIMIT 1');
+        $num  = $last ? (int) substr((string) ($last['return_no'] ?? ''), strlen(RETURN_PREFIX)) : 0;
+        return RETURN_PREFIX . str_pad((string) ($num + 1), 6, '0', STR_PAD_LEFT);
     }
 
     private function consumePurchaseReturnDraft(): ?array {
@@ -317,11 +325,12 @@ class ReturnController extends BaseController {
     }
 
     /**
-     * Validate IMEI-scanned sale returns (supports multiple source invoices, one customer).
+     * Validate IMEI-scanned sale returns (supports multiple source invoices / original buyers).
+     * Credit party is the selected return party — IMEIs may have been sold to another customer.
      *
      * @param array<int, array{item_id:int, quantity:int, imeis:array}> $items
      */
-    private function validateScannedSaleReturnImeis(array $items, int $partyId, int $warehouseId): ?string {
+    private function validateScannedSaleReturnImeis(array $items, int $warehouseId): ?string {
         $db     = Database::getInstance();
         $counts = [];
 
@@ -333,7 +342,7 @@ class ReturnController extends BaseController {
                 }
 
                 $row = $db->fetchOne(
-                    "SELECT ir.id AS imei_id, ir.sale_id, ir.item_id, s.party_id, s.status, s.warehouse_id, s.invoice_no
+                    "SELECT ir.id AS imei_id, ir.sale_id, ir.item_id, s.status, s.warehouse_id, s.invoice_no
                      FROM imei_records ir
                      JOIN sales s ON s.id = ir.sale_id
                      WHERE ir.imei = ? AND ir.status = 'sold'
@@ -341,21 +350,17 @@ class ReturnController extends BaseController {
                     [$imei]
                 );
                 if (!$row) {
-                    return "IMEI {$imei} is not a sold unit. Scan a serial that was sold to this customer.";
+                    return "IMEI {$imei} is not a sold unit. Scan a serial that was sold from this branch.";
                 }
                 if ((int) $row['warehouse_id'] !== $warehouseId) {
                     return "IMEI {$imei} belongs to another branch.";
-                }
-                if ((int) $row['party_id'] !== $partyId) {
-                    $inv = (string) ($row['invoice_no'] ?? 'another invoice');
-                    return "IMEI {$imei} is from {$inv} (different customer). All scanned units must belong to the same customer.";
                 }
                 if (($row['status'] ?? '') === 'cancelled') {
                     return 'Cannot return IMEI from cancelled invoice ' . ($row['invoice_no'] ?? '') . '.';
                 }
 
                 $saleId = (int) $row['sale_id'];
-                $dup    = $this->returnModel->isImeiAlreadyReturned((int) $row['imei_id'], $saleId);
+                $dup    = $this->returnModel->isImeiAlreadyReturned((int) $row['imei_id'], $saleId, $warehouseId);
                 if ($dup) {
                     return "IMEI {$imei} was already returned in {$dup['return_no']} on {$dup['date']}.";
                 }
@@ -381,12 +386,15 @@ class ReturnController extends BaseController {
         return null;
     }
 
-    /** Remaining returnable qty per item for a linked sale invoice. */
+    /** Remaining returnable qty (and unique sold price when unambiguous) per item for a linked sale. */
     private function saleReturnLimitMap(int $refId): array {
-        $rows = Database::getInstance()->fetchAll(
+        $db = Database::getInstance();
+        $rows = $db->fetchAll(
             "SELECT si.item_id, i.name,
                     SUM(si.quantity) AS sold_qty,
-                    COALESCE(ret.returned_qty, 0) AS already_returned
+                    COALESCE(ret.returned_qty, 0) AS already_returned,
+                    COUNT(DISTINCT ROUND(si.unit_price, 3)) AS price_count,
+                    MIN(si.unit_price) AS unit_price
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
              LEFT JOIN (
@@ -394,6 +402,22 @@ class ReturnController extends BaseController {
                  FROM return_items ri
                  JOIN returns r ON r.id = ri.return_id
                  WHERE r.ref_id = ? AND r.type = 'sale_return' AND r.status = 'approved'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM return_items ri_rs
+                       INNER JOIN return_item_imei rii_rs ON rii_rs.return_item_id = ri_rs.id
+                       INNER JOIN sale_item_imei sii_rs ON sii_rs.imei_id = rii_rs.imei_id
+                       INNER JOIN sale_items si_rs ON si_rs.id = sii_rs.sale_item_id
+                       INNER JOIN sales s_rs ON s_rs.id = si_rs.sale_id
+                       INNER JOIN sales orig_rs ON orig_rs.id = r.ref_id
+                       WHERE ri_rs.return_id = r.id
+                         AND s_rs.id != orig_rs.id
+                         AND s_rs.status != 'cancelled'
+                         AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 23:59:59'))
+                             > COALESCE(orig_rs.created_at, CONCAT(orig_rs.date,' 00:00:00'))
+                         AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 00:00:00'))
+                             <= COALESCE(r.created_at, CONCAT(r.date,' 23:59:59'))
+                   )
                  GROUP BY ri.item_id
              ) ret ON ret.item_id = si.item_id
              WHERE si.sale_id = ?
@@ -403,9 +427,14 @@ class ReturnController extends BaseController {
         $out = [];
         foreach ($rows as $row) {
             $remaining = (int) $row['sold_qty'] - (int) $row['already_returned'];
+            $priceCount = (int) ($row['price_count'] ?? 0);
             $out[(int) $row['item_id']] = [
-                'name'      => (string) $row['name'],
-                'remaining' => max(0, $remaining),
+                'name'       => (string) $row['name'],
+                'remaining'  => max(0, $remaining),
+                // Unique sold price only — never catalog. Null when mixed prices on invoice.
+                'unit_price' => $priceCount === 1
+                    ? number_format((float) $row['unit_price'], 3, '.', '')
+                    : null,
             ];
         }
         return $out;
@@ -429,10 +458,21 @@ class ReturnController extends BaseController {
             $filters = [
                 'from_date' => $this->input('from_date', date('Y-m-01'), 'get'),
                 'to_date'   => $this->input('to_date', date('Y-m-d'), 'get'),
-                'status'    => $this->input('status', '', 'get'),
                 'type'      => $this->input('type', '', 'get'),
+                'party_id'  => $this->inputInt('party_id', 0, 'get') ?: null,
             ];
             $returns   = $this->returnModel->getAll($filters);
+            $filterParty = null;
+            $partyId = (int) ($filters['party_id'] ?? 0);
+            if ($partyId > 0) {
+                $partyRow = $this->partyModel->find($partyId);
+                if ($partyRow) {
+                    $filterParty = [
+                        'id'   => (int) $partyRow['id'],
+                        'name' => (string) ($partyRow['name'] ?? ''),
+                    ];
+                }
+            }
             $pageTitle = 'Returns';
             $page      = 'returns';
 
@@ -446,11 +486,11 @@ class ReturnController extends BaseController {
     public function create(): void {
         $this->runReturnsHtml(function (): void {
             Auth::authorize('returns', 'add');
-            $parties    = []; // Loaded via AJAX search
-            $warehouses = self::getWarehouses();
             $returnDraft = $this->consumeReturnDraft();
             $pageTitle  = 'New Return';
             $page       = 'returns';
+            $skipListAssets = true;
+            $nextReturnNo = $this->previewNextReturnNo();
 
             // One-time token to prevent double-submit duplicate returns
             $_SESSION['return_form_nonce'] = bin2hex(random_bytes(16));
@@ -524,7 +564,7 @@ class ReturnController extends BaseController {
                     $this->redirectReturnCreateWithDraft('error', 'Please select a customer.');
                     return;
                 }
-                $scanErr = $this->validateScannedSaleReturnImeis($items, $partyId, $warehouseId);
+                $scanErr = $this->validateScannedSaleReturnImeis($items, $warehouseId);
                 if ($scanErr !== null) {
                     $this->redirectReturnCreateWithDraft('error', $scanErr);
                     return;
@@ -630,6 +670,8 @@ class ReturnController extends BaseController {
             $warehouses = self::getWarehouses();
             $pageTitle  = 'New Purchase Return';
             $page       = 'returns';
+            $skipListAssets = true;
+            $nextReturnNo = $this->previewNextReturnNo();
 
             $purchaseReturnDraft = $this->consumePurchaseReturnDraft();
 
@@ -794,7 +836,7 @@ class ReturnController extends BaseController {
         $this->runReturnsJson(function () use ($failJson): void {
             Auth::authorize('returns', 'add');
             header('Content-Type: application/json');
-            $imei        = trim($_GET['imei'] ?? '');
+            $imei        = ImeiFormat::normalize(trim($_GET['imei'] ?? ''));
             $purchaseId  = $this->inputInt('purchase_id', 0, 'get');
 
             $imeiError = $this->validateScannedImei($imei);
@@ -803,6 +845,7 @@ class ReturnController extends BaseController {
                 return;
             }
 
+            Item::ensureSerialKindColumn();
             $warehouseId = $this->resolveReturnWarehouseId('get');
             if ($warehouseId === null) {
                 echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Select a valid branch first.']);
@@ -812,6 +855,7 @@ class ReturnController extends BaseController {
             $db  = Database::getInstance();
             $sql = "SELECT ir.id as imei_id, ir.imei, ir.status, ir.item_id, ir.purchase_id, ir.sale_id, ir.warehouse_id,
                            i.name as item_name, i.sku, i.purchase_price,
+                           COALESCE(i.serial_kind, 'phone') AS serial_kind,
                            p.invoice_no as purchase_invoice, p.party_id as purchase_party_id, par.name as party_name,
                            pi.unit_price as historical_price
                     FROM imei_records ir
@@ -859,7 +903,8 @@ class ReturnController extends BaseController {
 
             $alreadyReturned = $this->returnModel->isImeiAlreadyReturnedToSupplier(
                 (int) $row['imei_id'],
-                $rowPurchaseId > 0 ? $rowPurchaseId : null
+                $rowPurchaseId > 0 ? $rowPurchaseId : null,
+                $warehouseId > 0 ? $warehouseId : null
             );
             if ($alreadyReturned) {
                 echo json_encode([
@@ -877,6 +922,7 @@ class ReturnController extends BaseController {
                 'accepted'          => true,
                 'item_id'           => (int) $row['item_id'],
                 'item_name'         => $row['item_name'],
+                'serial_kind'       => $row['serial_kind'] ?? 'phone',
                 'sku'               => $row['sku'] ?? '',
                 'unit_price'        => number_format((float) $unitPrice, 3, '.', ''),
                 'imei'              => $row['imei'],
@@ -917,13 +963,13 @@ class ReturnController extends BaseController {
         }, '[]');
     }
 
-    // AJAX: Lookup IMEI — returns item info with CURRENT sale price
+    // AJAX: Lookup IMEI — returns item info with ORIGINAL sold unit price (never catalog)
     public function lookupImei(): void {
         $failJson = '{"found":false,"accepted":false,"message":"Something went wrong. Please try again."}';
         $this->runReturnsJson(function (): void {
             Auth::authorize('returns', 'add');
             header('Content-Type: application/json');
-            $imei = trim($_GET['imei'] ?? '');
+            $imei = ImeiFormat::normalize(trim($_GET['imei'] ?? ''));
 
             $imeiError = $this->validateScannedImei($imei);
             if ($imeiError !== null) {
@@ -931,6 +977,7 @@ class ReturnController extends BaseController {
                 return;
             }
 
+            Item::ensureSerialKindColumn();
             $warehouseId = $this->resolveReturnWarehouseId('get');
             if ($warehouseId === null) {
                 echo json_encode(['found' => false, 'accepted' => false, 'message' => 'Select a valid branch first.']);
@@ -939,30 +986,29 @@ class ReturnController extends BaseController {
 
             $db = Database::getInstance();
 
-            // Find IMEI record + item with historical sale_price if sold, fallback to current sale_price
             $row = $db->fetchOne(
                 "SELECT ir.id as imei_id, ir.imei, ir.status, ir.item_id, ir.sale_id, ir.warehouse_id as imei_warehouse_id,
-                        i.name as item_name, i.sku, i.sale_price, i.has_imei,
+                        i.name as item_name, i.sku, i.has_imei,
+                        COALESCE(i.serial_kind, 'phone') AS serial_kind,
                         s.invoice_no as sold_invoice, s.party_id as sale_party_id, s.warehouse_id as sale_warehouse_id,
-                        p.name as party_name,
-                        si.unit_price as historical_price
+                        p.name as party_name
                  FROM imei_records ir
                  JOIN items i ON i.id = ir.item_id
                  LEFT JOIN sales s ON s.id = ir.sale_id
                  LEFT JOIN parties p ON p.id = s.party_id
-                 LEFT JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
                  WHERE ir.imei = ?
-                   AND (ir.warehouse_id = ? OR s.warehouse_id = ?)",
+                   AND (ir.warehouse_id = ? OR s.warehouse_id = ?)
+                 LIMIT 1",
                 [$imei, $warehouseId, $warehouseId]
             );
 
-            // IMEI NOT in system — still accept it, cashier picks item manually
+            // IMEI NOT in system — still accept it, but sold price requires invoice link later
             if (!$row) {
                 echo json_encode([
                     'found'    => false,
                     'accepted' => true,
                     'imei'     => $imei,
-                    'message'  => 'IMEI not in system — select item model manually.',
+                    'message'  => 'IMEI not in system — select item and link the original invoice for sold price.',
                 ]);
                 return;
             }
@@ -971,6 +1017,8 @@ class ReturnController extends BaseController {
                 $statusMsg = match ($row['status']) {
                     'in_stock', 'returned' => 'IMEI is already in stock — it may have been returned already.',
                     'transferred'          => 'IMEI was returned to supplier and cannot be received as a sale return.',
+                    'dumped'               => 'IMEI was dumped (party credited). Void the dump first, or do not use a sale return.',
+                    'defective'            => 'IMEI is on a warranty replacement and cannot be sale-returned.',
                     default                => 'IMEI is not currently sold and cannot be returned.',
                 };
                 echo json_encode(['found' => false, 'accepted' => false, 'message' => $statusMsg]);
@@ -981,7 +1029,11 @@ class ReturnController extends BaseController {
             $partyId = !empty($row['sale_party_id']) ? (int) $row['sale_party_id'] : null;
 
             if ($saleId) {
-                $alreadyReturned = $this->returnModel->isImeiAlreadyReturned((int) $row['imei_id'], $saleId);
+                $alreadyReturned = $this->returnModel->isImeiAlreadyReturned(
+                    (int) $row['imei_id'],
+                    $saleId,
+                    $warehouseId > 0 ? $warehouseId : null
+                );
                 if ($alreadyReturned) {
                     echo json_encode([
                         'found'    => true,
@@ -993,23 +1045,41 @@ class ReturnController extends BaseController {
                 }
             }
 
-            // Return item data with historical price + link to originating sale/customer
-            $unitPrice = isset($row['historical_price']) ? $row['historical_price'] : $row['sale_price'];
+            try {
+                $resolved = $this->returnModel->resolveSaleReturnUnitPrice(
+                    (int) $row['item_id'],
+                    [$imei],
+                    $saleId,
+                    null
+                );
+            } catch (\Exception $e) {
+                echo json_encode([
+                    'found'    => true,
+                    'accepted' => false,
+                    'message'  => $e->getMessage(),
+                ]);
+                return;
+            }
+
+            $unitPrice = number_format($resolved, 3, '.', '');
             echo json_encode([
-                'found'      => true,
-                'accepted'   => true,
-                'item_id'    => (int)$row['item_id'],
-                'item_name'  => $row['item_name'],
-                'sku'        => $row['sku'] ?? '',
-                'sale_price' => number_format((float)$unitPrice, 3, '.', ''),
-                'has_imei'   => (bool)$row['has_imei'],
-                'imei'       => $row['imei'],
-                'status'     => $row['status'],
+                'found'        => true,
+                'accepted'     => true,
+                'item_id'      => (int) $row['item_id'],
+                'item_name'    => $row['item_name'],
+                'serial_kind'  => $row['serial_kind'] ?? 'phone',
+                'sku'          => $row['sku'] ?? '',
+                'sale_price'   => $unitPrice, // original sold price (field name kept for UI compat)
+                'unit_price'   => $unitPrice,
+                'price_locked' => true,
+                'has_imei'     => (bool) $row['has_imei'],
+                'imei'         => $row['imei'],
+                'status'       => $row['status'],
                 'sold_invoice' => $row['sold_invoice'] ?? '',
-                'sale_id'    => $saleId,
-                'party_id'   => $partyId,
-                'party_name' => $row['party_name'] ?? '',
-                'message'    => "Found: {$row['item_name']}" . ($row['sold_invoice'] ? " (from {$row['sold_invoice']})" : ''),
+                'sale_id'      => $saleId,
+                'party_id'     => $partyId,
+                'party_name'   => $row['party_name'] ?? '',
+                'message'      => "Found: {$row['item_name']}" . ($row['sold_invoice'] ? " (from {$row['sold_invoice']})" : ''),
             ]);
         }, $failJson);
     }
@@ -1193,6 +1263,22 @@ class ReturnController extends BaseController {
                      FROM return_items ri
                      JOIN returns r ON r.id = ri.return_id
                      WHERE r.ref_id = ? AND r.status = 'approved' AND r.id != ?
+                       AND NOT EXISTS (
+                           SELECT 1
+                           FROM return_items ri_rs
+                           INNER JOIN return_item_imei rii_rs ON rii_rs.return_item_id = ri_rs.id
+                           INNER JOIN sale_item_imei sii_rs ON sii_rs.imei_id = rii_rs.imei_id
+                           INNER JOIN sale_items si_rs ON si_rs.id = sii_rs.sale_item_id
+                           INNER JOIN sales s_rs ON s_rs.id = si_rs.sale_id
+                           INNER JOIN sales orig_rs ON orig_rs.id = r.ref_id
+                           WHERE ri_rs.return_id = r.id
+                             AND s_rs.id != orig_rs.id
+                             AND s_rs.status != 'cancelled'
+                             AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 23:59:59'))
+                                 > COALESCE(orig_rs.created_at, CONCAT(orig_rs.date,' 00:00:00'))
+                             AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 00:00:00'))
+                                 <= COALESCE(r.created_at, CONCAT(r.date,' 23:59:59'))
+                       )
                      GROUP BY ri.item_id
                  ) ret ON ret.item_id = si.item_id
                  WHERE si.sale_id = ?
@@ -1301,12 +1387,36 @@ class ReturnController extends BaseController {
                     }
 
                     $newQty   = max(1, (int)($row['quantity'] ?? 1));
-                    $newPrice = (float)($row['unit_price'] ?? 0);
-                    $newTotal = round($newQty * $newPrice, 3);
                     $oldQty   = (int)$oldItem['quantity'];
                     $qtyDiff  = $newQty - $oldQty;
                     $isImeiItem = ((int)($oldItem['has_imei'] ?? 0) === 1);
                     $postedImeis = $this->parsePostedImeis($row['imeis'] ?? '');
+
+                    // Always use original sold price — ignore posted unit_price.
+                    $imeisForPrice = $postedImeis;
+                    if (empty($imeisForPrice) && $imeiLinkCount > 0) {
+                        $linkedImeis = $db->fetchAll(
+                            "SELECT ir.imei
+                             FROM return_item_imei rii
+                             JOIN imei_records ir ON ir.id = rii.imei_id
+                             WHERE rii.return_item_id = ?",
+                            [$retItemId]
+                        );
+                        foreach ($linkedImeis as $li) {
+                            $t = trim((string) ($li['imei'] ?? ''));
+                            if ($t !== '') {
+                                $imeisForPrice[] = $t;
+                            }
+                        }
+                    }
+                    $refSaleIdForPrice = !empty($return['ref_id']) ? (int) $return['ref_id'] : null;
+                    $newPrice = $this->returnModel->resolveSaleReturnUnitPrice(
+                        (int) $oldItem['item_id'],
+                        $imeisForPrice,
+                        $refSaleIdForPrice,
+                        (float) $oldItem['unit_price']
+                    );
+                    $newTotal = round($newQty * $newPrice, 3);
 
                     $db->execute(
                         "UPDATE return_items SET quantity = ?, unit_price = ?, total = ? WHERE id = ?",
@@ -1427,14 +1537,21 @@ class ReturnController extends BaseController {
             foreach ($newItems as $row) {
                 $itemId   = (int)($row['item_id'] ?? 0);
                 $newQty   = max(1, (int)($row['quantity'] ?? 1));
-                $newPrice = (float)($row['unit_price'] ?? 0);
-                $newTotal = round($newQty * $newPrice, 3);
-                if (!$itemId || $newPrice <= 0) continue;
+                if (!$itemId) continue;
                 $itemMeta = $db->fetchOne("SELECT has_imei FROM items WHERE id = ?", [$itemId]);
                 $postedImeis = $this->parsePostedImeis($row['imeis'] ?? '');
                 if ($itemMeta && (int)$itemMeta['has_imei'] === 1 && count($postedImeis) !== $newQty) {
                     throw new Exception("IMEI count must match quantity ({$newQty}) for new item {$itemId}.");
                 }
+
+                $refSaleIdForPrice = !empty($return['ref_id']) ? (int) $return['ref_id'] : null;
+                $newPrice = $this->returnModel->resolveSaleReturnUnitPrice(
+                    $itemId,
+                    $postedImeis,
+                    $refSaleIdForPrice,
+                    null
+                );
+                $newTotal = round($newQty * $newPrice, 3);
 
                 $retItemId = $db->insert(
                     "INSERT INTO return_items (return_id, item_id, quantity, unit_price, total)

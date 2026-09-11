@@ -1,19 +1,45 @@
-<!-- Party Master -->
+<!-- Party list (Party Master / Customers / Suppliers) -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div><h1 class="page-title">Party Master</h1></div>
-    <?php if (Auth::can('customers','add') || Auth::can('suppliers','add')): ?>
-    <a href="?page=parties&action=create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> New Party</a>
+    <div><h1 class="page-title"><?= htmlspecialchars($pageTitle ?? 'Party Master') ?></h1></div>
+    <?php if (Auth::canAny(['parties', 'customers', 'suppliers'], 'add')): ?>
+    <a href="?page=parties&action=create<?= ($type ?? '') === 'freight_forwarder' ? '&type=freight_forwarder' : '' ?>" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> New Party</a>
     <?php endif; ?>
 </div>
 
+<div id="logixZeroBanner" class="alert alert-warning border-warning mb-3" style="border-radius:12px;display:none;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <div class="fw-bold"><span id="logixZeroName"></span> balance is wrong</div>
+            <div class="small text-muted mb-0">
+                Shows <strong id="logixZeroBalance"></strong>
+                but should be Clear. Click once to force ledger to 0 (admin).
+            </div>
+        </div>
+        <form method="POST" action="?page=parties&action=zeroLogixBalance" id="logixZeroBalanceForm">
+            <?= Auth::csrfField() ?>
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-slash-circle me-1"></i> Set Logix to Clear
+            </button>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    var form = document.getElementById('logixZeroBalanceForm');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+        if (!window.confirm('Set Logix One balance to Clear / zero?')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+
 <?php
-$balanceFilter = $balanceFilter ?? 'due';
+$balanceFilter = $balanceFilter ?? 'all';
 $partyListUrl = static function (string $tabType, string $balance) use ($type): string {
     return '?page=parties&type=' . urlencode($tabType) . '&balance=' . urlencode($balance);
 };
-$totalReceivable   = array_sum(array_map(fn($p) => max(0, (float)($p['balance_due'] ?? 0)), $parties));
-$totalPayable      = array_sum(array_map(fn($p) => abs(min(0, (float)($p['balance_due'] ?? 0))), $parties));
-$partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['balance_due'] ?? 0)) > 0.001));
 ?>
 
 <style>
@@ -73,7 +99,6 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
     transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .party-segmented a:hover {
-    transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
 }
 .party-segmented a.is-active {
@@ -105,6 +130,78 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
 
 .party-segmented a.pf-bal-clear { color: #059669; background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.28); }
 .party-segmented a.pf-bal-clear.is-active { background: #10b981; color: #fff; border-color: #10b981; }
+
+/* Match Sales list typography */
+#partiesTable {
+    border-collapse: collapse;
+    width: auto;
+    max-width: 100%;
+    table-layout: auto;
+    font-size: 0.83rem;
+}
+#partiesTable th.party-acc-col,
+#partiesTable td.party-acc-col {
+    width: 1%;
+    white-space: nowrap;
+    padding-right: 10px;
+}
+#partiesTable th.party-name-col,
+#partiesTable td.party-name-col {
+    width: auto;
+    min-width: 280px;
+    max-width: 480px;
+    white-space: nowrap;
+    padding-left: 8px;
+}
+#partiesTable .party-name {
+    display: block;
+    max-width: 480px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: #6366f1;
+    text-decoration: none;
+}
+#partiesTable .btn-sm {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+#partiesTable .party-acc-no {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #6366f1;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+}
+#partiesTable .party-balance {
+    font-weight: 700;
+    white-space: nowrap;
+}
+#partiesTable .party-balance.is-due { color: #ef4444; }
+#partiesTable .party-balance.is-credit { color: #6366f1; }
+#partiesTable .party-balance.is-clear { color: #10b981; font-weight: 600; }
+#partiesTable .party-balance.is-pending { color: #94a3b8; font-weight: 500; }
+#partiesTable tr.party-awaiting-bal { display: none; }
+#partySearch {
+    padding: 8px 14px 8px 40px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1.5px solid #c7d2fe;
+    border-radius: 10px;
+    background: #fff;
+    color: #1e293b;
+    outline: none;
+    transition: border-color 0.15s;
+}
+#partySearch:focus {
+    border-color: #6366f1;
+}
 </style>
 
 <!-- Filters: type + balance on one line -->
@@ -113,14 +210,21 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
         <span class="party-filter-label">Type</span>
         <div class="party-segmented" role="group" aria-label="Party type">
             <?php
-            $canCustomers = Auth::can('customers', 'view');
+            $canCustomers = Auth::canAny(['parties', 'customers'], 'view');
             $canSuppliers = Auth::can('suppliers', 'view');
+            $hasPartyMaster = Auth::can('parties', 'view');
             $tabs = [];
-            if ($canCustomers && $canSuppliers) $tabs['all'] = 'All';
-            if ($canCustomers) $tabs['customer'] = 'Customers';
-            if ($canSuppliers) $tabs['supplier'] = 'Suppliers';
-            if ($canCustomers && $canSuppliers) $tabs['both'] = 'Both';
-            if ($canSuppliers) $tabs['freight_forwarder'] = 'Freight forwarders';
+            // Without Party Master, show only the type(s) they are allowed — no All/Both/Freight mix
+            if ($hasPartyMaster) {
+                if ($canCustomers && $canSuppliers) $tabs['all'] = 'All';
+                if ($canCustomers) $tabs['customer'] = 'Customers';
+                if ($canSuppliers) $tabs['supplier'] = 'Suppliers';
+                if ($canCustomers && $canSuppliers) $tabs['both'] = 'Both';
+                if ($canSuppliers) $tabs['freight_forwarder'] = 'Freight forwarders';
+            } else {
+                if ($canCustomers) $tabs['customer'] = 'Customers';
+                if ($canSuppliers) $tabs['supplier'] = 'Suppliers';
+            }
             ?>
             <?php foreach ($tabs as $t => $label): ?>
             <a href="<?= htmlspecialchars($partyListUrl($t, $balanceFilter)) ?>"
@@ -145,57 +249,52 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
 </div>
 
 <div class="mb-3" style="position:relative;">
-    <i class="bi bi-search" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;"></i>
-    <input type="text" id="partySearch" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-           placeholder="Search by account no, name, phone, area..."
-           style="padding:14px 16px 14px 46px;font-size:1.15rem;font-weight:600;border:2px solid #e0e7ff;border-radius:10px;background:#fafbff;outline:none;transition:border-color 0.2s,box-shadow 0.2s;"
-           onfocus="this.style.borderColor='#818cf8';this.style.boxShadow='0 0 0 4px rgba(99,102,241,0.12)';this.style.background='#ffffff';"
-           onblur="this.style.borderColor='#e0e7ff';this.style.boxShadow='';this.style.background='#fafbff';">
+    <i class="bi bi-search" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:0.9rem;z-index:2;pointer-events:none;"></i>
+    <input type="text" id="partySearch" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+           placeholder="Search by account no, name, phone, area...">
 </div>
 
 <div class="card">
     <div class="card-body p-0">
+        <div class="table-responsive">
         <table class="table mb-0" id="partiesTable">
-            <thead style="text-transform:none;font-size:0.82rem;font-weight:600;letter-spacing:0;">
+            <thead>
                 <tr>
-                    <th style="width:40px;">#</th>
-                    <th style="width:110px;">Acc No</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Phone</th>
-                    <th>Area</th>
-                    <th>Status</th>
-                    <th style="text-align:right;">Balance Due</th>
-                    <th>Actions</th>
+                    <th class="th-blue" style="width:40px;">#</th>
+                    <th class="th-blue party-acc-col">Acc No</th>
+                    <th class="th-blue party-name-col">Name</th>
+                    <th class="th-blue" style="width:120px;">Type</th>
+                    <th class="th-blue" style="width:80px;">Status</th>
+                    <th class="th-blue" style="width:120px;text-align:right;">Balance Due</th>
+                    <th class="th-blue" style="width:118px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($parties)): ?>
-                <tr class="party-empty-row"><td colspan="9" class="text-center text-muted py-5">
+                <tr class="party-empty-row"><td colspan="7" class="text-center text-muted py-5">
                     <i class="bi bi-people fs-2 d-block mb-2"></i>
-                    <?= match ($balanceFilter) {
-                        'clear' => 'No parties without balance',
-                        'due'   => 'No parties with outstanding balance',
-                        default => 'No parties found',
-                    } ?>
+                    <?= 'No parties found' ?>
                 </td></tr>
                 <?php else: ?>
+                <tr class="party-empty-filter-row" style="display:none;"><td colspan="7" class="text-center text-muted py-5">
+                    <i class="bi bi-people fs-2 d-block mb-2"></i>
+                    <span class="party-empty-filter-msg"></span>
+                </td></tr>
                 <?php foreach ($parties as $i => $p): ?>
-                <?php $bal = (float)($p['balance_due'] ?? 0); ?>
-                <tr class="party-data-row">
-                    <td style="color:var(--text-muted);font-size:0.8rem;text-align:center;"><?= $i + 1 ?></td>
-                    <td>
+                <tr class="party-data-row<?= ($balanceFilter === 'due' || $balanceFilter === 'clear') ? ' party-awaiting-bal' : '' ?>"
+                    data-party-id="<?= (int) $p['id'] ?>"
+                    data-phone="<?= htmlspecialchars((string) ($p['phone'] ?? ''), ENT_QUOTES) ?>"
+                    data-area="<?= htmlspecialchars((string) ($p['city'] ?? ''), ENT_QUOTES) ?>">
+                    <td style="color:var(--text-muted);text-align:center;"><?= $i + 1 ?></td>
+                    <td class="party-acc-col">
                         <?php if (!empty($p['party_code'])): ?>
-                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;font-weight:700;color:#4338ca;background:#eff6ff;padding:2px 8px;border-radius:5px;border:1px solid #c7d2fe;letter-spacing:1px;white-space:nowrap;">
-                            <?= htmlspecialchars($p['party_code']) ?>
-                        </span>
+                        <span class="party-acc-no"><?= htmlspecialchars($p['party_code']) ?></span>
                         <?php else: ?>
-                        <span style="color:#94a3b8;font-size:0.8rem;">—</span>
+                        <span style="color:#94a3b8;">—</span>
                         <?php endif; ?>
                     </td>
-                    <td>
-                        <a href="?page=parties&action=detail&id=<?= $p['id'] ?>"
-                           style="color:var(--primary);font-weight:600;text-decoration:none;">
+                    <td class="party-name-col">
+                        <a href="?page=parties&action=detail&id=<?= $p['id'] ?>" class="party-name">
                             <?= htmlspecialchars($p['name']) ?>
                         </a>
                     </td>
@@ -211,22 +310,19 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
                         <span class="badge" style="border-radius:5px;background:<?= $typeBg[0] ?>;color:<?= $typeBg[1] ?>;">
                             <?= htmlspecialchars(Party::typeLabel($p['type'])) ?>
                         </span>
+                        <?php if (in_array($p['type'], ['customer', 'both'], true)): ?>
+                        <span class="badge ms-1" style="border-radius:5px;background:<?= Party::isRetailCustomer($p['customer_kind'] ?? null) ? 'rgba(99,102,241,0.14);color:#4338ca' : 'rgba(245,158,11,0.14);color:#b45309' ?>;">
+                            <?= htmlspecialchars(Party::customerKindLabel($p['customer_kind'] ?? null)) ?>
+                        </span>
+                        <?php endif; ?>
                     </td>
-                    <td><?= htmlspecialchars($p['phone'] ?: '—') ?></td>
-                    <td><?= htmlspecialchars($p['city'] ?? '—') ?></td>
                     <td>
                         <span class="badge <?= $p['is_active'] ? 'badge-paid' : 'badge-draft' ?> px-2" style="border-radius:5px;">
                             <?= $p['is_active'] ? 'Active' : 'Inactive' ?>
                         </span>
                     </td>
-                    <td style="text-align:right;">
-                        <?php if ($bal > 0.001): ?>
-                        <span style="font-weight:800;color:#ef4444;font-size:0.9rem;"><?= APP_CURRENCY ?> <?= number_format($bal, DECIMAL_PLACES) ?></span>
-                        <?php elseif ($bal < -0.001): ?>
-                        <span style="font-weight:800;color:#6366f1;font-size:0.9rem;">-<?= APP_CURRENCY ?> <?= number_format(abs($bal), DECIMAL_PLACES) ?></span>
-                        <?php else: ?>
-                        <span style="color:#10b981;font-weight:600;font-size:0.85rem;">✓ Clear</span>
-                        <?php endif; ?>
+                    <td style="text-align:right;" class="party-bal-cell">
+                        <span class="party-balance is-pending">…</span>
                     </td>
                     <td>
                         <div class="d-flex gap-1">
@@ -236,12 +332,17 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
                             <a href="?page=parties&action=agentStatement&id=<?= $p['id'] ?>"
                                class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:var(--success);border:none;" title="Agent Statement"><i class="bi bi-person-lines-fill"></i></a>
                             <?php if (!empty($p['statement_token'])): ?>
-                            <button type="button" onclick="copyStatementLink('<?= $p['statement_token'] ?>', this)"
-                               class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:#6366f1;border:none;" title="Copy Field Statement Link"><i class="bi bi-link-45deg"></i></button>
+                            <button type="button" onclick="copyStatementLink('<?= htmlspecialchars((string) $p['statement_token'], ENT_QUOTES, 'UTF-8') ?>', this)"
+                               class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:#6366f1;border:none;" title="Copy Field Statement Link (iqbal.app/s/…)"><i class="bi bi-link-45deg"></i></button>
                             <?php endif; ?>
                             <?php endif; ?>
-                            <?php $editMod = in_array($p['type'], ['supplier', 'freight_forwarder'], true) ? 'suppliers' : 'customers'; ?>
-                            <?php if (Auth::can($editMod, 'edit')): ?>
+                            <?php
+                            $isSupplierSide = in_array($p['type'], ['supplier', 'freight_forwarder'], true);
+                            $canEditRow = $isSupplierSide
+                                ? Auth::can('suppliers', 'edit')
+                                : Auth::canAny(['parties', 'customers'], 'edit');
+                            ?>
+                            <?php if ($canEditRow): ?>
                             <a href="?page=parties&action=edit&id=<?= $p['id'] ?>"
                                class="btn btn-sm" style="background:rgba(245,158,11,0.15);color:var(--warning);border:none;"><i class="bi bi-pencil"></i></a>
                             <?php endif; ?>
@@ -252,22 +353,118 @@ $partiesWithBalance = count(array_filter($parties, fn($p) => abs((float)($p['bal
                 <?php endif; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 <script>
-window.addEventListener('DOMContentLoaded', function() {
-    var input = document.getElementById('partySearch');
-    var table = document.getElementById('partiesTable');
-    if (!input || !table) return;
+(function () {
+    var CUR = <?= json_encode(APP_CURRENCY) ?>;
+    var DEC = <?= (int) DECIMAL_PLACES ?>;
+    var balanceFilter = <?= json_encode($balanceFilter) ?>;
+    var listType = <?= json_encode($type ?? 'all') ?>;
+    var balancesReady = false;
 
-    input.addEventListener('input', function() {
-        var q = this.value.toLowerCase();
-        table.querySelectorAll('tbody tr.party-data-row').forEach(function(row) {
-            var text = row.textContent || row.innerText;
-            row.style.display = (!q || text.toLowerCase().indexOf(q) > -1) ? '' : 'none';
+    function formatNum(n) {
+        return Number(n).toLocaleString('en-US', { minimumFractionDigits: DEC, maximumFractionDigits: DEC });
+    }
+    function formatBal(amount) {
+        if (Math.abs(amount) < 0.001) {
+            return { html: '\u2713 Clear', cls: 'is-clear' };
+        }
+        if (amount > 0) {
+            return { html: CUR + ' ' + formatNum(amount), cls: 'is-due' };
+        }
+        return { html: '-' + CUR + ' ' + formatNum(Math.abs(amount)), cls: 'is-credit' };
+    }
+    function applyFilters() {
+        var table = document.getElementById('partiesTable');
+        var input = document.getElementById('partySearch');
+        if (!table) return;
+        var q = (input && input.value ? input.value : '').toLowerCase();
+        var shown = 0;
+        table.querySelectorAll('tbody tr.party-data-row').forEach(function (row) {
+            if (!balancesReady && (balanceFilter === 'due' || balanceFilter === 'clear')) {
+                row.classList.add('party-awaiting-bal');
+                row.style.display = '';
+                return;
+            }
+            row.classList.remove('party-awaiting-bal');
+            var text = (row.textContent || '') + ' ' + (row.getAttribute('data-phone') || '') + ' ' + (row.getAttribute('data-area') || '');
+            var textOk = !q || text.toLowerCase().indexOf(q) > -1;
+            var bal = parseFloat(row.getAttribute('data-balance') || '0');
+            var balOk = true;
+            if (balancesReady && balanceFilter === 'due') balOk = Math.abs(bal) > 0.001;
+            if (balancesReady && balanceFilter === 'clear') balOk = Math.abs(bal) <= 0.001;
+            var vis = textOk && balOk;
+            row.style.display = vis ? '' : 'none';
+            if (vis) {
+                shown++;
+                var numCell = row.querySelector('td');
+                if (numCell) numCell.textContent = String(shown);
+            }
         });
+        var empty = table.querySelector('tbody tr.party-empty-filter-row');
+        if (empty) {
+            var msg = empty.querySelector('.party-empty-filter-msg');
+            if (balancesReady && shown === 0 && table.querySelectorAll('tbody tr.party-data-row').length) {
+                empty.style.display = '';
+                if (msg) {
+                    msg.textContent = q
+                        ? 'No matching parties'
+                        : (balanceFilter === 'due'
+                            ? 'No parties with outstanding balance'
+                            : (balanceFilter === 'clear' ? 'No parties without balance' : 'No parties found'));
+                }
+            } else {
+                empty.style.display = 'none';
+            }
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function () {
+        var input = document.getElementById('partySearch');
+        if (input) input.addEventListener('input', applyFilters);
+
+        var params = new URLSearchParams({ page: 'parties', action: 'listBalances', type: listType });
+        fetch('?' + params.toString(), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var map = (data && data.balances) ? data.balances : {};
+                document.querySelectorAll('#partiesTable tbody tr.party-data-row').forEach(function (row) {
+                    var id = row.getAttribute('data-party-id');
+                    var amount = parseFloat(map[id] != null ? map[id] : 0);
+                    row.setAttribute('data-balance', String(amount));
+                    var cell = row.querySelector('.party-bal-cell');
+                    if (!cell) return;
+                    var fmt = formatBal(amount);
+                    cell.innerHTML = '<span class="party-balance ' + fmt.cls + '">' + fmt.html + '</span>';
+                });
+                balancesReady = true;
+                applyFilters();
+                if (data && data.logixZero) {
+                    var wrap = document.getElementById('logixZeroBanner');
+                    var nameEl = document.getElementById('logixZeroName');
+                    var balEl = document.getElementById('logixZeroBalance');
+                    if (wrap && nameEl && balEl) {
+                        nameEl.textContent = data.logixZero.party_name || '';
+                        var lz = formatBal(parseFloat(data.logixZero.balance || 0));
+                        balEl.textContent = lz.html;
+                        wrap.style.display = '';
+                    }
+                }
+            })
+            .catch(function () {
+                document.querySelectorAll('#partiesTable .party-balance.is-pending').forEach(function (el) {
+                    el.textContent = '—';
+                });
+                balancesReady = true;
+                if (balanceFilter === 'due' || balanceFilter === 'clear') {
+                    balanceFilter = 'all';
+                }
+                applyFilters();
+            });
     });
-});
+})();
 function copyStatementLink(token, btn) {
     const url = window.location.origin + '/s/' + encodeURIComponent(token);
     navigator.clipboard.writeText(url).then(() => {

@@ -1,6 +1,6 @@
 <style>
 .wr-wrap{display:flex;flex-direction:column;gap:0;}
-.wr-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);border-radius:12px 12px 0 0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
+.wr-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#1e3a5f;border-radius:0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
 .wr-topbar .wr-title{font-size:1.05rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;}
 .wh-sel{padding:5px 12px;border-radius:8px;font-size:0.8rem;font-weight:600;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;cursor:pointer;outline:none;}
 .wh-sel option{background:#1e3a5f;color:#fff;}
@@ -109,10 +109,10 @@
             </div>
             <div style="margin-bottom:14px;">
                 <div class="wr-field">
-                    <label>Old IMEI (faulty device)</label>
+                    <label>Old IMEI (faulty device) *</label>
                     <input type="text" name="old_imei" id="oldImeiInput"
-                        placeholder="Scan or type IMEI..."
-                        oninput="lookupOldImei(this.value)"
+                        placeholder="Scan or type IMEI..." required
+                        oninput="lookupOldImei(this.value); checkSave();"
                         style="font-family:monospace;letter-spacing:0.5px;">
                     <div class="imei-result" id="oldImeiResult"></div>
                 </div>
@@ -140,13 +140,13 @@
             </div>
             <div style="margin-bottom:14px;">
                 <div class="wr-field">
-                    <label>New IMEI (replacement device)</label>
+                    <label>New IMEI (replacement device) *</label>
                     <div class="search-wrap">
                         <input type="text" name="new_imei" id="newImeiInput"
                             placeholder="Scan or type new IMEI..."
                             class="search-input"
-                            autocomplete="off"
-                            oninput="searchInStockImei(this.value)"
+                            autocomplete="off" required
+                            oninput="searchInStockImei(this.value); checkSave();"
                             onblur="setTimeout(()=>hideDrop('newImeiDrop'),200)"
                             style="font-family:monospace;letter-spacing:0.5px;">
                         <div class="search-drop" id="newImeiDrop"></div>
@@ -261,7 +261,7 @@ function lookupOldImei(imei) {
                     box.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i> IMEI not found — select item manually below`;
                     return;
                 }
-                const statusMap = {sold:'Sold', in_stock:'In Stock', defective:'⚠️ Already Defective', returned:'Returned'};
+                const statusMap = {sold:'Sold', in_stock:'In Stock', defective:'⚠️ Already Defective', dumped:'♻️ Dumped', returned:'Returned'};
                 box.className = 'imei-result found';
                 box.innerHTML = `<i class="bi bi-check-circle me-1"></i>
                     <strong>${data.item_name}</strong>${data.sku ? ` (${data.sku})` : ''} ·
@@ -313,6 +313,7 @@ function selectNewImei(imei, itemName, itemId) {
     box.style.display = 'block';
     box.innerHTML = `<i class="bi bi-check-circle me-1"></i> <strong>${imei}</strong> — ${itemName} · In Stock`;
     setItem('newItemSearch','newItemDrop','newItemIdInput','newItemBadge','green', itemId, itemName);
+    checkSave();
 }
 
 // ── Items searchable dropdown ─────────────────────────────────────────────────
@@ -352,9 +353,12 @@ function setItem(searchId, dropId, hiddenId, badgeId, color, itemId, itemName) {
 
 // ── Save guard ────────────────────────────────────────────────────────────────
 function checkSave() {
+    const oldImei = (document.getElementById('oldImeiInput').value || '').trim();
+    const newImei = (document.getElementById('newImeiInput').value || '').trim();
     const ok = document.getElementById('partyIdInput').value &&
                document.getElementById('oldItemIdInput').value &&
-               document.getElementById('newItemIdInput').value;
+               document.getElementById('newItemIdInput').value &&
+               oldImei !== '' && newImei !== '';
     document.getElementById('wrSaveBtn').disabled = !ok;
 }
 </script>

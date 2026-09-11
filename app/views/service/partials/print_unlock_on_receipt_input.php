@@ -11,7 +11,7 @@ $printUnlockChecked = !empty($printUnlockOnReceipt);
 .svc-print-unlock-wrap input[type="checkbox"]{
     width: auto !important;
     padding: 0 !important;
-    border-radius: 4px;
+    border-radius: 0;
     border: 1.5px solid var(--border-color);
     box-shadow: none !important;
 }

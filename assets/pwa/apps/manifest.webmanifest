@@ -2,7 +2,7 @@
   "id": "/apps",
   "name": "Iqbal Electronics",
   "short_name": "Iqbal",
-  "description": "Warranty, Service tracking, and Pricelist — Iqbal Electronics Co. WLL",
+  "description": "Request order confirmation, Warranty, Service tracking, and Pricelist — Iqbal Electronics Co. LLC",
   "start_url": "/apps?utm_source=pwa",
   "scope": "/",
   "display": "standalone",

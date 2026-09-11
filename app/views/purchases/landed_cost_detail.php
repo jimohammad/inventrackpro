@@ -7,7 +7,7 @@ $statusLabels = [
 ];
 $st = $statusLabels[$shipment['status'] ?? 'draft'] ?? ['Unknown', '#f1f5f9', '#64748b'];
 $canReceive = !in_array($shipment['status'], ['applied'], true);
-$canEdit = Auth::can('purchases', 'add') && ($shipment['status'] ?? '') !== 'applied' && empty($shipment['purchases']);
+$canEdit = Auth::canAny(['import_logistics', 'purchases'], 'add') && ($shipment['status'] ?? '') !== 'applied' && empty($shipment['purchases']);
 $itemCharges = $shipment['item_charges'] ?? [];
 $itemTotal = array_sum(array_map(static function ($c) {
     return (float) $c['freight_hk_dxb'] + (float) ($c['packing_dxb'] ?? 0) + (float) $c['freight_dxb_kwt']
@@ -24,14 +24,50 @@ $legacyCost = array_sum(array_map(static fn ($c) => (float) $c['amount'], $shipm
 $legacyApplied = array_sum(array_map(static fn ($c) => !empty($c['is_applied']) ? (float) $c['amount'] : 0, $shipment['costs'] ?? []));
 $totalCost = $itemTotal + $legacyCost;
 $appliedCost = $itemApplied + $legacyApplied;
+
+$fmtShipmentWhen = static function (?string $at, ?string $dayOnly = null): string {
+    if ($at !== null && $at !== '' && $at !== '0000-00-00 00:00:00') {
+        $ts = strtotime($at);
+        if ($ts) {
+            return date('d M Y H:i', $ts);
+        }
+    }
+    if ($dayOnly !== null && $dayOnly !== '' && $dayOnly !== '0000-00-00') {
+        $ts = strtotime($dayOnly);
+        if ($ts) {
+            return date('d M Y', $ts);
+        }
+    }
+    return '';
+};
+
+$fmtPayLine = static function (string $prefix, ?string $payNo, ?string $createdAt, ?string $payDate) use ($fmtShipmentWhen): string {
+    if ($payNo === null || $payNo === '') {
+        return '';
+    }
+    $when = $fmtShipmentWhen($createdAt, $payDate);
+    $html = htmlspecialchars($prefix . ': ' . $payNo);
+    if ($when !== '') {
+        $html .= ' <span class="text-muted">· ' . htmlspecialchars($when) . '</span>';
+    }
+    return $html;
+};
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h1 class="page-title mb-0"><?= htmlspecialchars($shipment['shipment_no']) ?></h1>
         <p class="text-muted mb-0" style="font-size:0.83rem;">
-            <?= htmlspecialchars($shipment['description'] ?? '') ?>
             <span style="background:<?= $st[1] ?>;color:<?= $st[2] ?>;padding:2px 10px;border-radius:6px;font-size:0.72rem;font-weight:700;margin-left:8px;"><?= $st[0] ?></span>
-            <span class="ms-2"><?= ($shipment['route_stage'] ?? '') === 'kuwait_inbound' ? 'Kuwait inbound' : 'Dubai hub' ?></span>
+            <?php
+            $createdWhen = $fmtShipmentWhen($shipment['created_at'] ?? null, $shipment['date'] ?? null);
+            $receivedWhen = $fmtShipmentWhen(null, $shipment['received_date'] ?? null);
+            ?>
+            <?php if ($createdWhen !== ''): ?>
+            <span class="ms-2">· Created <?= htmlspecialchars($createdWhen) ?></span>
+            <?php endif; ?>
+            <?php if ($receivedWhen !== ''): ?>
+            <span class="ms-2">· Received <?= htmlspecialchars($receivedWhen) ?></span>
+            <?php endif; ?>
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -40,6 +76,7 @@ $appliedCost = $itemApplied + $legacyApplied;
         <a href="?page=landedcost&action=edit&id=<?= (int) $shipment['id'] ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Edit</a>
         <?php endif; ?>
         <a href="?page=landedcost&action=payables" class="btn btn-outline-success btn-sm"><i class="bi bi-truck"></i> Freight payables</a>
+        <a href="?page=landedcost&action=packingDue" class="btn btn-outline-info btn-sm"><i class="bi bi-box-seam"></i> Packing due</a>
         <a href="?page=landedcost&action=partnerDue" class="btn btn-outline-warning btn-sm"><i class="bi bi-calendar-event"></i> Partner due</a>
         <a href="?page=landedcost&action=report" class="btn btn-outline-primary btn-sm"><i class="bi bi-table"></i> Cost report</a>
     </div>
@@ -49,6 +86,7 @@ $appliedCost = $itemApplied + $legacyApplied;
     <strong>Costing vs payment</strong><br>
     <span class="text-muted">Per-item freight and partner profit are added to <strong>true unit cost</strong> on <em>Receive in Kuwait</em>.</span><br>
     <span class="text-muted"><strong>Freight HK→DXB / DXB→Kuwait</strong> — on receive, open payables post to the forwarder party ledger; clear via <a href="?page=landedcost&action=payables">Freight payables</a> → <a href="?page=payments&action=pay">Payments</a>.</span><br>
+    <span class="text-muted"><strong>Packing DXB</strong> (<?= htmlspecialchars(defined('IMPORT_PACKING_DXB_FORWARDER_NAME') ? IMPORT_PACKING_DXB_FORWARDER_NAME : 'Union Logistics') ?>) — pay monthly via <a href="?page=landedcost&action=packingDue">Packing due</a>.</span><br>
     <span class="text-muted"><strong>Partner profit</strong><?php if (!empty($importPartner)): ?> (<strong><?= htmlspecialchars($importPartner['name']) ?></strong>)<?php endif; ?> — pay monthly via <a href="?page=landedcost&action=partnerDue">Partner due</a> → Payments (e.g. 1st of month).</span>
 </div>
 
@@ -73,13 +111,13 @@ $appliedCost = $itemApplied + $legacyApplied;
             <p class="text-muted small mb-1">Purchase invoices</p>
             <p class="fw-bold mb-0" style="font-size:1.4rem;"><?= count($shipment['purchases'] ?? []) ?></p>
             <?php if (!empty($shipment['received_date'])): ?>
-            <p class="small text-muted mb-0">Received <?= date('d M Y', strtotime($shipment['received_date'])) ?></p>
+            <p class="small text-muted mb-0">Received <?= htmlspecialchars($fmtShipmentWhen(null, $shipment['received_date'])) ?></p>
             <?php endif; ?>
         </div></div>
     </div>
 </div>
 
-<?php if ($canReceive && Auth::can('purchases', 'add')): ?>
+<?php if ($canReceive && Auth::canAny(['import_logistics', 'purchases'], 'add')): ?>
 <div class="card mb-3 border-success" style="border-radius:12px;">
     <div class="card-body">
         <h6 class="fw-bold text-success mb-2"><i class="bi bi-box-arrow-in-down me-1"></i> Receive in Kuwait</h6>
@@ -189,11 +227,15 @@ $appliedCost = $itemApplied + $legacyApplied;
                 <td><?= htmlspecialchars($c['partner_name'] ?? '—') ?></td>
                 <td><?= !empty($c['is_applied']) ? '<span class="text-success">Yes</span>' : '<span class="text-warning">Pending</span>' ?></td>
                 <td class="small">
-                    <?php if (!empty($c['hk_payment_no'])): ?>HK: <?= htmlspecialchars($c['hk_payment_no']) ?><br><?php endif; ?>
-                    <?php if (!empty($c['packing_payment_no'])): ?>Pkg: <?= htmlspecialchars($c['packing_payment_no']) ?><br><?php endif; ?>
-                    <?php if (!empty($c['dxb_payment_no'])): ?>DXB: <?= htmlspecialchars($c['dxb_payment_no']) ?><br><?php endif; ?>
-                    <?php if (!empty($c['partner_payment_no'])): ?>Pt: <?= htmlspecialchars($c['partner_payment_no']) ?><?php endif; ?>
-                    <?php if (empty($c['hk_payment_no']) && empty($c['packing_payment_no']) && empty($c['dxb_payment_no']) && empty($c['partner_payment_no'])): ?>—<?php endif; ?>
+                    <?php
+                    $payBits = array_filter([
+                        $fmtPayLine('HK', $c['hk_payment_no'] ?? null, $c['hk_payment_at'] ?? null, $c['hk_payment_date'] ?? null),
+                        $fmtPayLine('Pkg', $c['packing_payment_no'] ?? null, $c['packing_payment_at'] ?? null, $c['packing_payment_date'] ?? null),
+                        $fmtPayLine('DXB', $c['dxb_payment_no'] ?? null, $c['dxb_payment_at'] ?? null, $c['dxb_payment_date'] ?? null),
+                        $fmtPayLine('Pt', $c['partner_payment_no'] ?? null, $c['partner_payment_at'] ?? null, $c['partner_payment_date'] ?? null),
+                    ]);
+                    echo $payBits !== [] ? implode('<br>', $payBits) : '—';
+                    ?>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -216,7 +258,19 @@ $appliedCost = $itemApplied + $legacyApplied;
                 <td><?= str_replace('_', ' ', $c['cost_category'] ?? 'freight') ?></td>
                 <td class="text-end"><?= number_format((float) $c['amount'], DECIMAL_PLACES) ?></td>
                 <td><?= !empty($c['is_applied']) ? 'Yes' : 'Pending' ?></td>
-                <td><?= htmlspecialchars($c['payment_no'] ?? '—') ?></td>
+                <td>
+                    <?php if (!empty($c['payment_no'])): ?>
+                    <?= htmlspecialchars($c['payment_no']) ?>
+                    <?php
+                    $legacyWhen = $fmtShipmentWhen($c['payment_created_at'] ?? null, $c['payment_date'] ?? null);
+                    if ($legacyWhen !== ''):
+                    ?>
+                    <br><small class="text-muted"><?= htmlspecialchars($legacyWhen) ?></small>
+                    <?php endif; ?>
+                    <?php else: ?>
+                    —
+                    <?php endif; ?>
+                </td>
             </tr>
             <?php endforeach; ?>
             </tbody>

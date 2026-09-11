@@ -3,8 +3,7 @@ $today = $today ?? date('Y-m-d');
 ?>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-        <h1 class="page-title mb-1"><i class="bi bi-truck-front me-2 text-primary"></i>Mandoob Inventory</h1>
-        <p class="page-subtitle mb-0">Physical van stock counts — default reminder every 3 months. Not the same as warehouse stock.</p>
+        <h1 class="page-title mb-0"><i class="bi bi-truck-front me-2 text-primary"></i>Mandoob Inventory</h1>
     </div>
     <?php if (Auth::can('mandoob_inventory', 'add')): ?>
     <a href="?page=mandoob_inventory&action=create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i> Add mandoob</a>
@@ -162,13 +161,11 @@ $today = $today ?? date('Y-m-d');
                         </button>
                     </form>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-sm btn-success mi-open-count-modal"
-                            data-id="<?= (int) $r['id'] ?>"
-                            data-name="<?= htmlspecialchars((string) $r['name'], ENT_QUOTES, 'UTF-8') ?>"
-                            data-interval-months="<?= (int) ($r['interval_months'] ?? 3) ?>"
-                            title="Record physical count and reset countdown from chosen date.">
+                    <a class="btn btn-sm btn-success"
+                       href="?page=mandoob_inventory&action=reset&id=<?= (int) $r['id'] ?>"
+                       title="Reset last count date and next due. Use this when inventory was already done.">
                         <i class="bi bi-check-circle me-1" aria-hidden="true"></i>Inventory done
-                    </button>
+                    </a>
                     <a class="btn btn-sm btn-outline-primary" href="?page=mandoob_inventory&action=edit&id=<?= (int) $r['id'] ?>">Edit</a>
                     <?php endif; ?>
                     <a class="btn btn-sm btn-outline-secondary" href="?page=mandoob_inventory&action=history&id=<?= (int) $r['id'] ?>"
@@ -188,45 +185,6 @@ $today = $today ?? date('Y-m-d');
         </tbody>
     </table>
 </div>
-
-<?php if (Auth::can('mandoob_inventory', 'edit')): ?>
-<div class="modal fade" id="miCountDoneModal" tabindex="-1" aria-labelledby="miCountDoneModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form method="post" action="?page=mandoob_inventory&action=record_count" id="miCountDoneForm">
-                <?= Auth::csrfField() ?>
-                <input type="hidden" name="id" id="miCountScheduleId" value="">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="miCountDoneModalLabel">
-                        <i class="bi bi-check-circle text-success me-2" aria-hidden="true"></i>Record inventory
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-3 text-muted small" id="miCountDoneSubtitle"></p>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="miCountDate">Date of inventory <span class="text-danger">*</span></label>
-                        <input type="date" name="count_date" id="miCountDate" class="form-control" required
-                               max="<?= htmlspecialchars($today) ?>" value="<?= htmlspecialchars($today) ?>">
-                        <div class="form-text">Next due will be reset from this date + your reminder interval.</div>
-                    </div>
-                    <div class="mb-0">
-                        <label class="form-label fw-semibold" for="miCountNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
-                        <input type="text" name="notes" id="miCountNotes" class="form-control" maxlength="500"
-                               placeholder="e.g. counted at shop, partial stock">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-check-lg me-1" aria-hidden="true"></i>Save &amp; reset countdown
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 <?php endif; ?>
 
 <script>
@@ -251,37 +209,6 @@ $today = $today ?? date('Y-m-d');
         form.addEventListener('submit', function (e) {
             if (!window.confirm('Start inventory again?\n\nThe countdown will resume and the next due date will be extended by the number of days paused.')) {
                 e.preventDefault();
-            }
-        });
-    });
-
-    var modalEl = document.getElementById('miCountDoneModal');
-    if (!modalEl) return;
-
-    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    var idInput = document.getElementById('miCountScheduleId');
-    var dateInput = document.getElementById('miCountDate');
-    var notesInput = document.getElementById('miCountNotes');
-    var subtitle = document.getElementById('miCountDoneSubtitle');
-    var today = <?= json_encode($today) ?>;
-
-    document.querySelectorAll('.mi-open-count-modal').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var id = btn.getAttribute('data-id') || '';
-            var name = btn.getAttribute('data-name') || '';
-            var mo = parseInt(btn.getAttribute('data-interval-months') || '3', 10);
-            if (!Number.isFinite(mo) || mo < 1) mo = 3;
-
-            if (idInput) idInput.value = id;
-            if (dateInput) dateInput.value = today;
-            if (notesInput) notesInput.value = '';
-            if (subtitle) {
-                subtitle.textContent = 'Recording inventory for ' + name + '. Countdown resets — next due = this date + '
-                    + mo + ' month' + (mo === 1 ? '' : 's') + '.';
-            }
-            modal.show();
-            if (dateInput) {
-                window.setTimeout(function () { dateInput.focus(); }, 200);
             }
         });
     });

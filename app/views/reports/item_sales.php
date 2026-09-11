@@ -1,8 +1,11 @@
 <!-- Item Sales Report -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Item Sales Report</h1>
-        <p class="page-subtitle">See exactly who bought an item and how much</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Item Sales Report</h1>
+            <p class="page-subtitle">See exactly who bought an item and how much</p>
+        </div>
     </div>
     <?php if ($item && !empty($rows)):
         $itemSalesPrintUrl = '?page=reports&action=itemSalesPrint'

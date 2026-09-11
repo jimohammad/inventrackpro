@@ -2,169 +2,130 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Receipt <?= htmlspecialchars((string)($payment['payment_no'] ?? '')) ?></title>
-<?php
-// Colorful A5 for PDF export and normal print; thermal only when explicitly requested.
-$thermal = isset($_GET['thermal']) && !isset($_GET['autopdf']);
-?>
 <?php $isIn = ($payment['payment_type'] ?? $payment['type'] ?? 'in') === 'in'; ?>
+<title><?= $isIn ? 'Payment Receipt Voucher' : 'Payment Voucher' ?> <?= htmlspecialchars((string)($payment['payment_no'] ?? '')) ?></title>
+<?php
+// Receipt/thermal layout: controller flag, any `thermal` query key (Hostinger paste behavior), or thermalPrint action.
+$paymentPrintThermal = isset($paymentPrintThermal) ? (bool) $paymentPrintThermal : false;
+$act                 = isset($_GET['action']) ? strtolower((string) $_GET['action']) : '';
+$thermal             = $paymentPrintThermal
+    || (isset($isThermal) && $isThermal)
+    || (isset($_GET['thermal']) && !isset($_GET['autopdf']))
+    || ($act === 'thermalprint');
+?>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 <?php if (!$thermal): ?>
 /* ══════════════════════════════════
-   A5 PDF — colorful voucher
+   A5 PDF — GCC official voucher (bilingual EN/AR)
 ══════════════════════════════════ */
-body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9px; color: #1a1a1a; background: #fff; }
-.wrap { max-width: 148mm; width: 100%; margin: 0 auto; padding: 8mm 10mm; }
+<?php
+$gccBand   = '#0b1f36';
+$gccAccent = $isIn ? '#0f766e' : '#9f1239';
+$gccGold   = '#b8954a';
+$gccInk    = '#0b1220';
+$gccMuted  = '#5b6b82';
+$gccLine   = '#c5d0e0';
+?>
+/* ══════════════════════════════════
+   A5 PDF — GCC official voucher (bilingual EN/AR)
+══════════════════════════════════ */
+body { font-family: 'Segoe UI', Tahoma, 'Noto Naskh Arabic', Arial, sans-serif; font-size: 8.5px; color: <?= $gccInk ?>; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.wrap { max-width: 148mm; width: 100%; margin: 0 auto; padding: 6mm 8mm; }
+.ar { font-family: 'Segoe UI', Tahoma, 'Noto Naskh Arabic', Arial, sans-serif; unicode-bidi: isolate; }
 
-.inv-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 3px solid #1e3a5f;
+.letterhead { width: 100%; text-align: center; margin-bottom: 6px; }
+.company-name { font-size: 13px; font-weight: 800; color: <?= $gccBand ?>; letter-spacing: 0.2px; line-height: 1.2; }
+.company-name-ar { font-size: 12px; font-weight: 700; color: <?= $gccBand ?>; line-height: 1.35; margin-top: 2px; }
+.company-info { font-size: 7.5px; color: <?= $gccMuted ?>; margin-top: 3px; line-height: 1.45; }
+.company-contact { display: block; margin-top: 2px; color: #334155; }
+.id-strip {
+    border-top: 1px solid <?= $gccGold ?>;
+    border-bottom: 1px solid <?= $gccGold ?>;
+    padding: 3px 0;
+    margin-bottom: 7px;
+    font-size: 7px;
+    color: #334155;
+    font-weight: 600;
+    text-align: center;
 }
-.company-name { font-size: 13px; font-weight: 800; color: #1e3a5f; }
-.company-info { font-size: 8px; color: #555; margin-top: 3px; line-height: 1.55; }
-.inv-title { text-align: right; }
-.inv-title h1 {
-    font-size: 20px;
-    font-weight: 800;
-    color: <?= $isIn ? '#059669' : '#dc2626' ?>;
-    letter-spacing: 1px;
-}
-.inv-title p { font-size: 8px; color: #444; margin-top: 4px; line-height: 1.7; }
+.id-strip .sep { color: <?= $gccGold ?>; padding: 0 6px; }
 
-.party-row {
-    background: <?= $isIn ? '#ecfdf5' : '#fef2f2' ?>;
-    border: 1px solid <?= $isIn ? '#a7f3d0' : '#fecaca' ?>;
-    border-radius: 6px;
-    padding: 6px 10px;
-    margin-bottom: 10px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 14px;
-    font-size: 9px;
-}
-.party-row .plbl {
-    font-weight: 700;
-    text-transform: uppercase;
-    color: <?= $isIn ? '#047857' : '#b91c1c' ?>;
-    letter-spacing: 0.4px;
-    white-space: nowrap;
-}
-.party-row .pval { font-weight: 700; color: #1a1a1a; }
-.party-row .pmeta { color: #555; }
+.doc-head { width: 100%; border-collapse: collapse; margin-bottom: 7px; background: #f4f7fb; color: <?= $gccInk ?>; border: 1px solid <?= $gccLine ?>; }
+.doc-head td { vertical-align: middle; padding: 8px 10px; }
+.doc-head .doc-title { font-size: 9px; font-weight: 700; color: <?= $gccMuted ?>; line-height: 1.3; }
+.doc-head .doc-no { font-size: 15px; font-weight: 800; letter-spacing: 0.3px; margin-top: 2px; color: <?= $gccBand ?>; }
+.doc-head .qr-cell { width: 24mm; text-align: right; padding: 5px 7px; }
+.doc-head .qr-cell img { width: 20mm; height: 20mm; background: #fff; padding: 2px; border: 1px solid <?= $gccLine ?>; }
+
+.meta-table { width: 100%; border-collapse: collapse; margin-bottom: 7px; table-layout: fixed; }
+.meta-table td { border: 1px solid <?= $gccLine ?>; padding: 5px 7px; vertical-align: top; background: #f7f9fc; }
+.meta-table .mlbl { display: block; font-size: 6.5px; font-weight: 700; color: <?= $gccMuted ?>; line-height: 1.3; margin-bottom: 2px; }
+.meta-table .mval { font-size: 8.5px; font-weight: 700; color: <?= $gccInk ?>; }
+
+.party-table { width: 100%; border-collapse: collapse; margin-bottom: 7px; table-layout: fixed; }
+.party-table td { border: 1px solid <?= $gccLine ?>; padding: 6px 8px; vertical-align: top; }
+.party-table .plbl { display: block; font-size: 6.5px; font-weight: 700; color: <?= $gccAccent ?>; line-height: 1.3; margin-bottom: 2px; }
+.party-table .pval { font-size: 9px; font-weight: 800; color: <?= $gccInk ?>; line-height: 1.35; }
+.party-table .pmeta { font-size: 8px; color: #334155; margin-top: 2px; }
 
 .amount-hero {
     text-align: center;
-    margin: 12px 0 14px;
-    padding: 14px 12px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, <?= $isIn ? '#ecfdf5, #d1fae5' : '#fef2f2, #fee2e2' ?>);
-    border: 2px solid <?= $isIn ? '#6ee7b7' : '#fca5a5' ?>;
+    margin: 0 0 6px;
+    padding: 10px 10px 8px;
+    background: #f4f7fb;
+    color: <?= $gccBand ?>;
+    border: 1px solid <?= $gccLine ?>;
 }
-.amount-hero .amount-label {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: <?= $isIn ? '#047857' : '#b91c1c' ?>;
-}
-.amount-hero .amount-value {
-    font-size: 28px;
-    font-weight: 800;
-    color: #1e3a5f;
-    margin-top: 4px;
-    line-height: 1.1;
-}
+.amount-hero .amount-label { font-size: 8px; font-weight: 700; line-height: 1.35; color: <?= $gccAccent ?>; }
+.amount-hero .amount-value { font-size: 22px; font-weight: 800; margin-top: 2px; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
 
-.meta-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    margin-bottom: 12px;
-}
-.meta-card {
-    background: #f8f9ff;
-    border: 1px solid #e0e7ff;
-    border-radius: 6px;
+.words-box {
+    border: 1px solid <?= $gccGold ?>;
+    background: #fbf8f1;
     padding: 6px 8px;
+    margin-bottom: 7px;
+    text-align: center;
 }
-.meta-card .mlbl {
-    font-size: 7.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: #6366f1;
-    margin-bottom: 2px;
+.words-box .wlbl { font-size: 6.5px; font-weight: 700; color: #8a7040; margin-bottom: 2px; }
+.words-box .wen { font-size: 8px; font-weight: 700; color: <?= $gccInk ?>; line-height: 1.35; }
+.words-box .war { font-size: 8.5px; font-weight: 700; color: <?= $gccBand ?>; margin-top: 2px; line-height: 1.4; text-align: center; }
+
+.ledger-table { width: 100%; border-collapse: collapse; margin-bottom: 7px; }
+.ledger-table td { padding: 5px 8px; border-bottom: 1px solid #e8edf4; font-size: 8.5px; }
+.ledger-table .lbl { color: #445066; }
+.ledger-table .val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger-table tr.t-payment td { color: <?= $gccAccent ?>; font-weight: 800; }
+.ledger-table tr.t-current td {
+    background: #f4f7fb;
+    color: <?= $gccBand ?>;
+    font-size: 10px;
+    font-weight: 800;
+    border-bottom: none;
+    border-top: 1px solid <?= $gccLine ?>;
 }
-.meta-card .mval { font-size: 9px; font-weight: 600; color: #1a1a1a; word-break: break-word; }
-.meta-card.full { grid-column: 1 / -1; }
+.ledger-table tr.t-current td.val { font-size: 11px; }
 
 .notes-box {
-    margin-bottom: 10px;
-    padding: 6px 8px;
+    margin-bottom: 7px;
+    padding: 5px 8px;
     background: #fffbeb;
     border: 1px solid #fde68a;
-    border-radius: 5px;
     font-size: 8px;
     color: #555;
 }
-.notes-box strong {
-    display: block;
-    color: #92400e;
-    font-size: 7.5px;
-    text-transform: uppercase;
-    margin-bottom: 2px;
+.notes-box strong { display: block; color: #92400e; font-size: 7px; margin-bottom: 2px; }
+
+.legal-line {
+    font-size: 7px;
+    color: <?= $gccMuted ?>;
+    margin-bottom: 8px;
+    padding: 3px 0;
+    border-top: 1px dashed <?= $gccLine ?>;
 }
 
-.totals-section { display: flex; justify-content: flex-end; margin-bottom: 10px; }
-.totals-box {
-    width: 62mm;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 8px 10px;
-}
-.total-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    font-size: 8.5px;
-    border-bottom: 1px solid #f0f0f0;
-}
-.total-row:last-child { border-bottom: none; }
-.total-row .lbl { color: #555; }
-.total-row .val { font-weight: 600; text-align: right; }
-.total-row.t-payment .lbl,
-.total-row.t-payment .val {
-    color: <?= $isIn ? '#059669' : '#dc2626' ?> !important;
-    font-weight: 700;
-}
-.total-row.t-current {
-    border-top: 2px solid #1e3a5f !important;
-    margin-top: 4px;
-    padding-top: 7px !important;
-}
-.total-row.t-current .lbl,
-.total-row.t-current .val {
-    font-size: 10px !important;
-    font-weight: 800 !important;
-    color: <?= ($currentBalance > 0.001 ? '#dc2626' : ($currentBalance < -0.001 ? '#7c3aed' : '#059669')) ?> !important;
-}
-
-.inv-footer {
-    border-top: 1px solid #e5e7eb;
-    padding-top: 7px;
-    text-align: center;
-    color: #888;
-    font-size: 8px;
-    margin-top: 6px;
-}
+.inv-footer { text-align: center; color: #7b8aa0; font-size: 7px; line-height: 1.45; }
 
 .no-print {
     display: flex;
@@ -197,26 +158,31 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9px; color: #1a1a1
 .no-print button.edit-btn  { background: #f59e0b; }
 
 @media screen {
-    body { background: #e5e7eb; padding: 20px; }
-    .wrap { box-shadow: 0 2px 16px rgba(0,0,0,0.15); background: #fff; border-radius: 4px; }
+    body { background: #dbe4f0; padding: 20px; }
+    .wrap { box-shadow: 0 8px 28px rgba(11,31,54,0.16); background: #fff; }
 }
 @media print {
     body { background: #fff; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .no-print { display: none !important; }
     .wrap { max-width: 100%; width: 100%; padding: 0; margin: 0; box-shadow: none; }
-    @page { size: A5 portrait; margin: 8mm 10mm; }
+    @page { size: A5 portrait; margin: 8mm 8mm; }
 }
 
 <?php else: ?>
 /* ══════════════════════════════════
-   THERMAL — Receipt Style
+   THERMAL — Receipt Style (bilingual EN/AR)
 ══════════════════════════════════ */
 <?php include __DIR__ . '/../partials/thermal_print_font.css.php'; ?>
 body {
+    font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
     font-size: 12px;
     color: #000;
     background: #fff;
     padding: 8px 2px;
+}
+.ar {
+    font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
+    unicode-bidi: isolate;
 }
 
 .no-print {
@@ -246,33 +212,36 @@ body {
 .no-print button.edit-btn  { background: #f59e0b; }
 
 .wrap {
-    max-width: 72mm;
+    max-width: 80mm;
     margin: 0 auto;
     padding: 8px 3px;
+    font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
 }
 
 .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px dashed #e5e7eb; }
 .company-name { font-size: 18px; font-weight: 800; color: #000; }
+.company-name-ar { font-size: 13px; font-weight: 700; margin-top: 3px; line-height: 1.35; }
 .company-info { font-size: 11px; color: #000; margin-top: 4px; line-height: 1.35; }
 
 .receipt-title {
     text-align: center;
-    font-size: 12px; font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 2px;
+    font-size: 11px; font-weight: 800;
+    text-transform: none;
+    letter-spacing: 0;
     color: #000;
     margin: 14px 0;
+    line-height: 1.35;
 }
 
 .receipt-row {
-    display: flex; justify-content: space-between;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
     padding: 6px 0;
     border-bottom: 1px solid #f3f4f6;
     font-size: 11.5px;
 }
 .receipt-row:last-child { border-bottom: none; }
-.receipt-row .lbl { color: #000; }
-.receipt-row .val { font-weight: 400; color: #000; text-align: right; }
+.receipt-row .lbl { color: #000; font-size: 10.5px; max-width: 58%; line-height: 1.25; direction: ltr; unicode-bidi: isolate; }
+.receipt-row .val { font-weight: 400; color: #000; text-align: right; flex-shrink: 0; }
 
 .current-balance-row {
     border-top: 2px solid #000;
@@ -283,10 +252,10 @@ body {
 .current-balance-row .lbl,
 .current-balance-row .val {
     font-weight: bold !important;
-    font-size: 14px !important;
+    font-size: 12px !important;
     color: #000 !important;
 }
-.current-balance-row .val { font-size: 16px !important; }
+.current-balance-row .val { font-size: 14px !important; }
 
 .amount-box {
     margin: 18px 0;
@@ -296,8 +265,10 @@ body {
     border: 2px solid #000;
     border-radius: 0;
 }
-.amount-label { font-size: 10px; color: #000; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.amount-label { font-size: 10px; color: #000; font-weight: 700; text-transform: none; letter-spacing: 0; line-height: 1.3; }
 .amount-value { font-size: 26px; font-weight: 800; color: #000; margin-top: 4px; }
+.words-thermal { margin: 8px 0 12px; font-size: 9.5px; line-height: 1.4; text-align: center; }
+.legal-thermal { font-size: 8.5px; color: #000; margin-top: 6px; line-height: 1.35; }
 
 .footer {
     text-align: center;
@@ -312,15 +283,22 @@ body {
     body {
         padding: 0;
         background: #fff;
-        font-family: monospace;
+        font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
         font-weight: 400;
         -webkit-font-smoothing: none;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
     .no-print { display: none !important; }
-    .wrap { border: none; padding: 0; width: 100%; max-width: 100%; font-family: monospace; }
-    @page { size: 72mm auto; margin: 2mm; }
+    .wrap {
+        border: none;
+        padding: 0;
+        width: 100%;
+        max-width: 100%;
+        font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
+    }
+    .ar { font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif; }
+    @page { size: 80mm 297mm; margin: 2mm; }
 }
 <?php endif; ?>
 </style>
@@ -335,131 +313,267 @@ body {
     <button type="button" id="btnA5" style="background:#6366f1;color:#fff;"><b>⬚ A5 PDF</b></button>
     <?php endif; ?>
     <button type="button" id="btnPdf" style="background:#dc2626;color:#fff;"><b>⤓ PDF</b></button>
-    <?php if (Auth::can('payments','edit')): ?>
+    <?php if (!empty($canEditPayment)): ?>
     <button type="button" class="edit-btn" id="btnEdit"><i>✎</i> Edit</button>
     <?php endif; ?>
     <button type="button" class="close-btn" id="btnClose">Close</button>
 </div>
 
+<?php
+require __DIR__ . '/../sales/_thermal_labels_ar.php';
+require_once __DIR__ . '/../../helpers/MoneyWords.php';
+
+$companyNameAr = trim((string) ($settings['company_name_ar'] ?? ''));
+if ($companyNameAr === '') {
+    $companyNameAr = 'شركة إقبال للأجهزة الإلكترونية ذ.م.م';
+}
+$companyAddressAr = trim((string) ($settings['company_address_ar'] ?? ''));
+$companyPhone     = trim((string) ($settings['company_phone'] ?? (defined('PDF_COMPANY_PHONE') ? PDF_COMPANY_PHONE : '')));
+$companyEmail     = trim((string) ($settings['company_email'] ?? (defined('PDF_COMPANY_EMAIL') ? PDF_COMPANY_EMAIL : '')));
+$companyCr        = trim((string) ($settings['company_cr'] ?? ''));
+$companyLicense   = trim((string) ($settings['company_license'] ?? ''));
+$invoiceFooter = trim((string) ($settings['invoice_footer'] ?? ''));
+$useDefaultThankYou = ($invoiceFooter === '' || $invoiceFooter === 'Thank you for your business!');
+$amountLabelKey = $isIn ? 'amount_received' : 'amount_paid';
+$paymentMoveKey = $isIn ? 'payment_received' : 'payment_made';
+$docTitleKey    = $isIn ? 'payment_receipt' : 'payment_voucher';
+$docNoKey       = $isIn ? 'receipt_no' : 'voucher_no';
+$partyRoleKey   = $isIn ? 'received_from' : 'paid_to';
+$methodRaw      = strtolower(str_replace('-', '_', (string) ($payment['payment_method'] ?? 'cash')));
+if (!empty($payment['cheque_no']) || $methodRaw === 'cheque') {
+    $modeLabelKey = 'cheque';
+} elseif (in_array($methodRaw, ['bank', 'bank_transfer'], true)) {
+    $modeLabelKey = 'bank_account';
+} elseif ($methodRaw === 'card') {
+    $modeLabelKey = 'card';
+} elseif ($methodRaw === 'mobile_wallet') {
+    $modeLabelKey = 'mobile_wallet';
+} else {
+    $modeLabelKey = 'cash';
+}
+
+$partyPhone = trim((string) ($payment['phone_no'] ?? ''));
+if ($partyPhone === '') {
+    $partyPhone = trim((string) ($payment['party_phone'] ?? ''));
+}
+$amountWords = MoneyWords::kwd((float) ($payment['amount'] ?? 0));
+$payDate = date('d M Y', strtotime($payment['date'] ?? 'now'));
+$payNo = (string) ($payment['payment_no'] ?? '');
+$moneyFmt = static function ($n): string {
+    return APP_CURRENCY . ' ' . number_format((float) $n, DECIMAL_PLACES);
+};
+
+$qrSrc = null;
+try {
+    require_once __DIR__ . '/../../helpers/PaymentReceiptVerify.php';
+    require_once __DIR__ . '/../../helpers/QrSvg.php';
+    $qrSrc = PaymentReceiptVerify::qrPngDataUri(Database::getInstance(), $payment);
+} catch (Throwable $e) {
+    $qrSrc = null;
+}
+?>
 <div class="wrap">
 <?php if (!$thermal): ?>
-    <div class="inv-header">
-        <div>
-            <div class="company-name"><?= htmlspecialchars((string)($settings['company_name'] ?? APP_NAME)) ?></div>
-            <div class="company-info">
-                <?= nl2br(htmlspecialchars((string)($settings['company_address'] ?? ''))) ?><br>
-                <?= htmlspecialchars((string)($settings['company_phone'] ?? '')) ?>
-            </div>
-        </div>
-        <div class="inv-title">
-            <h1>Payment Receipt</h1>
-            <p>
-                <strong># <?= htmlspecialchars((string)($payment['payment_no'] ?? '')) ?></strong><br>
-                Date: <?= date('d M Y', strtotime($payment['date'] ?? 'now')) ?><br>
-                Type: <?= $isIn ? 'Amount Received' : 'Amount Paid' ?>
-            </p>
+    <div class="letterhead">
+        <div class="company-name"><?= htmlspecialchars((string)($settings['company_name'] ?? APP_NAME)) ?></div>
+        <div class="company-name-ar ar" dir="rtl" lang="ar"><?= htmlspecialchars($companyNameAr) ?></div>
+        <div class="company-info">
+            <?= nl2br(htmlspecialchars((string)($settings['company_address'] ?? ''))) ?>
+            <?php if ($companyAddressAr !== ''): ?>
+            <br><span class="ar" dir="rtl" lang="ar"><?= nl2br(htmlspecialchars($companyAddressAr)) ?></span>
+            <?php endif; ?>
+            <?php if ($companyPhone !== '' || $companyEmail !== ''): ?>
+            <span class="company-contact">
+                <?php if ($companyPhone !== ''): ?>
+                Tel: <span dir="ltr"><?= htmlspecialchars($companyPhone) ?></span>
+                <?php endif; ?>
+                <?php if ($companyPhone !== '' && $companyEmail !== ''): ?>
+                <span> · </span>
+                <?php endif; ?>
+                <?php if ($companyEmail !== ''): ?>
+                <span dir="ltr"><?= htmlspecialchars($companyEmail) ?></span>
+                <?php endif; ?>
+            </span>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="party-row">
-        <span class="plbl">Party</span>
-        <span class="pval"><?= htmlspecialchars((string)($payment['party_name'] ?? '—')) ?></span>
-        <?php if (!empty($payment['phone_no'])): ?>
-        <span class="plbl">Phone</span>
-        <span class="pmeta"><?= htmlspecialchars((string)$payment['phone_no']) ?></span>
+    <?php if ($companyCr !== '' || $companyLicense !== ''): ?>
+    <div class="id-strip">
+        <?php if ($companyCr !== ''): ?>
+        <?= thermalBiLabel('cr_no') ?>: <span dir="ltr"><?= htmlspecialchars($companyCr) ?></span>
         <?php endif; ?>
-        <span class="plbl">Account</span>
-        <span class="pmeta"><?= htmlspecialchars((string)($payment['account_name'] ?? '—')) ?></span>
-        <?php if (!empty($payment['cheque_no'])): ?>
-        <span class="plbl">Cheque</span>
-        <span class="pmeta"><?= htmlspecialchars((string)$payment['cheque_no']) ?></span>
+        <?php if ($companyCr !== '' && $companyLicense !== ''): ?>
+        <span class="sep">|</span>
+        <?php endif; ?>
+        <?php if ($companyLicense !== ''): ?>
+        <?= thermalBiLabel('license_no') ?>: <span dir="ltr"><?= htmlspecialchars($companyLicense) ?></span>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
+
+    <table class="doc-head">
+        <tr>
+            <td>
+                <div class="doc-title"><?= thermalBiLabel($docTitleKey) ?></div>
+                <div class="doc-no" dir="ltr"><?= htmlspecialchars($payNo) ?></div>
+            </td>
+            <?php if ($qrSrc): ?>
+            <td class="qr-cell">
+                <img src="<?= htmlspecialchars($qrSrc, ENT_QUOTES, 'UTF-8') ?>" alt="QR" width="76" height="76">
+            </td>
+            <?php endif; ?>
+        </tr>
+    </table>
+
+    <table class="meta-table">
+        <tr>
+            <td>
+                <span class="mlbl"><?= thermalBiLabel($docNoKey) ?></span>
+                <span class="mval" dir="ltr"><?= htmlspecialchars($payNo) ?></span>
+            </td>
+            <td>
+                <span class="mlbl"><?= thermalBiLabel('date') ?></span>
+                <span class="mval" dir="ltr"><?= htmlspecialchars($payDate) ?></span>
+            </td>
+            <td>
+                <span class="mlbl"><?= thermalBiLabel('payment_mode') ?></span>
+                <span class="mval"><?= thermalBiLabel($modeLabelKey) ?></span>
+            </td>
+        </tr>
+    </table>
+
+    <table class="party-table">
+        <tr>
+            <td>
+                <span class="plbl"><?= thermalBiLabel($partyRoleKey) ?></span>
+                <span class="pval"><?= htmlspecialchars((string)($payment['party_name'] ?? '—')) ?></span>
+                <?php if ($partyPhone !== ''): ?>
+                <div class="pmeta"><?= thermalBiLabel('phone') ?>: <span dir="ltr"><?= htmlspecialchars($partyPhone) ?></span></div>
+                <?php endif; ?>
+            </td>
+            <td>
+                <span class="plbl"><?= thermalBiLabel('account') ?></span>
+                <span class="pval"><?= htmlspecialchars((string)($payment['account_name'] ?? '—')) ?></span>
+                <?php if (!empty($payment['cheque_no'])): ?>
+                <div class="pmeta"><?= thermalBiLabel('cheque_no') ?>: <?= htmlspecialchars((string)$payment['cheque_no']) ?></div>
+                <?php endif; ?>
+            </td>
+        </tr>
+    </table>
 
     <div class="amount-hero">
-        <div class="amount-label">Amount <?= $isIn ? 'Received' : 'Paid' ?></div>
-        <div class="amount-value"><?= APP_CURRENCY ?> <?= number_format((float)$payment['amount'], DECIMAL_PLACES) ?></div>
+        <div class="amount-label"><?= thermalBiLabel($amountLabelKey) ?></div>
+        <div class="amount-value" dir="ltr"><?= $moneyFmt($payment['amount'] ?? 0) ?></div>
+    </div>
+
+    <div class="words-box">
+        <div class="wlbl"><?= thermalBiLabel('amount_in_words') ?></div>
+        <div class="wen"><?= htmlspecialchars($amountWords['en']) ?></div>
+        <div class="war ar" dir="rtl" lang="ar"><?= htmlspecialchars($amountWords['ar']) ?></div>
     </div>
 
     <?php if (!empty($payment['notes'])): ?>
     <div class="notes-box">
-        <strong>Notes</strong>
+        <strong><?= thermalBiLabel('notes') ?></strong>
         <?= nl2br(htmlspecialchars((string)$payment['notes'])) ?>
     </div>
     <?php endif; ?>
 
-    <div class="totals-section">
-        <div class="totals-box">
-            <div class="total-row">
-                <span class="lbl">Previous Balance</span>
-                <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
-            </div>
-            <div class="total-row t-payment">
-                <span class="lbl">Payment <?= $isIn ? 'Received' : 'Made' ?></span>
-                <span class="val"><?= $isIn ? '−' : '+' ?> <?= APP_CURRENCY ?> <?= number_format((float)$payment['amount'], DECIMAL_PLACES) ?></span>
-            </div>
-            <div class="total-row t-current">
-                <span class="lbl">Current Balance</span>
-                <span class="val"><?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?></span>
-            </div>
-        </div>
-    </div>
+    <table class="ledger-table">
+        <tr>
+            <td class="lbl"><?= thermalBiLabel('previous_balance') ?></td>
+            <td class="val"><?= $moneyFmt($previousBalance) ?></td>
+        </tr>
+        <tr class="t-payment">
+            <td class="lbl"><?= thermalBiLabel($paymentMoveKey) ?></td>
+            <td class="val"><?= $isIn ? '−' : '+' ?> <?= $moneyFmt($payment['amount'] ?? 0) ?></td>
+        </tr>
+        <tr class="t-current">
+            <td class="lbl"><?= thermalBiLabel('current_balance') ?></td>
+            <td class="val"><?= $moneyFmt($currentBalance) ?></td>
+        </tr>
+    </table>
+
+    <div class="legal-line"><?= thermalBiLabel('vat_not_applicable') ?></div>
 
     <div class="inv-footer">
-        <p><?= htmlspecialchars((string)($settings['invoice_footer'] ?? 'Thank you for your business!')) ?></p>
-        <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?></p>
-        <p style="margin-top:4px;font-size:7px;color:#666;">This is a computer generated receipt.</p>
+        <?php if ($useDefaultThankYou): ?>
+        <p><?= thermalBiLabel('thank_you') ?></p>
+        <?php else: ?>
+        <p><?= htmlspecialchars($invoiceFooter) ?></p>
+        <p style="margin-top:2px;"><span class="ar" dir="rtl" lang="ar"><?= htmlspecialchars($GLOBALS['thermalLabels']['thank_you']['ar'], ENT_QUOTES, 'UTF-8') ?></span></p>
+        <?php endif; ?>
+        <p style="margin-top:3px;"><?= thermalBiLabel('printed') ?> <span dir="ltr"><?= date('d M Y, h:i A') ?></span></p>
+        <p><?= thermalBiLabel('computer_generated_receipt') ?></p>
     </div>
 
 <?php else: ?>
     <div class="receipt-header">
         <div class="company-name"><?= htmlspecialchars((string)($settings['company_name'] ?? APP_NAME)) ?></div>
+        <div class="company-name-ar ar" dir="rtl" lang="ar"><?= htmlspecialchars($companyNameAr) ?></div>
         <div class="company-info">
             <?= nl2br(htmlspecialchars((string)($settings['company_address'] ?? ''))) ?><br>
+            <?php if ($companyAddressAr !== ''): ?>
+            <span class="ar" dir="rtl" lang="ar"><?= nl2br(htmlspecialchars($companyAddressAr)) ?></span><br>
+            <?php endif; ?>
             <?= htmlspecialchars((string)($settings['company_phone'] ?? '')) ?>
+            <?php if ($companyCr !== ''): ?>
+            <br><?= thermalBiLabel('cr_no') ?>: <?= htmlspecialchars($companyCr) ?>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="receipt-title">Payment Receipt</div>
+    <div class="receipt-title"><?= thermalBiLabel($docTitleKey) ?></div>
 
     <div class="amount-box">
-        <div class="amount-label">Amount <?= $isIn ? 'Received' : 'Paid' ?></div>
-        <div class="amount-value"><?= APP_CURRENCY ?> <?= number_format((float)$payment['amount'], DECIMAL_PLACES) ?></div>
+        <div class="amount-label"><?= thermalBiLabel($amountLabelKey) ?></div>
+        <div class="amount-value"><?= $moneyFmt($payment['amount'] ?? 0) ?></div>
+    </div>
+    <div class="words-thermal">
+        <?= htmlspecialchars($amountWords['en']) ?><br>
+        <span class="ar" dir="rtl" lang="ar"><?= htmlspecialchars($amountWords['ar']) ?></span>
     </div>
 
-    <div class="receipt-row"><span class="lbl">Receipt No</span><span class="val"><?= htmlspecialchars((string)($payment['payment_no'] ?? '')) ?></span></div>
-    <div class="receipt-row"><span class="lbl">Date</span><span class="val"><?= date('d M Y', strtotime($payment['date'] ?? 'now')) ?></span></div>
-    <div class="receipt-row"><span class="lbl">Party</span><span class="val"><?= htmlspecialchars((string)($payment['party_name'] ?? '—')) ?></span></div>
-    <?php if (!empty($payment['phone_no'])): ?>
-    <div class="receipt-row"><span class="lbl">Phone</span><span class="val"><?= htmlspecialchars((string)$payment['phone_no']) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel($docNoKey) ?></span><span class="val"><?= htmlspecialchars($payNo) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel('date') ?></span><span class="val" dir="ltr"><?= htmlspecialchars($payDate) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel($partyRoleKey) ?></span><span class="val"><?= htmlspecialchars((string)($payment['party_name'] ?? '—')) ?></span></div>
+    <?php if ($partyPhone !== ''): ?>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel('phone') ?></span><span class="val"><?= htmlspecialchars($partyPhone) ?></span></div>
     <?php endif; ?>
-    <div class="receipt-row"><span class="lbl">Account</span><span class="val"><?= htmlspecialchars((string)($payment['account_name'] ?? '—')) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel('account') ?></span><span class="val"><?= htmlspecialchars((string)($payment['account_name'] ?? '—')) ?></span></div>
     <?php if (!empty($payment['cheque_no'])): ?>
-    <div class="receipt-row"><span class="lbl">Cheque No</span><span class="val"><?= htmlspecialchars((string)$payment['cheque_no']) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel('cheque_no') ?></span><span class="val"><?= htmlspecialchars((string)$payment['cheque_no']) ?></span></div>
     <?php endif; ?>
     <?php if (!empty($payment['notes'])): ?>
-    <div class="receipt-row"><span class="lbl">Notes</span><span class="val"><?= htmlspecialchars((string)$payment['notes']) ?></span></div>
+    <div class="receipt-row"><span class="lbl"><?= thermalBiLabel('notes') ?></span><span class="val"><?= htmlspecialchars((string)$payment['notes']) ?></span></div>
     <?php endif; ?>
 
     <div style="margin-top:14px;padding-top:12px;border-top:2px dashed #e5e7eb;">
         <div class="receipt-row">
-            <span class="lbl">Previous Balance</span>
+            <span class="lbl"><?= thermalBiLabel('previous_balance') ?></span>
             <span class="val"><?= APP_CURRENCY ?> <?= number_format($previousBalance, DECIMAL_PLACES) ?></span>
         </div>
         <div class="receipt-row">
-            <span class="lbl">Payment <?= $isIn ? 'Received' : 'Made' ?></span>
+            <span class="lbl"><?= thermalBiLabel($paymentMoveKey) ?></span>
             <span class="val"><?= $isIn ? '-' : '+' ?> <?= APP_CURRENCY ?> <?= number_format((float)$payment['amount'], DECIMAL_PLACES) ?></span>
         </div>
         <div class="receipt-row current-balance-row">
-            <span class="lbl"><strong>Current Balance</strong></span>
+            <span class="lbl"><strong><?= thermalBiLabel('current_balance') ?></strong></span>
             <span class="val"><strong><?= APP_CURRENCY ?> <?= number_format($currentBalance, DECIMAL_PLACES) ?></strong></span>
         </div>
     </div>
 
     <div class="footer">
-        <p><?= htmlspecialchars((string)($settings['invoice_footer'] ?? 'Thank you for your business!')) ?></p>
-        <p style="margin-top:4px;">Printed <?= date('d M Y, h:i A') ?></p>
-        <p style="margin-top:8px;font-size:9px;color:#666;">This is a computer generated receipt.</p>
+        <?php if ($useDefaultThankYou): ?>
+        <p><?= thermalBiLabel('thank_you') ?></p>
+        <?php else: ?>
+        <p><?= htmlspecialchars($invoiceFooter) ?></p>
+        <p style="margin-top:2px;"><span class="ar" dir="rtl" lang="ar"><?= htmlspecialchars($GLOBALS['thermalLabels']['thank_you']['ar'], ENT_QUOTES, 'UTF-8') ?></span></p>
+        <?php endif; ?>
+        <p style="margin-top:4px;"><?= thermalBiLabel('printed') ?> <span dir="ltr"><?= date('d M Y, h:i A') ?></span></p>
+        <p class="legal-thermal"><?= thermalBiLabel('vat_not_applicable') ?></p>
+        <p style="margin-top:8px;font-size:9px;color:#666;"><?= thermalBiLabel('computer_generated_receipt') ?></p>
     </div>
 <?php endif; ?>
 </div>
@@ -470,13 +584,14 @@ body {
     var paymentId = <?= (int)$payment['id'] ?>;
     var isThermal = <?= $thermal ? 'true' : 'false' ?>;
     var paymentNo = <?= json_encode((string)($payment['payment_no'] ?? 'receipt')) ?>;
+    var paymentsListUrl = <?= json_encode((string)($paymentsListBase ?? '?page=payments')) ?>;
 
     document.getElementById('btnPrint').addEventListener('click', function () { window.print(); });
 
     var btnThermal = document.getElementById('btnThermal');
     if (btnThermal) {
         btnThermal.addEventListener('click', function () {
-            window.location = '?page=payments&action=print&id=' + paymentId + '&autoprint=1&thermal=1';
+            window.location = '?page=payments&action=thermalPrint&id=' + paymentId + '&thermal=1&autoprint=1';
         });
     }
 
@@ -495,7 +610,7 @@ body {
     }
 
     document.getElementById('btnClose').addEventListener('click', function () {
-        window.location = '?page=payments';
+        window.location = paymentsListUrl;
     });
 
     function exportPDF() {
@@ -507,7 +622,7 @@ body {
         btn.disabled = true;
         btn.innerHTML = '<b>Generating...</b>';
         html2pdf().set({
-            margin: [8, 10, 8, 10],
+            margin: [5, 7, 5, 7],
             filename: paymentNo + '.pdf',
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true },
@@ -522,7 +637,24 @@ body {
 
     window.addEventListener('load', function () {
         var params = new URLSearchParams(window.location.search);
-        if (params.get('autoprint') === '1') setTimeout(function () { window.print(); }, 400);
+        var nextAction = params.get('next') || '';
+        var nextParty = params.get('party_id') || '';
+        var goNextDone = false;
+        function goNextForm() {
+            if (goNextDone) return;
+            if (nextAction !== 'receive' && nextAction !== 'pay') return;
+            goNextDone = true;
+            var nextUrl = '?page=payments&action=' + encodeURIComponent(nextAction);
+            if (nextParty) nextUrl += '&party_id=' + encodeURIComponent(nextParty);
+            window.location = nextUrl;
+        }
+        if (params.get('autoprint') === '1') {
+            setTimeout(function () { window.print(); }, 400);
+            if (nextAction === 'receive' || nextAction === 'pay') {
+                window.addEventListener('afterprint', goNextForm);
+                setTimeout(goNextForm, 6000);
+            }
+        }
         if (params.get('autopdf') === '1') setTimeout(exportPDF, 600);
     });
 

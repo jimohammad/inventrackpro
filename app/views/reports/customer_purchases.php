@@ -1,16 +1,18 @@
 <!-- Customer Purchases Report -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h1 class="page-title">Customer Purchases</h1>
         <p class="page-subtitle">Items purchased by a customer within a date range</p>
     </div>
-    <?php if ($party && empty($reportError) && !empty($rows)): ?>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="?page=dashboard" class="btn btn-outline-primary"><i class="bi bi-house-door me-1"></i> Dashboard</a>
+        <a href="?page=reports" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Reports</a>
+        <?php if ($party && empty($reportError) && !empty($rows)): ?>
         <button type="button" class="btn btn-success js-export-report-csv" data-table-id="customerPurchasesRptTable" data-title="Customer_Purchases"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
         <button type="button" class="btn btn-danger js-export-report-pdf"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
         <a href="?page=reports&action=customerPurchasesPrint&party_id=<?= (int) $partyId ?>&from_date=<?= urlencode($fromDate) ?>&to_date=<?= urlencode($toDate) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>
 
 <!-- Filter -->
@@ -77,13 +79,6 @@
         </div>
     </div>
 </div>
-
-<?php if ($listTruncated): ?>
-<div class="alert alert-warning mb-4">
-    <i class="bi bi-exclamation-triangle me-2"></i>
-    Showing the first <?= (int) $listLimit ?> line items only. Narrow the date range for a complete list.
-</div>
-<?php endif; ?>
 
 <?php if (!empty($rows)): ?>
 <div class="row g-4 mb-4">

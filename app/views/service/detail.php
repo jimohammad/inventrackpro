@@ -247,6 +247,16 @@ $lockPatternSvg = ServiceLockPattern::toSvg($record['lock_pattern'] ?? null, 120
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.sd-page form').forEach(function (form) {
+        form.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter' && e.keyCode !== 13) return;
+            var t = e.target;
+            if (t && t.tagName === 'TEXTAREA') return;
+            if (t && (t.tagName === 'BUTTON' || (t.tagName === 'INPUT' && (t.type === 'submit' || t.type === 'button')))) return;
+            e.preventDefault();
+        });
+    });
+
     var btn = document.getElementById('svcTrackCopyBtn');
     var a = document.getElementById('trackUrl');
     if (!btn || !a) return;

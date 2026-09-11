@@ -47,7 +47,7 @@
         </div>
     </div>
 
-    <form method="POST" action="?page=service&action=update">
+    <form method="POST" action="?page=service&action=update" id="svcForm">
         <?= Auth::csrfField() ?>
         <input type="hidden" name="id" value="<?= $record['id'] ?>">
 
@@ -186,4 +186,11 @@ function selectFault(el) {
     document.getElementById('faultCategory').value = el.dataset.value;
 }
 
+document.getElementById('svcForm').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    var t = e.target;
+    if (t && t.tagName === 'TEXTAREA') return;
+    if (t && (t.tagName === 'BUTTON' || (t.tagName === 'INPUT' && (t.type === 'submit' || t.type === 'button')))) return;
+    e.preventDefault();
+});
 </script>

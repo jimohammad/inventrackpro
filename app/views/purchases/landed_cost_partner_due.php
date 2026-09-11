@@ -135,7 +135,9 @@ $canFixDuplicates = $canFixDuplicates ?? false;
                 </div>
             </div>
         </div>
-        <form method="POST" action="?page=landedcost&action=payPartnerBulk" class="row g-3 align-items-end" id="partnerBulkPayForm">
+        <form method="POST" action="?page=landedcost&action=payPartnerBulk" class="row g-3 align-items-end" id="partnerBulkPayForm"
+              data-pay-amount="<?= htmlspecialchars(number_format($monthTotal, DECIMAL_PLACES, '.', '')) ?>"
+              data-pay-month="<?= htmlspecialchars($monthLabel) ?>">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="settle_month" value="<?= htmlspecialchars($settleMonth) ?>">
             <div class="col-md-2">
@@ -151,11 +153,15 @@ $canFixDuplicates = $canFixDuplicates ?? false;
                     <?php endif; ?>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-semibold" style="font-size:0.82rem;">Pay from account</label>
-                <select name="account_id" class="form-select" required>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold" style="font-size:0.82rem;">
+                    Bank account <span class="text-danger">*</span>
+                </label>
+                <select name="account_id" id="partnerPayAccount" class="form-select border-warning" required
+                        style="border-width:2px;">
+                    <option value="">— Select bank account —</option>
                     <?php foreach ($accounts as $acc): ?>
-                    <option value="<?= (int) $acc['id'] ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
+                    <option value="<?= (int) $acc['id'] ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -167,9 +173,9 @@ $canFixDuplicates = $canFixDuplicates ?? false;
                 <label class="form-label fw-semibold" style="font-size:0.82rem;">Note (optional)</label>
                 <input type="text" name="notes" class="form-control" placeholder="<?= htmlspecialchars($monthLabel) ?>">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-success w-100" id="partnerBulkPayBtn">
-                    <i class="bi bi-cash-stack me-1"></i> Pay <?= htmlspecialchars($monthLabel) ?> — <?= number_format($monthTotal, DECIMAL_PLACES) ?> <?= APP_CURRENCY ?>
+                    <i class="bi bi-cash-stack me-1"></i> Pay <?= number_format($monthTotal, DECIMAL_PLACES) ?>
                 </button>
             </div>
         </form>
@@ -251,8 +257,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var form = document.getElementById('partnerBulkPayForm');
     var btn  = document.getElementById('partnerBulkPayBtn');
-    if (!form || !btn) return;
-    form.addEventListener('submit', function () {
+    var acct = document.getElementById('partnerPayAccount');
+    if (!form || !btn || !acct) return;
+    form.addEventListener('submit', function (e) {
+        if (!acct.value) {
+            e.preventDefault();
+            alert('Please select the bank account to pay from.');
+            acct.focus();
+            return;
+        }
+        var label = acct.options[acct.selectedIndex] ? acct.options[acct.selectedIndex].text : '';
+        var amt = form.getAttribute('data-pay-amount') || '';
+        var month = form.getAttribute('data-pay-month') || '';
+        var msg = 'Deduct ' + amt + ' KWD from:\n' + label
+            + '\n\nPartner profit — ' + month
+            + '\n\nContinue?';
+        if (!window.confirm(msg)) {
+            e.preventDefault();
+            return;
+        }
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Paying…';
     });

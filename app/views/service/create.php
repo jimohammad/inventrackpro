@@ -3,8 +3,8 @@
 
 /* Hero header */
 .svc-hero {
-    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%);
-    border-radius: 16px 16px 0 0;
+    background: #1e3a5f;
+    border-radius: 0;
     padding: 24px 28px;
     display: flex;
     align-items: center;
@@ -13,14 +13,14 @@
     box-shadow: 0 4px 20px rgba(30,58,95,.2);
 }
 .svc-hero a.back {
-    width: 36px; height: 36px; border-radius: 10px;
+    width: 36px; height: 36px; border-radius: 0;
     background: rgba(255,255,255,.15); color: #fff;
     display: flex; align-items: center; justify-content: center;
     text-decoration: none; transition: all .15s;
 }
 .svc-hero a.back:hover { background: rgba(255,255,255,.25); }
 .svc-hero-icon {
-    width: 48px; height: 48px; border-radius: 12px;
+    width: 48px; height: 48px; border-radius: 0;
     background: rgba(255,255,255,.2); display: flex;
     align-items: center; justify-content: center; font-size: 1.4rem;
 }
@@ -30,7 +30,7 @@
 /* Body */
 .svc-body {
     background: var(--bg-card); border: 1px solid var(--border-color);
-    border-top: none; border-radius: 0 0 16px 16px;
+    border-top: none; border-radius: 0;
     padding: 24px 28px;
 }
 
@@ -43,7 +43,7 @@
     border-bottom: 1.5px solid rgba(99,102,241,.1);
 }
 .svc-section-num {
-    width: 26px; height: 26px; border-radius: 8px;
+    width: 26px; height: 26px; border-radius: 0;
     background: rgba(99,102,241,.1); color: var(--primary);
     display: flex; align-items: center; justify-content: center;
     font-weight: 800; font-size: .78rem;
@@ -68,7 +68,7 @@
 .svc-f label .req { color: #ef4444; margin-left: 2px; }
 .svc-f input, .svc-f select, .svc-f textarea {
     width: 100%; padding: 10px 14px;
-    border: 1.5px solid var(--border-color); border-radius: 10px;
+    border: 1.5px solid var(--border-color); border-radius: 0;
     font-size: .88rem; background: var(--bg-main); color: var(--text-main);
     outline: none; font-family: inherit; transition: all .15s;
 }
@@ -84,7 +84,7 @@
 .svc-imei-wrap {
     position: relative;
     background: linear-gradient(135deg, rgba(99,102,241,.06), rgba(139,92,246,.06));
-    border: 2px solid rgba(99,102,241,.2); border-radius: 12px;
+    border: 2px solid rgba(99,102,241,.2); border-radius: 0;
     transition: all .15s;
 }
 .svc-imei-wrap:focus-within {
@@ -107,7 +107,7 @@
 /* Fault category pills */
 .svc-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .svc-pill {
-    padding: 6px 14px; border-radius: 20px; background: var(--bg-main);
+    padding: 6px 14px; border-radius: 0; background: var(--bg-main);
     border: 1.5px solid var(--border-color); color: var(--text-muted);
     font-size: .78rem; font-weight: 600; cursor: pointer;
     transition: all .15s; user-select: none;
@@ -123,7 +123,7 @@
 .svc-customer-hint {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; background: rgba(99,102,241,.06);
-    border-radius: 10px; margin-bottom: 12px; font-size: .82rem;
+    border-radius: 0; margin-bottom: 12px; font-size: .82rem;
     color: var(--text-muted);
 }
 .svc-customer-hint i { color: var(--primary); font-size: 1rem; }
@@ -144,7 +144,7 @@
     border-top: 1.5px solid var(--border-color);
 }
 .svc-btn {
-    padding: 11px 24px; border-radius: 10px; font-size: .88rem;
+    padding: 11px 24px; border-radius: 0; font-size: .88rem;
     font-weight: 600; cursor: pointer; border: none;
     display: inline-flex; align-items: center; gap: 8px;
     text-decoration: none; transition: all .15s;
@@ -197,7 +197,7 @@
                     <div class="svc-section-num">1</div>
                     <div class="svc-section-title">Device Information</div>
                     <div class="svc-section-sub">
-                        <input type="date" name="received_date" value="<?= date('Y-m-d') ?>" style="padding:4px 10px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.78rem;background:var(--bg-main);color:var(--text-main);outline:none;">
+                        <input type="date" name="received_date" value="<?= date('Y-m-d') ?>" style="padding:4px 10px;border:1.5px solid var(--border-color);border-radius:0;font-size:.78rem;background:var(--bg-main);color:var(--text-main);outline:none;">
                     </div>
                 </div>
 
@@ -315,4 +315,12 @@ function selectFault(el) {
     el.classList.add('active');
     document.getElementById('faultCategory').value = el.dataset.value;
 }
+
+document.getElementById('svcForm').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    var t = e.target;
+    if (t && t.tagName === 'TEXTAREA') return;
+    if (t && (t.tagName === 'BUTTON' || (t.tagName === 'INPUT' && (t.type === 'submit' || t.type === 'button')))) return;
+    e.preventDefault();
+});
 </script>

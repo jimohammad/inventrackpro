@@ -1,8 +1,11 @@
 <!-- Supplier Statement Report -->
 <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <div>
-        <h1 class="page-title">Supplier Statement</h1>
-        <p class="page-subtitle">Full transaction history per supplier — purchases and payments</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Supplier Statement</h1>
+            <p class="page-subtitle">Full transaction history per supplier — purchases and payments</p>
+        </div>
     </div>
     <?php if ($supplier && !empty($transactions)): ?>
     <div class="d-flex gap-2">
@@ -50,7 +53,6 @@
 <?php include __DIR__ . '/../partials/report_ledger_alerts.php'; ?>
 
 <?php if ($supplier): ?>
-
 
 <?php if (!empty($transactions)): ?>
 
@@ -105,23 +107,28 @@
 
                 <?php foreach ($transactions as $tx):
                     $isPur = $tx['txn_type'] === 'purchase';
+                    $isPoAdv = ($tx['txn_type'] ?? '') === 'po_advance';
                 ?>
                 <tr style="background:#fff;" onmouseover="this.style.background='#f8faff'" onmouseout="this.style.background='#fff'">
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($tx['date'])) ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;white-space:nowrap;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.78rem;white-space:nowrap;">
                         <?php if ($isPur): ?>
                             <a href="?page=purchases&action=detail&id=<?= $tx['id'] ?>" style="color:#f59e0b;font-weight:700;text-decoration:none;">
                                 <?= htmlspecialchars($tx['ref_no']) ?>
                             </a>
                         <?php else: ?>
-                            <span style="color:#10b981;font-weight:700;"><?= htmlspecialchars($tx['ref_no']) ?></span>
+                            <a href="?page=payments&action=detail&id=<?= $tx['id'] ?>" style="color:#10b981;font-weight:700;text-decoration:none;">
+                                <?= htmlspecialchars($tx['ref_no']) ?>
+                            </a>
                         <?php endif; ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;">
                         <?php if ($isPur): ?>
                         <span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:6px;font-size:0.75rem;font-weight:600;">Purchase</span>
+                        <?php elseif ($isPoAdv): ?>
+                        <span style="background:#fff7ed;color:#c2410c;padding:2px 9px;border-radius:6px;font-size:0.75rem;font-weight:600;">PO Advance</span>
                         <?php else: ?>
                         <span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:6px;font-size:0.75rem;font-weight:600;">Payment</span>
                         <?php endif; ?>
@@ -190,7 +197,7 @@
 <script>$(document).ready(function(){ initReportLedgerDataTable('supplierStmtTable'); });</script>
 <style>
 @media print {
-    .no-print, .sidebar, nav, .topbar { display:none !important; }
+    .no-print, .sidebar, nav, .topbar, .app-topbar { display:none !important; }
     .print-only { display:block !important; }
     body { background:#fff !important; }
     .card { box-shadow:none !important; border:none !important; }

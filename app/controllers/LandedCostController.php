@@ -16,7 +16,7 @@ class LandedCostController extends BaseController {
     }
 
     public function index(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db  = $this->db();
         $wh  = $this->warehouseId();
 
@@ -52,7 +52,7 @@ class LandedCostController extends BaseController {
     }
 
     public function create(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         $ctx = $this->prepareShipmentFormContext(null);
 
         $pageTitle = 'New Import Shipment';
@@ -65,7 +65,7 @@ class LandedCostController extends BaseController {
     }
 
     public function edit(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         $db  = $this->db();
         $id  = $this->inputInt('id', 0, 'get');
         $shipment = $this->loadShipment($db, $id);
@@ -95,7 +95,7 @@ class LandedCostController extends BaseController {
     }
 
     public function store(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         if (!$this->isPost()) {
             $this->redirect('?page=landedcost');
             return;
@@ -104,11 +104,11 @@ class LandedCostController extends BaseController {
         $db           = $this->db();
         $wh           = $this->warehouseId();
         $poIds        = array_filter(array_map('intval', $_POST['po_ids'] ?? []));
-        $description  = $this->input('description') ?: 'Import shipment';
-        $routeStage   = $this->input('route_stage') === 'kuwait_inbound' ? 'kuwait_inbound' : 'dubai_hub';
-        $status       = $this->input('status') === 'in_transit' ? 'in_transit' : 'draft';
+        $description  = 'Import shipment';
+        $routeStage   = 'dubai_hub';
+        $status       = 'in_transit';
         $date         = $this->input('date') ?: date('Y-m-d');
-        $notes        = $this->input('notes');
+        $notes        = null;
         $parentId     = $this->inputInt('parent_shipment_id', 0);
 
         if (empty($poIds)) {
@@ -174,7 +174,7 @@ class LandedCostController extends BaseController {
     }
 
     public function update(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         if (!$this->isPost()) {
             $this->redirect('?page=landedcost');
             return;
@@ -198,12 +198,8 @@ class LandedCostController extends BaseController {
             return;
         }
 
-        $poIds       = array_filter(array_map('intval', $_POST['po_ids'] ?? []));
-        $description = $this->input('description') ?: 'Import shipment';
-        $routeStage  = $this->input('route_stage') === 'kuwait_inbound' ? 'kuwait_inbound' : 'dubai_hub';
-        $status      = $this->input('status') === 'in_transit' ? 'in_transit' : 'draft';
-        $date        = $this->input('date') ?: date('Y-m-d');
-        $notes       = $this->input('notes');
+        $poIds = array_filter(array_map('intval', $_POST['po_ids'] ?? []));
+        $date  = $this->input('date') ?: date('Y-m-d');
 
         if (empty($poIds)) {
             $this->flash('error', 'Select at least one purchase order.');
@@ -227,8 +223,8 @@ class LandedCostController extends BaseController {
         $db->beginTransaction();
         try {
             $db->execute(
-                "UPDATE shipments SET description = ?, route_stage = ?, date = ?, status = ?, notes = ? WHERE id = ?",
-                [$description, $routeStage, $date, $status, $notes ?: null, $shipmentId]
+                "UPDATE shipments SET date = ? WHERE id = ?",
+                [$date, $shipmentId]
             );
 
             $this->syncShipmentPurchaseOrders($db, $shipmentId, $poIds, $wh);
@@ -250,7 +246,7 @@ class LandedCostController extends BaseController {
     }
 
     public function view(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db = $this->db();
         $id = $this->inputInt('id', 0, 'get');
 
@@ -272,7 +268,7 @@ class LandedCostController extends BaseController {
     }
 
     public function addCost(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         if (!$this->isPost()) {
             $this->redirect('?page=landedcost');
             return;
@@ -307,7 +303,7 @@ class LandedCostController extends BaseController {
     }
 
     public function receive(): void {
-        Auth::authorize('purchases', 'add');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'add');
         if (!$this->isPost()) {
             $this->redirect('?page=landedcost');
             return;
@@ -500,7 +496,7 @@ class LandedCostController extends BaseController {
 
     public function poItems(): void {
         header('Content-Type: application/json');
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $raw = $_GET['po_ids'] ?? [];
         if (!is_array($raw)) {
             $raw = array_filter(explode(',', (string) $raw));
@@ -527,7 +523,7 @@ class LandedCostController extends BaseController {
     }
 
     public function payables(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db = $this->db();
         $wh = $this->warehouseId();
 
@@ -542,7 +538,7 @@ class LandedCostController extends BaseController {
              JOIN purchase_orders po ON po.id = poi.po_id
              JOIN parties p ON p.id = ipa.party_id
              WHERE ipa.status = 'open'
-               AND ipa.leg IN ('freight_hk', 'packing_dxb', 'freight_dxb')
+               AND ipa.leg IN ('freight_hk', 'freight_dxb')
                AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)
              ORDER BY ipa.date DESC, ipa.id DESC",
             [$wh, $wh]
@@ -565,6 +561,80 @@ class LandedCostController extends BaseController {
             ];
         }
         $totalDue = array_sum(array_map(static fn ($r) => (float) $r['amount'], $rows));
+        $groups   = $this->groupFreightPayables($rows);
+        $accounts = self::getAccounts();
+        $canPay   = Auth::can('payments', 'add');
+        $canLink  = Auth::can('payments', 'add') || Auth::can('payments', 'edit') || Auth::isAdmin();
+        $canWriteOff = Auth::isAdmin() || Auth::can('payments', 'delete');
+
+        // Batch once per party (avoid N slow NOT EXISTS scans that timed out nginx).
+        $paymentsByParty = [];
+        if ($canLink && $groups !== []) {
+            foreach ($groups as $g) {
+                $pid = (int) ($g['party_id'] ?? 0);
+                if ($pid > 0 && !isset($paymentsByParty[$pid])) {
+                    $paymentsByParty[$pid] = $this->fetchUnlinkedFreightPayments($db, $pid, $wh, 0.0);
+                }
+            }
+        }
+        foreach ($groups as &$g) {
+            $pid = (int) ($g['party_id'] ?? 0);
+            $candidates = $paymentsByParty[$pid] ?? [];
+            $target = (float) ($g['invoice_amount'] ?? 0);
+            $g['existing_payments'] = $this->rankFreightPaymentsByAmount($candidates, $target);
+        }
+        unset($g);
+
+        // Logix One (HK→DXB) — banner for one-click clear when already settled
+        $logixClear = null;
+        if ($canWriteOff) {
+            $hkParty = $this->findActivePartyByCode($db, $this->defaultFreightHkPartyCode());
+            $hkId = $hkParty ? (int) $hkParty['id'] : $this->resolveFreightForwarderId(
+                $db,
+                defined('IMPORT_FREIGHT_HK_FORWARDER_NAME')
+                    ? (string) IMPORT_FREIGHT_HK_FORWARDER_NAME
+                    : 'Logix One FZE'
+            );
+            if ($hkId > 0) {
+                $logixParty = $db->fetchOne(
+                    "SELECT id, name, party_code, opening_balance FROM parties WHERE id = ?",
+                    [$hkId]
+                );
+                if ($logixParty) {
+                    $openLogix = $db->fetchOne(
+                        "SELECT COUNT(*) AS c, COALESCE(SUM(ipa.amount), 0) AS t
+                         FROM import_payable_accruals ipa
+                         JOIN shipments s ON s.id = ipa.shipment_id
+                         WHERE ipa.party_id = ? AND ipa.status = 'open' AND ipa.leg = 'freight_hk'
+                           AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)",
+                        [(int) $logixParty['id'], $wh, $wh]
+                    );
+                    $openCount = (int) ($openLogix['c'] ?? 0);
+                    $openTotal = round((float) ($openLogix['t'] ?? 0), 3);
+                    $opening = round((float) ($logixParty['opening_balance'] ?? 0), 3);
+                    $cancelledLogix = $db->fetchOne(
+                        "SELECT COUNT(*) AS c, COALESCE(SUM(ipa.amount), 0) AS t
+                         FROM import_payable_accruals ipa
+                         JOIN shipments s ON s.id = ipa.shipment_id
+                         WHERE ipa.party_id = ? AND ipa.status = 'cancelled' AND ipa.leg = 'freight_hk'
+                           AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)",
+                        [(int) $logixParty['id'], $wh, $wh]
+                    );
+                    $cancelledCount = (int) ($cancelledLogix['c'] ?? 0);
+                    $cancelledTotal = round((float) ($cancelledLogix['t'] ?? 0), 3);
+                    // Always show for admin — residual PAY-only imbalance needs Clear even with 0 open/cancelled.
+                    $logixClear = [
+                        'party_id'         => (int) $logixParty['id'],
+                        'party_name'       => (string) $logixParty['name'],
+                        'open_count'       => $openCount,
+                        'open_total'       => $openTotal,
+                        'cancelled_count'  => $cancelledCount,
+                        'cancelled_total'  => $cancelledTotal,
+                        'opening_balance'  => $opening,
+                    ];
+                }
+            }
+        }
 
         $pageTitle = 'Freight payables';
         $page      = 'landedcost';
@@ -574,8 +644,1553 @@ class LandedCostController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    /**
+     * Link open freight lines to payment(s) already recorded (no new cash / account movement).
+     * Supports one PAY or several PAYs that together equal the invoice (e.g. Hi-IQ 503+387=890).
+     */
+    public function linkFreightExisting(): void {
+        if (!(Auth::can('payments', 'add') || Auth::can('payments', 'edit') || Auth::isAdmin())) {
+            Auth::authorize('payments', 'add');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $partyId    = $this->inputInt('party_id');
+        $shipmentId = $this->inputInt('shipment_id');
+        $refType    = trim($this->input('ref_type', '', 'post'));
+        $chargeIds  = array_values(array_unique(array_filter(
+            array_map('intval', (array) ($_POST['charge_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        $paymentIds = array_values(array_unique(array_filter(
+            array_map('intval', (array) ($_POST['payment_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        )));
+        // Back-compat single select
+        $singleId = $this->inputInt('payment_id');
+        if ($singleId > 0 && !in_array($singleId, $paymentIds, true)) {
+            $paymentIds[] = $singleId;
+        }
+
+        $paymentNosRaw = trim($this->input('payment_no', '', 'post'));
+        $paymentNos = [];
+        if ($paymentNosRaw !== '') {
+            foreach (preg_split('/[\s,;]+/', strtoupper($paymentNosRaw)) ?: [] as $no) {
+                $no = trim((string) $no);
+                if ($no !== '' && preg_match('/^PAY-\d+$/', $no)) {
+                    $paymentNos[] = $no;
+                }
+            }
+            $paymentNos = array_values(array_unique($paymentNos));
+        }
+
+        $allowedRefs = ['shipment_freight_hk', 'shipment_freight_dxb'];
+        if ($partyId <= 0 || $shipmentId <= 0 || !in_array($refType, $allowedRefs, true) || $chargeIds === []) {
+            $this->flash('error', 'Missing payee, shipment, or freight lines.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+        if ($paymentIds === [] && $paymentNos === []) {
+            $this->flash('error', 'Select one or more existing PAYs (Ctrl/Cmd-click), or type PAY numbers.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+
+        $leg = match ($refType) {
+            'shipment_freight_hk'  => 'freight_hk',
+            default                => 'freight_dxb',
+        };
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+
+        $payments = [];
+        if ($paymentIds !== []) {
+            $ph = implode(',', array_fill(0, count($paymentIds), '?'));
+            $found = $db->fetchAll(
+                "SELECT id, payment_no, amount, party_id, status, payment_type
+                 FROM payments
+                 WHERE id IN ({$ph}) AND party_id = ? AND payment_type = 'out' AND status = 'active'
+                   AND (warehouse_id = ? OR warehouse_id IS NULL)
+                 ORDER BY amount DESC, id ASC",
+                array_merge($paymentIds, [$partyId, $wh])
+            );
+            foreach ($found as $p) {
+                $payments[(int) $p['id']] = $p;
+            }
+            if (count($payments) !== count($paymentIds)) {
+                $this->flash('error', 'One or more selected payments were not found for this forwarder.');
+                $this->redirect('?page=landedcost&action=payables');
+                return;
+            }
+        }
+        foreach ($paymentNos as $payNo) {
+            $p = $db->fetchOne(
+                "SELECT id, payment_no, amount, party_id, status, payment_type
+                 FROM payments
+                 WHERE payment_no = ? AND party_id = ? AND payment_type = 'out' AND status = 'active'
+                   AND (warehouse_id = ? OR warehouse_id IS NULL)",
+                [$payNo, $partyId, $wh]
+            );
+            if (!$p) {
+                $this->flash('error', "Payment {$payNo} not found for this forwarder.");
+                $this->redirect('?page=landedcost&action=payables');
+                return;
+            }
+            $payments[(int) $p['id']] = $p;
+        }
+
+        $paymentsList = array_values($payments);
+        usort($paymentsList, static fn ($a, $b) => ((float) $b['amount'] <=> (float) $a['amount']) ?: ((int) $a['id'] <=> (int) $b['id']));
+
+        $placeholders = implode(',', array_fill(0, count($chargeIds), '?'));
+        $openRows = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as charge_id, ipa.amount, s.shipment_no, p.name as party_name
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             JOIN parties p ON p.id = ipa.party_id
+             WHERE ipa.status = 'open'
+               AND ipa.leg = ?
+               AND ipa.party_id = ?
+               AND ipa.shipment_id = ?
+               AND ipa.shipment_item_charge_id IN ({$placeholders})
+               AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)
+             ORDER BY ipa.amount DESC, ipa.id ASC",
+            array_merge([$leg, $partyId, $shipmentId], $chargeIds, [$wh, $wh])
+        );
+
+        if (count($openRows) !== count($chargeIds)) {
+            $this->flash('error', 'Some lines are already paid or do not match — refresh and try again.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $allocated = round(array_sum(array_map(static fn ($r) => (float) $r['amount'], $openRows)), 3);
+        $invoiceAmt = $this->suggestFreightInvoiceAmount($allocated);
+        $paySum = round(array_sum(array_map(static fn ($p) => (float) $p['amount'], $paymentsList)), 3);
+        $tolerance = max(2.0, round($allocated * 0.02, 3)); // allow ~890 vs 888 rounding
+        if (abs($paySum - $invoiceAmt) > $tolerance && abs($paySum - $allocated) > $tolerance) {
+            $payNos = implode(' + ', array_map(static fn ($p) => (string) $p['payment_no'], $paymentsList));
+            $this->flash(
+                'error',
+                sprintf(
+                    'Selected %s = %s does not match invoice ~%s / allocated %s — select PAYs that together equal the Hi-IQ total.',
+                    $payNos,
+                    number_format($paySum, DECIMAL_PLACES),
+                    number_format($invoiceAmt, DECIMAL_PLACES),
+                    number_format($allocated, DECIMAL_PLACES)
+                )
+            );
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        // Distribute charge lines across payments (fill largest PAY first).
+        $assignments = $this->assignFreightChargesToPayments($openRows, $paymentsList);
+        $linked = 0;
+        $usedPayNos = [];
+        foreach ($assignments as $payId => $chargeIdList) {
+            if ($chargeIdList === []) {
+                continue;
+            }
+            $n = LandedCostPaymentLinker::linkExistingFreightPayment($db, $refType, (int) $payId, $chargeIdList);
+            $linked += $n;
+            foreach ($paymentsList as $p) {
+                if ((int) $p['id'] === (int) $payId) {
+                    $usedPayNos[] = (string) $p['payment_no'];
+                    break;
+                }
+            }
+            $this->logActivity('link_freight_payment', 'payments', (int) $payId);
+        }
+        require_once __DIR__ . '/../models/Party.php';
+        Party::clearBalanceListCache();
+        self::clearDashboardCache($wh);
+
+        $partyName = (string) ($openRows[0]['party_name'] ?? '');
+        $shipmentNo = (string) ($openRows[0]['shipment_no'] ?? '');
+        $payLabel = implode(', ', $usedPayNos !== [] ? $usedPayNos : array_map(static fn ($p) => (string) $p['payment_no'], $paymentsList));
+
+        if ($linked === count($chargeIds)) {
+            $this->flash(
+                'success',
+                sprintf(
+                    'Marked paid via %s (%s KWD) — %d lines on %s cleared, no new cash.',
+                    $payLabel,
+                    number_format($paySum, DECIMAL_PLACES),
+                    $linked,
+                    $shipmentNo !== '' ? $shipmentNo : 'shipment'
+                )
+            );
+        } else {
+            $this->flash('warning', sprintf('Only %d of %d lines linked to %s.', $linked, count($chargeIds), $payLabel));
+        }
+
+        $this->redirect('?page=landedcost&action=payables');
+    }
+
+    /**
+     * Greedy fill: assign open charge lines to existing payments by remaining capacity.
+     *
+     * @param list<array<string, mixed>> $charges  each: charge_id, amount
+     * @param list<array<string, mixed>> $payments each: id, amount
+     * @return array<int, list<int>> payment_id => charge_ids
+     */
+    private function assignFreightChargesToPayments(array $charges, array $payments): array {
+        $remaining = [];
+        $out = [];
+        foreach ($payments as $p) {
+            $pid = (int) ($p['id'] ?? 0);
+            if ($pid <= 0) {
+                continue;
+            }
+            $remaining[$pid] = round((float) ($p['amount'] ?? 0), 3);
+            $out[$pid] = [];
+        }
+        if ($remaining === []) {
+            return [];
+        }
+
+        $payIds = array_keys($remaining);
+        foreach ($charges as $c) {
+            $chargeId = (int) ($c['charge_id'] ?? 0);
+            $amt = round((float) ($c['amount'] ?? 0), 3);
+            if ($chargeId <= 0) {
+                continue;
+            }
+
+            $chosen = null;
+            foreach ($payIds as $pid) {
+                if ($remaining[$pid] + 0.001 >= $amt) {
+                    $chosen = $pid;
+                    break;
+                }
+            }
+            if ($chosen === null) {
+                // Last payment absorbs leftover rounding / over-allocation
+                $chosen = $payIds[count($payIds) - 1];
+            }
+            $out[$chosen][] = $chargeId;
+            $remaining[$chosen] = round($remaining[$chosen] - $amt, 3);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Write off open freight lines with no cash movement (cancel accruals).
+     * Use when the forwarder (e.g. Logix One) is already settled and party/cash is zero —
+     * do NOT use if matching PAYs exist (use Mark paid / multi-PAY link instead).
+     */
+    public function writeOffFreightOpen(): void {
+        if (!(Auth::isAdmin() || Auth::can('payments', 'delete'))) {
+            $this->flash('error', 'Only admin can write off open freight without a payment.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $partyId    = $this->inputInt('party_id');
+        $shipmentId = $this->inputInt('shipment_id');
+        $refType    = trim($this->input('ref_type', '', 'post'));
+        $reason     = trim($this->input('reason', '', 'post'));
+        $chargeIds  = array_values(array_unique(array_filter(
+            array_map('intval', (array) ($_POST['charge_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        $allowedRefs = ['shipment_freight_hk', 'shipment_freight_dxb'];
+        if ($partyId <= 0 || $shipmentId <= 0 || !in_array($refType, $allowedRefs, true) || $chargeIds === []) {
+            $this->flash('error', 'Missing payee, shipment, or freight lines.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+
+        $leg = match ($refType) {
+            'shipment_freight_hk' => 'freight_hk',
+            default               => 'freight_dxb',
+        };
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $placeholders = implode(',', array_fill(0, count($chargeIds), '?'));
+        $openRows = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as charge_id, ipa.amount, s.shipment_no, p.name as party_name
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             JOIN parties p ON p.id = ipa.party_id
+             WHERE ipa.status = 'open'
+               AND ipa.leg = ?
+               AND ipa.party_id = ?
+               AND ipa.shipment_id = ?
+               AND ipa.shipment_item_charge_id IN ({$placeholders})
+               AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)",
+            array_merge([$leg, $partyId, $shipmentId], $chargeIds, [$wh, $wh])
+        );
+
+        if ($openRows === []) {
+            $this->flash('warning', 'Nothing left to write off — already cleared.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $allocated = round(array_sum(array_map(static fn ($r) => (float) $r['amount'], $openRows)), 3);
+        $partyName = (string) ($openRows[0]['party_name'] ?? 'forwarder');
+        $shipmentNo = (string) ($openRows[0]['shipment_no'] ?? '');
+        $note = $reason !== ''
+            ? ('WRITE-OFF no cash: ' . $reason)
+            : sprintf('WRITE-OFF no cash — %s settled / account zero (%s)', $partyName, $shipmentNo);
+
+        $cancelled = ImportPayableAccrualService::cancelOpenByCharges(
+            $db,
+            $refType,
+            array_map(static fn ($r) => (int) $r['charge_id'], $openRows),
+            $note
+        );
+
+        $this->logActivity('writeoff_freight', 'import_payable_accruals', $shipmentId, $note);
+        require_once __DIR__ . '/../models/Party.php';
+        Party::clearBalanceListCache();
+        self::clearDashboardCache($wh);
+
+        $this->flash(
+            'success',
+            sprintf(
+                'Wrote off %d open line(s) — %s %s on %s (%s). Freight payables and party ledger liability cleared; no cash moved.',
+                $cancelled,
+                APP_CURRENCY,
+                number_format($allocated, DECIMAL_PLACES),
+                $shipmentNo !== '' ? $shipmentNo : 'shipment',
+                $partyName
+            )
+        );
+        $this->redirect('?page=landedcost&action=payables');
+    }
+
+    /**
+     * Clear Logix One on Party Master + freight payables (admin).
+     * Prefer link existing PAYs → paid accruals; cancel only leftovers; then force net ledger to 0
+     * via opening_balance offset (prior clear set opening=0 and left PAYs → false -KWD on Party Master).
+     */
+    public function writeOffLogixAll(): void {
+        // Opening-balance offset is high risk — admin only (not payments:delete).
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Only admin can clear all Logix freight.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+        require_once __DIR__ . '/../models/Party.php';
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $hkParty = $this->findActivePartyByCode($db, $this->defaultFreightHkPartyCode());
+        $partyId = $hkParty ? (int) $hkParty['id'] : $this->resolveFreightForwarderId(
+            $db,
+            defined('IMPORT_FREIGHT_HK_FORWARDER_NAME')
+                ? (string) IMPORT_FREIGHT_HK_FORWARDER_NAME
+                : 'Logix One FZE'
+        );
+        if ($partyId <= 0) {
+            $this->flash('error', 'Logix One party not found in Party Master.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $party = $db->fetchOne(
+            "SELECT id, name, opening_balance, warehouse_id FROM parties WHERE id = ?",
+            [$partyId]
+        );
+        $openingBefore = round((float) ($party['opening_balance'] ?? 0), 3);
+        $scopeSql = ' AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)';
+
+        // Restore cancelled HK freight so they can be marked paid against existing cash.
+        $cancelledRows = $db->fetchAll(
+            "SELECT ipa.id
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             WHERE ipa.party_id = ? AND ipa.status = 'cancelled' AND ipa.leg = 'freight_hk'{$scopeSql}",
+            [$partyId, $wh, $wh]
+        );
+        $restored = 0;
+        if ($cancelledRows !== []) {
+            $ids = array_map(static fn ($r) => (int) $r['id'], $cancelledRows);
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $db->execute(
+                "UPDATE import_payable_accruals
+                 SET status = 'open', payment_id = NULL
+                 WHERE id IN ({$ph}) AND status = 'cancelled'",
+                $ids
+            );
+            $restored = count($ids);
+        }
+
+        $openRows = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as charge_id, ipa.amount
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             WHERE ipa.party_id = ? AND ipa.status = 'open' AND ipa.leg = 'freight_hk'{$scopeSql}
+             ORDER BY ipa.amount DESC, ipa.id ASC",
+            [$partyId, $wh, $wh]
+        );
+
+        $openTotal = round(array_sum(array_map(static fn ($r) => (float) $r['amount'], $openRows)), 3);
+        $linked = 0;
+        $cancelled = 0;
+
+        // All balance-counting outbound PAYs (not only freight-shaped refs / last 18 months).
+        $paymentsList = $this->fetchLogixOutboundPaymentsForClear($db, $partyId, $wh);
+        if ($openRows !== [] && $paymentsList !== []) {
+            $assignments = $this->assignFreightChargesToPayments($openRows, $paymentsList);
+            foreach ($assignments as $payId => $chargeIdList) {
+                if ($chargeIdList === []) {
+                    continue;
+                }
+                $linked += LandedCostPaymentLinker::linkExistingFreightPayment(
+                    $db,
+                    'shipment_freight_hk',
+                    (int) $payId,
+                    $chargeIdList
+                );
+            }
+        }
+
+        // Leftover open with no PAY capacity → write off liability only.
+        $stillOpen = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as charge_id, ipa.amount
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             WHERE ipa.party_id = ? AND ipa.status = 'open' AND ipa.leg = 'freight_hk'{$scopeSql}",
+            [$partyId, $wh, $wh]
+        );
+        if ($stillOpen !== []) {
+            $openTotal = round(array_sum(array_map(static fn ($r) => (float) $r['amount'], $stillOpen)), 3);
+            $cancelled = ImportPayableAccrualService::cancelOpenByCharges(
+                $db,
+                'shipment_freight_hk',
+                array_map(static fn ($r) => (int) $r['charge_id'], $stillOpen),
+                'WRITE-OFF all Logix HK freight — account already clear / settled'
+            );
+        }
+
+        // Guarantee Party Master = 0 (handles wrong party.warehouse_id that blocked prior clears).
+        require_once __DIR__ . '/../services/PartyLedgerZeroService.php';
+        Party::clearBalanceListCache();
+        $zero = PartyLedgerZeroService::forceNetToZero(
+            $db,
+            new Party(),
+            $partyId,
+            $wh,
+            sprintf('after restore=%d link=%d cancel=%d', $restored, $linked, $cancelled)
+        );
+        $openingAdjusted = abs($zero['opening_after'] - $zero['opening_before']) > 0.001
+            || !empty($zero['warehouse_cleared']);
+        $openingAfter = $zero['opening_after'];
+        $net = $zero['net_before'];
+
+        $this->logActivity(
+            'writeoff_logix_all',
+            'import_payable_accruals',
+            $partyId,
+            sprintf(
+                'Cleared Logix: restored %d, linked %d, cancelled %d, %s',
+                $restored,
+                $linked,
+                $cancelled,
+                $zero['message']
+            )
+        );
+        self::clearDashboardCache($wh);
+
+        $bits = [];
+        if ($restored > 0) {
+            $bits[] = sprintf('restored %d cancelled line(s)', $restored);
+        }
+        if ($linked > 0) {
+            $bits[] = sprintf('linked %d line(s) to existing PAY(s)', $linked);
+        }
+        if ($cancelled > 0) {
+            $bits[] = sprintf(
+                'wrote off %d open line(s) (%s KWD)',
+                $cancelled,
+                number_format($openTotal, DECIMAL_PLACES)
+            );
+        }
+        if (!empty($zero['warehouse_cleared'])) {
+            $bits[] = 'cleared wrong home warehouse so opening applies on Main';
+        }
+        if ($openingAdjusted || abs($zero['net_before']) > 0.001) {
+            $bits[] = sprintf(
+                'opening %s → %s (offset residual %s)',
+                number_format($zero['opening_before'], DECIMAL_PLACES),
+                number_format($zero['opening_after'], DECIMAL_PLACES),
+                number_format($zero['net_before'], DECIMAL_PLACES)
+            );
+        }
+        if (!$zero['ok']) {
+            $this->flash('error', $zero['message']);
+        } elseif ($bits === []) {
+            $this->flash('success', ($party['name'] ?? 'Logix') . ' ledger already nets to 0.');
+        } else {
+            $this->flash(
+                'success',
+                ($party['name'] ?? 'Logix One') . ' cleared: ' . implode('; ', $bits)
+                . '. Hard-refresh Freight Forwarders (Ctrl+F5).'
+            );
+        }
+        $this->redirect('?page=landedcost&action=payables');
+    }
+
+    /**
+     * Outbound payments that count on party balance for Logix clear/link (any non-excluded ref_type).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLogixOutboundPaymentsForClear(Database $db, int $partyId, int $wh): array {
+        if ($partyId <= 0) {
+            return [];
+        }
+        $rows = $db->fetchAll(
+            "SELECT p.id, p.payment_no, p.amount, p.date, p.ref_type, p.notes
+             FROM payments p
+             WHERE p.party_id = ?
+               AND p.payment_type = 'out'
+               AND p.status = 'active'
+               AND p.ref_type IS NOT NULL AND p.ref_type != ''
+               AND p.ref_type NOT IN ('discount', 'expense', 'purchase_order')
+               AND (p.warehouse_id = ? OR p.warehouse_id IS NULL)
+             ORDER BY p.amount DESC, p.id ASC",
+            [$partyId, $wh]
+        );
+
+        // Prefer payments not already tied to a paid accrual (still allow reuse if only cancelled).
+        $payIds = array_values(array_filter(array_map(static fn ($r) => (int) ($r['id'] ?? 0), $rows)));
+        $paidLinked = [];
+        if ($payIds !== []) {
+            $ph = implode(',', array_fill(0, count($payIds), '?'));
+            foreach ($db->fetchAll(
+                "SELECT DISTINCT payment_id FROM import_payable_accruals
+                 WHERE payment_id IN ({$ph}) AND status = 'paid'",
+                $payIds
+            ) as $lr) {
+                $paidLinked[(int) $lr['payment_id']] = true;
+            }
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $id = (int) ($r['id'] ?? 0);
+            if ($id <= 0 || isset($paidLinked[$id])) {
+                continue;
+            }
+            $out[] = $r;
+        }
+        return $out;
+    }
+
+    /**
+     * Candidate outbound payments already recorded for this forwarder (not yet linked to freight accruals).
+     * Fast path: recent payments first, then filter linked IDs in PHP (avoids slow correlated NOT EXISTS).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchUnlinkedFreightPayments(Database $db, int $partyId, int $wh, float $targetAmount): array {
+        if ($partyId <= 0) {
+            return [];
+        }
+
+        // Recent outbound only — party+date index friendly; LIMIT keeps Hostinger under gateway timeout.
+        $since = date('Y-m-d', strtotime('-18 months'));
+        $candidates = $db->fetchAll(
+            "SELECT p.id, p.payment_no, p.amount, p.date, p.ref_type, p.notes, a.name as account_name
+             FROM payments p
+             LEFT JOIN accounts a ON a.id = p.account_id
+             WHERE p.party_id = ?
+               AND p.payment_type = 'out'
+               AND p.status = 'active'
+               AND p.date >= ?
+               AND (p.warehouse_id = ? OR p.warehouse_id IS NULL)
+               AND (
+                    (p.ref_type = 'purchase' AND (p.ref_id IS NULL OR p.ref_id = 0))
+                 OR p.ref_type IN ('shipment_freight_hk', 'shipment_packing_dxb', 'shipment_freight_dxb', 'shipment_cost')
+               )
+             ORDER BY p.date DESC, p.id DESC
+             LIMIT 60",
+            [$partyId, $since, $wh]
+        );
+
+        if ($candidates === []) {
+            return [];
+        }
+
+        $payIds = array_values(array_filter(array_map(static fn ($r) => (int) ($r['id'] ?? 0), $candidates)));
+        $linked = [];
+        if ($payIds !== []) {
+            $ph = implode(',', array_fill(0, count($payIds), '?'));
+            $linkedRows = $db->fetchAll(
+                "SELECT DISTINCT payment_id
+                 FROM import_payable_accruals
+                 WHERE payment_id IN ({$ph})
+                   AND leg IN ('freight_hk', 'packing_dxb', 'freight_dxb')",
+                $payIds
+            );
+            foreach ($linkedRows as $lr) {
+                $linked[(int) $lr['payment_id']] = true;
+            }
+        }
+
+        $unlinked = [];
+        foreach ($candidates as $r) {
+            $id = (int) ($r['id'] ?? 0);
+            if ($id <= 0 || isset($linked[$id])) {
+                continue;
+            }
+            $unlinked[] = $r;
+        }
+
+        return $this->rankFreightPaymentsByAmount($unlinked, $targetAmount);
+    }
+
+    /**
+     * Prefer payments closest to the invoice/allocated amount.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function rankFreightPaymentsByAmount(array $rows, float $targetAmount): array {
+        $tolerance = max(1.0, round(abs($targetAmount) * 0.01, 3));
+        $scored = [];
+        foreach ($rows as $r) {
+            $amt = (float) ($r['amount'] ?? 0);
+            $diff = abs($amt - $targetAmount);
+            $r['amount_match'] = $targetAmount > 0.001 && $diff <= $tolerance;
+            $r['amount_diff'] = $diff;
+            $scored[] = $r;
+        }
+
+        usort($scored, static function (array $a, array $b): int {
+            if (($a['amount_match'] ?? false) !== ($b['amount_match'] ?? false)) {
+                return ($a['amount_match'] ?? false) ? -1 : 1;
+            }
+            $cmp = ($a['amount_diff'] ?? 0) <=> ($b['amount_diff'] ?? 0);
+            return $cmp !== 0 ? $cmp : ((int) ($b['id'] ?? 0) <=> (int) ($a['id'] ?? 0));
+        });
+
+        return array_slice($scored, 0, 40);
+    }
+
+    /**
+     * One payment for all open freight lines of the same party + shipment + leg
+     * (e.g. Hi-IQ invoice covering every PO line on the shipment).
+     */
+    public function payFreightBulk(): void {
+        Auth::authorize('payments', 'add');
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $accountId  = $this->inputInt('account_id');
+        $partyId    = $this->inputInt('party_id');
+        $shipmentId = $this->inputInt('shipment_id');
+        $refType    = trim($this->input('ref_type', '', 'post'));
+        $date       = $this->input('date', date('Y-m-d'), 'post');
+        $extraNotes = trim($this->input('notes', '', 'post'));
+        $payAmount  = round($this->inputFloat('amount'), 3);
+        $chargeIds  = array_values(array_unique(array_filter(
+            array_map('intval', (array) ($_POST['charge_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        $allowedRefs = ['shipment_freight_hk', 'shipment_freight_dxb'];
+        if ($accountId <= 0 || $partyId <= 0 || $shipmentId <= 0 || !in_array($refType, $allowedRefs, true)) {
+            $this->flash('error', 'Missing payee, shipment, charge type, or account.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+        if ($chargeIds === []) {
+            $this->flash('error', 'No freight lines selected.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+        $leg = match ($refType) {
+            'shipment_freight_hk'  => 'freight_hk',
+            default                => 'freight_dxb',
+        };
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $placeholders = implode(',', array_fill(0, count($chargeIds), '?'));
+        $openRows = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as charge_id, ipa.amount, ipa.party_id, ipa.shipment_id,
+                    s.shipment_no, p.name as party_name
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             JOIN parties p ON p.id = ipa.party_id
+             WHERE ipa.status = 'open'
+               AND ipa.leg = ?
+               AND ipa.party_id = ?
+               AND ipa.shipment_id = ?
+               AND ipa.shipment_item_charge_id IN ({$placeholders})
+               AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)",
+            array_merge([$leg, $partyId, $shipmentId], $chargeIds, [$wh, $wh])
+        );
+
+        if (count($openRows) !== count($chargeIds)) {
+            $this->flash('error', 'Some lines are already paid or do not match this shipment — refresh and try again.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $allocated = round(array_sum(array_map(static fn ($r) => (float) $r['amount'], $openRows)), 3);
+        if ($payAmount <= 0.001) {
+            $payAmount = $this->suggestFreightInvoiceAmount($allocated);
+        }
+        $tolerance = max(1.0, round($allocated * 0.01, 3));
+        if (abs($payAmount - $allocated) > $tolerance) {
+            $this->flash(
+                'error',
+                sprintf(
+                    'Invoice amount %s must be within %s of allocated %s (per-line split).',
+                    number_format($payAmount, DECIMAL_PLACES),
+                    number_format($tolerance, DECIMAL_PLACES),
+                    number_format($allocated, DECIMAL_PLACES)
+                )
+            );
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Payment.php';
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+
+        $shipmentNo = (string) ($openRows[0]['shipment_no'] ?? '');
+        $partyName  = (string) ($openRows[0]['party_name'] ?? '');
+        $lineCount  = count($chargeIds);
+        $chargeLabel = ImportPayableAccrualService::legLabel($leg);
+        $notes = sprintf(
+            '%s — %s / %s (%d lines, allocated %s)',
+            $chargeLabel,
+            $shipmentNo,
+            $partyName,
+            $lineCount,
+            number_format($allocated, DECIMAL_PLACES)
+        );
+        if ($extraNotes !== '') {
+            $notes .= ' · ' . $extraNotes;
+        }
+
+        $paymentModel = new Payment();
+        $payId = $paymentModel->createStandalone([
+            'party_id'       => $partyId,
+            'payment_type'   => 'out',
+            'account_id'     => $accountId,
+            'ref_type'       => $refType,
+            'ref_id'         => 0,
+            'amount'         => $payAmount,
+            'payment_method' => $this->paymentMethodForAccount($accountId),
+            'date'           => $date,
+            'notes'          => $notes,
+        ]);
+
+        if (!$payId) {
+            $err = trim($paymentModel->getLastError());
+            $this->flash('error', $err !== '' ? ('Payment failed: ' . $err) : 'Could not save freight payment.');
+            $this->redirect('?page=landedcost&action=payables');
+            return;
+        }
+
+        $linked = LandedCostPaymentLinker::linkFreightBulkPayment($db, $refType, (int) $payId, $chargeIds);
+        $this->logActivity('create_payment', 'payments', (int) $payId);
+        self::clearDashboardCache($wh);
+
+        if ($linked === $lineCount) {
+            $this->flash(
+                'success',
+                sprintf(
+                    'One payment recorded — %s %s to %s (%d lines on %s).',
+                    APP_CURRENCY,
+                    number_format($payAmount, DECIMAL_PLACES),
+                    $partyName !== '' ? $partyName : 'forwarder',
+                    $lineCount,
+                    $shipmentNo !== '' ? $shipmentNo : 'shipment'
+                )
+            );
+        } else {
+            $this->flash(
+                'warning',
+                sprintf('Payment saved but only %d of %d lines were linked — check Freight payables.', $linked, $lineCount)
+            );
+        }
+
+        $this->redirect('?page=landedcost&action=payables');
+    }
+
+    /**
+     * Group open freight accruals by party + shipment + leg for one invoice payment.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function groupFreightPayables(array $rows): array {
+        $groups = [];
+        foreach ($rows as $r) {
+            $key = (int) $r['party_id'] . '|' . (int) $r['shipment_id'] . '|' . (string) $r['ref_type'];
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'party_id'     => (int) $r['party_id'],
+                    'party_name'   => (string) $r['party_name'],
+                    'shipment_id'  => (int) $r['shipment_id'],
+                    'shipment_no'  => (string) $r['shipment_no'],
+                    'ref_type'     => (string) $r['ref_type'],
+                    'charge_label' => (string) $r['charge_label'],
+                    'po_nos'       => [],
+                    'charge_ids'   => [],
+                    'lines'        => [],
+                    'allocated'    => 0.0,
+                ];
+            }
+            $groups[$key]['charge_ids'][] = (int) $r['charge_id'];
+            $groups[$key]['lines'][] = $r;
+            $groups[$key]['allocated'] += (float) $r['amount'];
+            $poNo = (string) ($r['po_no'] ?? '');
+            if ($poNo !== '' && !in_array($poNo, $groups[$key]['po_nos'], true)) {
+                $groups[$key]['po_nos'][] = $poNo;
+            }
+        }
+
+        $out = [];
+        foreach ($groups as $g) {
+            $allocated = round((float) $g['allocated'], 3);
+            $g['allocated'] = $allocated;
+            $g['invoice_amount'] = $this->suggestFreightInvoiceAmount($allocated);
+            $g['line_count'] = count($g['charge_ids']);
+            $out[] = $g;
+        }
+
+        return $out;
+    }
+
+    /** Prefer whole-KWD invoice when per-line split is only rounding noise (e.g. 500.175 → 500). */
+    private function suggestFreightInvoiceAmount(float $allocated): float {
+        $allocated = round($allocated, 3);
+        $whole = (float) round($allocated);
+        if (abs($allocated - $whole) <= 0.5) {
+            return $whole;
+        }
+        return $allocated;
+    }
+
+    /** Union Logistics packing (DXB) — monthly / invoice settlement. */
+    public function packingDue(): void {
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $due = $this->fetchPackingDueRows($db, $wh);
+        $rows = $due['rows'];
+        $totalDue = $due['totalDue'];
+
+        $dueMonths = $this->partnerDueMonths($rows);
+        $settleMonth = trim($this->input('month', '', 'get'));
+        if ($settleMonth === '' || !preg_match('/^\d{4}-\d{2}$/', $settleMonth)) {
+            $settleMonth = $dueMonths[0] ?? date('Y-m');
+        }
+
+        $monthRows  = $this->filterPartnerDueRowsByMonth($rows, $settleMonth);
+        $monthTotal = (float) array_sum(array_map(static fn ($r) => (float) $r['amount'], $monthRows));
+        $monthLabel = date('F Y', strtotime($settleMonth . '-01'));
+
+        $packingParty = $this->importPackingParty($db);
+        $accounts = self::getAccounts();
+        $canPay = Auth::can('payments', 'add');
+        $canLink = Auth::can('payments', 'add') || Auth::can('payments', 'edit') || Auth::isAdmin();
+        $canRepair = Auth::isAdmin() || Auth::can('payments', 'delete');
+
+        $existingPayments = [];
+        if ($canLink && $packingParty) {
+            $existingPayments = $this->fetchUnlinkedPackingPayments(
+                $db,
+                (int) $packingParty['id'],
+                $wh,
+                max($monthTotal, $totalDue)
+            );
+        }
+
+        $unionLedger = null;
+        if ($canRepair && $packingParty) {
+            require_once __DIR__ . '/../models/Party.php';
+            $partyModel = new Party();
+            $stmtNet = round($partyModel->computeBalanceAsOf((int) $packingParty['id'], date('Y-m-d'), $wh), 3);
+            if (abs($stmtNet) > 0.001) {
+                $unionLedger = [
+                    'party_id'   => (int) $packingParty['id'],
+                    'party_name' => (string) $packingParty['name'],
+                    'net'        => $stmtNet,
+                    'display'    => $stmtNet,
+                ];
+            }
+        }
+
+        $pageTitle = 'Packing due (Union Logistics)';
+        $page      = 'landedcost';
+        ob_start();
+        include __DIR__ . '/../views/purchases/landed_cost_packing_due.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Permanent fix: migrate Union packing AP to vendor bills (invoice ↔ payment).
+     * Estimates stay on shipment costing / Packing due only — not on party statement.
+     */
+    public function migrateUnionPackingToVendorBills(): void {
+        if (!(Auth::isAdmin() || Auth::can('payments', 'delete'))) {
+            $this->flash('error', 'Only admin can migrate Union packing to vendor-bill AP.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/PackingVendorBillService.php';
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $packingParty = $this->importPackingParty($db);
+        if (!$packingParty) {
+            $this->flash('error', 'Union Logistics party not found.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        $result = PackingVendorBillService::migratePartyToInvoiceAp(
+            $db,
+            (int) $packingParty['id'],
+            $wh
+        );
+        self::clearDashboardCache($wh);
+        $this->logActivity(
+            'migrate_union_vendor_bills',
+            'parties',
+            (int) $packingParty['id'],
+            $result['message']
+        );
+        $this->flash($result['ok'] ? 'success' : 'warning', $result['message']);
+        $this->redirect('?page=landedcost&action=packingDue');
+    }
+
+    /**
+     * @deprecated Prefer migrateUnionPackingToVendorBills (invoice AP). Kept for old bookmarks.
+     */
+    public function repairUnionPackingLedger(): void {
+        $this->migrateUnionPackingToVendorBills();
+    }
+
+    /**
+     * Link open packing lines to an existing Union PAY (no new cash) — e.g. bank transfer already in Payments.
+     */
+    public function linkPackingExisting(): void {
+        if (!(Auth::can('payments', 'add') || Auth::can('payments', 'edit') || Auth::isAdmin())) {
+            Auth::authorize('payments', 'add');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        $settleMonth = trim($this->input('settle_month', '', 'post'));
+        $settleScope = trim($this->input('settle_scope', 'month', 'post'));
+        if (!in_array($settleScope, ['month', 'to_date'], true)) {
+            $settleScope = 'month';
+        }
+
+        $paymentIds = array_values(array_unique(array_filter(
+            array_map('intval', (array) ($_POST['payment_ids'] ?? [])),
+            static fn (int $id): bool => $id > 0
+        )));
+        $singleId = $this->inputInt('payment_id');
+        if ($singleId > 0 && !in_array($singleId, $paymentIds, true)) {
+            $paymentIds[] = $singleId;
+        }
+
+        $paymentNosRaw = trim($this->input('payment_no', '', 'post'));
+        $paymentNos = [];
+        if ($paymentNosRaw !== '') {
+            foreach (preg_split('/[\s,;]+/', strtoupper($paymentNosRaw)) ?: [] as $no) {
+                $no = trim((string) $no);
+                if ($no !== '' && preg_match('/^PAY-\d+$/', $no)) {
+                    $paymentNos[] = $no;
+                }
+            }
+            $paymentNos = array_values(array_unique($paymentNos));
+        }
+
+        if ($settleMonth === '' || !preg_match('/^\d{4}-\d{2}$/', $settleMonth)) {
+            $this->flash('error', 'Please choose a valid settlement month.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+        if ($paymentIds === [] && $paymentNos === []) {
+            $this->flash('error', 'Select the existing PAY (e.g. 2 Jul transfer) or type the PAY number.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Party.php';
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+        require_once __DIR__ . '/../services/ImportPayableAccrualService.php';
+
+        $db = $this->db();
+        $wh = $this->warehouseId();
+        $packingParty = $this->importPackingParty($db);
+        $partyId = $packingParty ? (int) $packingParty['id'] : 0;
+        if ($partyId <= 0) {
+            $this->flash('error', 'Union Logistics party not found.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        $payments = [];
+        if ($paymentIds !== []) {
+            $ph = implode(',', array_fill(0, count($paymentIds), '?'));
+            $found = $db->fetchAll(
+                "SELECT id, payment_no, amount, party_id, status, payment_type, date
+                 FROM payments
+                 WHERE id IN ({$ph}) AND party_id = ? AND payment_type = 'out' AND status = 'active'
+                   AND (warehouse_id = ? OR warehouse_id IS NULL)
+                 ORDER BY amount DESC, id ASC",
+                array_merge($paymentIds, [$partyId, $wh])
+            );
+            foreach ($found as $p) {
+                $payments[(int) $p['id']] = $p;
+            }
+            if (count($payments) !== count($paymentIds)) {
+                $this->flash('error', 'Selected payment not found for Union Logistics (check party on the PAY).');
+                $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+                return;
+            }
+        }
+        foreach ($paymentNos as $payNo) {
+            $p = $db->fetchOne(
+                "SELECT id, payment_no, amount, party_id, status, payment_type, date
+                 FROM payments
+                 WHERE payment_no = ? AND party_id = ? AND payment_type = 'out' AND status = 'active'
+                   AND (warehouse_id = ? OR warehouse_id IS NULL)",
+                [$payNo, $partyId, $wh]
+            );
+            if (!$p) {
+                $this->flash('error', "{$payNo} not found for Union Logistics — open Payment Out and confirm party.");
+                $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+                return;
+            }
+            $payments[(int) $p['id']] = $p;
+        }
+
+        $paymentsList = array_values($payments);
+        $paySum = round(array_sum(array_map(static fn ($p) => (float) $p['amount'], $paymentsList)), 3);
+
+        $due = $this->fetchPackingDueRows($db, $wh);
+        $payableRows = $settleScope === 'month'
+            ? $this->filterPartnerDueRowsByMonth($due['rows'], $settleMonth)
+            : $due['rows'];
+
+        if ($payableRows === []) {
+            $this->flash('warning', 'No open packing lines in this scope.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+        require_once __DIR__ . '/../services/PackingVendorBillService.php';
+        PackingVendorBillService::ensureSchema($db);
+
+        $accruedTotal = round(array_sum(array_map(static fn ($r) => (float) ($r['amount'] ?? 0), $payableRows)), 3);
+        $chargeIds = [];
+        foreach ($payableRows as $r) {
+            $cid = (int) ($r['id'] ?? 0);
+            if ($cid > 0) {
+                $chargeIds[] = $cid;
+            }
+        }
+        if ($chargeIds === []) {
+            $this->flash('error', 'No packing charge lines in scope.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        // Distribute charge links across PAYs for shipment UI; AP uses vendor bills = payment amounts.
+        $chargesForAssign = array_map(static fn ($id) => [
+            'charge_id' => $id,
+            'amount'    => (float) (array_values(array_filter(
+                $payableRows,
+                static fn ($r) => (int) ($r['id'] ?? 0) === $id
+            ))[0]['amount'] ?? 0),
+        ], $chargeIds);
+        usort($paymentsList, static fn ($a, $b) => ((float) $b['amount'] <=> (float) $a['amount'])
+            ?: ((int) $a['id'] <=> (int) $b['id']));
+        $assignments = $this->assignFreightChargesToPayments($chargesForAssign, $paymentsList);
+
+        $linked = 0;
+        $usedPayNos = [];
+        foreach ($assignments as $payId => $chargeIdList) {
+            if ($chargeIdList === []) {
+                continue;
+            }
+            $n = LandedCostPaymentLinker::linkExistingFreightPayment(
+                $db,
+                'shipment_packing_dxb',
+                (int) $payId,
+                $chargeIdList
+            );
+            $linked += $n;
+            foreach ($paymentsList as $p) {
+                if ((int) $p['id'] === (int) $payId) {
+                    $usedPayNos[] = (string) $p['payment_no'];
+                    break;
+                }
+            }
+            $this->logActivity('link_packing_payment', 'payments', (int) $payId);
+        }
+
+        PackingVendorBillService::cancelPaidPackingAccruals(
+            $db,
+            $chargeIds,
+            'Cleared into vendor bill — packing estimate not on party AP'
+        );
+        PackingVendorBillService::clearPackingAccrualsIntoBill(
+            $db,
+            $chargeIds,
+            'Cleared into vendor bill — packing estimate not on party AP'
+        );
+
+        $bills = 0;
+        foreach ($paymentsList as $p) {
+            $pid = (int) ($p['id'] ?? 0);
+            $amt = round((float) ($p['amount'] ?? 0), 3);
+            if ($pid <= 0 || $amt <= 0.001) {
+                continue;
+            }
+            $shareEst = $paySum > 0.001 ? round($accruedTotal * ($amt / $paySum), 3) : 0.0;
+            $id = PackingVendorBillService::createPaidBill(
+                $db,
+                $partyId,
+                $pid,
+                $amt,
+                (string) ($p['date'] ?? date('Y-m-d')),
+                $settleScope === 'month' ? $settleMonth : substr((string) ($p['date'] ?? ''), 0, 7),
+                $shareEst,
+                $wh,
+                '',
+                'Linked existing PAY — packing vendor bill AP'
+            );
+            if ($id > 0) {
+                $bills++;
+            }
+        }
+
+        Party::clearBalanceListCache();
+        self::clearDashboardCache($wh);
+
+        $payLabel = implode(', ', $usedPayNos !== [] ? $usedPayNos : array_map(
+            static fn ($p) => (string) $p['payment_no'],
+            $paymentsList
+        ));
+        $this->flash(
+            'success',
+            sprintf(
+                'Linked %s (%s KWD) → %d vendor bill(s); ERP estimate %s cleared from party AP. Statement should match invoice ↔ payment.',
+                $payLabel,
+                number_format($paySum, DECIMAL_PLACES),
+                $bills,
+                number_format($accruedTotal, DECIMAL_PLACES)
+            )
+        );
+        $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+    }
+
+    /**
+     * Outbound Union payments not yet linked to packing accruals (any ref_type that can be a transfer).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchUnlinkedPackingPayments(Database $db, int $partyId, int $wh, float $targetAmount): array {
+        if ($partyId <= 0) {
+            return [];
+        }
+
+        $since = date('Y-m-d', strtotime('-24 months'));
+        $candidates = $db->fetchAll(
+            "SELECT p.id, p.payment_no, p.amount, p.date, p.ref_type, p.notes, a.name as account_name
+             FROM payments p
+             LEFT JOIN accounts a ON a.id = p.account_id
+             WHERE p.party_id = ?
+               AND p.payment_type = 'out'
+               AND p.status = 'active'
+               AND p.date >= ?
+               AND (p.warehouse_id = ? OR p.warehouse_id IS NULL)
+               AND p.ref_type IS NOT NULL AND p.ref_type != ''
+               AND p.ref_type NOT IN ('discount', 'expense', 'purchase_order')
+             ORDER BY p.date DESC, p.id DESC
+             LIMIT 80",
+            [$partyId, $since, $wh]
+        );
+
+        if ($candidates === []) {
+            return [];
+        }
+
+        $payIds = array_values(array_filter(array_map(static fn ($r) => (int) ($r['id'] ?? 0), $candidates)));
+        $linked = [];
+        if ($payIds !== []) {
+            $ph = implode(',', array_fill(0, count($payIds), '?'));
+            foreach ($db->fetchAll(
+                "SELECT DISTINCT payment_id FROM import_payable_accruals
+                 WHERE payment_id IN ({$ph}) AND leg = 'packing_dxb' AND status = 'paid'",
+                $payIds
+            ) as $lr) {
+                $linked[(int) $lr['payment_id']] = true;
+            }
+            require_once __DIR__ . '/../services/PackingVendorBillService.php';
+            PackingVendorBillService::ensureSchema($db);
+            foreach ($db->fetchAll(
+                "SELECT DISTINCT payment_id FROM import_vendor_bills
+                 WHERE payment_id IN ({$ph}) AND status != 'cancelled'",
+                $payIds
+            ) as $lr) {
+                $linked[(int) $lr['payment_id']] = true;
+            }
+        }
+
+        $unlinked = [];
+        foreach ($candidates as $r) {
+            $id = (int) ($r['id'] ?? 0);
+            if ($id <= 0 || isset($linked[$id])) {
+                continue;
+            }
+            $unlinked[] = $r;
+        }
+
+        return $this->rankFreightPaymentsByAmount($unlinked, $targetAmount);
+    }
+
+    /** Pay Union Logistics packing from their invoice (ERP lines are estimates until billed). */
+    public function payPackingBulk(): void {
+        Auth::authorize('payments', 'add');
+        if (!$this->isPost()) {
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        $accountId     = $this->inputInt('account_id');
+        $date          = $this->input('date', date('Y-m-d'), 'post');
+        $extraNotes    = trim($this->input('notes', '', 'post'));
+        $settleMonth   = trim($this->input('settle_month', '', 'post'));
+        $invoiceRaw    = trim($this->input('invoice_amount', '', 'post'));
+        $invoiceRef    = trim($this->input('invoice_ref', '', 'post'));
+        $settleScope   = trim($this->input('settle_scope', 'to_date', 'post'));
+        if (!in_array($settleScope, ['month', 'to_date'], true)) {
+            $settleScope = 'to_date';
+        }
+
+        if ($accountId <= 0) {
+            $this->flash('error', 'Please select the account to pay from.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+        if ($settleMonth === '' || !preg_match('/^\d{4}-\d{2}$/', $settleMonth)) {
+            $this->flash('error', 'Please choose a valid settlement month.');
+            $this->redirect('?page=landedcost&action=packingDue');
+            return;
+        }
+
+        $invoiceAmount = round((float) str_replace(',', '', $invoiceRaw), 3);
+        if ($invoiceAmount <= 0.001) {
+            $this->flash('error', 'Enter Union’s invoice amount (exact billed KWD).');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        $db  = $this->db();
+        $due = $this->fetchPackingDueRows($db, $this->warehouseId());
+        $payableRows = $settleScope === 'month'
+            ? $this->filterPartnerDueRowsByMonth($due['rows'], $settleMonth)
+            : $due['rows'];
+
+        if (empty($payableRows)) {
+            $this->flash('warning', 'Nothing unpaid to settle for this scope.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Payment.php';
+        require_once __DIR__ . '/../models/Party.php';
+        require_once __DIR__ . '/../services/LandedCostPaymentLinker.php';
+        require_once __DIR__ . '/../services/PackingVendorBillService.php';
+
+        PackingVendorBillService::ensureSchema($db);
+
+        $packingParty = $this->importPackingParty($db);
+        $partyId = $packingParty ? (int) $packingParty['id'] : 0;
+        if ($partyId <= 0) {
+            $partyId = (int) ($payableRows[0]['party_id'] ?? 0);
+        }
+
+        // Invoice AP: clear ALL open packing estimates in scope; bill = Union invoice amount.
+        $chargeIds = [];
+        $erpEstimate = 0.0;
+        foreach ($payableRows as $r) {
+            $cid = (int) ($r['id'] ?? 0);
+            $amt = round((float) ($r['amount'] ?? 0), 3);
+            if ($cid <= 0 || $amt <= 0.001) {
+                continue;
+            }
+            $chargeIds[] = $cid;
+            $erpEstimate += $amt;
+        }
+        $erpEstimate = round($erpEstimate, 3);
+
+        if ($chargeIds === [] || $partyId <= 0) {
+            $this->flash('error', 'Could not resolve Union Logistics or packing lines.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        $scopeLabel = $settleScope === 'month'
+            ? date('F Y', strtotime($settleMonth . '-01'))
+            : 'to date';
+        $partyName = (string) ($packingParty['name'] ?? ($payableRows[0]['party_name'] ?? 'Union Logistics'));
+        $notes = sprintf(
+            'Packing DXB — %s — vendor invoice %s KWD (%s; ERP est. %s)',
+            $partyName,
+            number_format($invoiceAmount, DECIMAL_PLACES),
+            $scopeLabel,
+            number_format($erpEstimate, DECIMAL_PLACES)
+        );
+        if ($invoiceRef !== '') {
+            $notes .= ' · Inv ' . $invoiceRef;
+        }
+        if ($extraNotes !== '') {
+            $notes .= ' · ' . $extraNotes;
+        }
+
+        $paymentModel = new Payment();
+        $payId = $paymentModel->createStandalone([
+            'party_id'       => $partyId,
+            'payment_type'   => 'out',
+            'account_id'     => $accountId,
+            'ref_type'       => 'shipment_packing_dxb',
+            'ref_id'         => 0,
+            'amount'         => $invoiceAmount,
+            'payment_method' => $this->paymentMethodForAccount($accountId),
+            'date'           => $date,
+            'notes'          => $notes,
+        ]);
+
+        if (!$payId) {
+            $err = trim($paymentModel->getLastError());
+            $this->flash('error', $err !== '' ? ('Payment failed: ' . $err) : 'Could not save packing payment.');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+
+        // Shipment cost lines: mark payment on charges; then remove packing accruals from AP.
+        LandedCostPaymentLinker::linkFreightBulkPayment($db, 'shipment_packing_dxb', (int) $payId, $chargeIds);
+        PackingVendorBillService::cancelPaidPackingAccruals(
+            $db,
+            $chargeIds,
+            'Cleared into vendor bill — packing estimate not on party AP'
+        );
+        PackingVendorBillService::clearPackingAccrualsIntoBill(
+            $db,
+            $chargeIds,
+            'Cleared into vendor bill — packing estimate not on party AP'
+        );
+
+        $billId = PackingVendorBillService::createPaidBill(
+            $db,
+            $partyId,
+            (int) $payId,
+            $invoiceAmount,
+            $date,
+            $settleScope === 'month' ? $settleMonth : substr($date, 0, 7),
+            $erpEstimate,
+            $this->warehouseId(),
+            $invoiceRef,
+            $notes
+        );
+
+        $this->logActivity('create_payment', 'payments', (int) $payId);
+        Party::clearBalanceListCache();
+        self::clearDashboardCache($this->warehouseId());
+
+        $this->flash(
+            'success',
+            sprintf(
+                'Union vendor invoice posted & paid: %s %s (ERP estimate was %s). Party AP = invoice ↔ payment.',
+                APP_CURRENCY,
+                number_format($invoiceAmount, DECIMAL_PLACES),
+                number_format($erpEstimate, DECIMAL_PLACES)
+            ) . ($billId > 0 ? ' Bill #' . $billId . '.' : '')
+        );
+
+        $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+    }
+
+    /**
+     * Match open packing lines to a Union invoice: FIFO pay-link up to invoice, write off ERP excess in scope.
+     *
+     * @param list<array<string, mixed>> $rows each: id, amount, received_date
+     * @return array{pay_charge_ids: list<int>, write_off_charge_ids: list<int>, matched_accrued: float}
+     */
+    private function selectPackingChargesForInvoice(array $rows, float $invoiceAmount): array {
+        $invoiceAmount = round($invoiceAmount, 3);
+        $sorted = $rows;
+        usort($sorted, static function (array $a, array $b): int {
+            $da = (string) ($a['received_date'] ?? '');
+            $db = (string) ($b['received_date'] ?? '');
+            if ($da !== $db) {
+                return $da <=> $db;
+            }
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+
+        $payIds = [];
+        $running = 0.0;
+        $tolerance = max(2.0, round($invoiceAmount * 0.02, 3));
+
+        foreach ($sorted as $r) {
+            $id = (int) ($r['id'] ?? 0);
+            $amt = round((float) ($r['amount'] ?? 0), 3);
+            if ($id <= 0 || $amt <= 0.001) {
+                continue;
+            }
+            // Keep taking lines while under invoice, or one more if still short within tolerance band.
+            if ($running + 0.001 >= $invoiceAmount) {
+                break;
+            }
+            $payIds[] = $id;
+            $running = round($running + $amt, 3);
+            // Stop if we met/exceeded invoice (allow small overshoot from last line).
+            if ($running + 0.001 >= $invoiceAmount) {
+                break;
+            }
+        }
+
+        // If still far below invoice, take remaining lines (invoice higher than ERP estimate).
+        if ($running + $tolerance < $invoiceAmount) {
+            foreach ($sorted as $r) {
+                $id = (int) ($r['id'] ?? 0);
+                if ($id <= 0 || in_array($id, $payIds, true)) {
+                    continue;
+                }
+                $payIds[] = $id;
+                $running = round($running + (float) ($r['amount'] ?? 0), 3);
+            }
+        }
+
+        $paySet = array_fill_keys($payIds, true);
+        $writeOffIds = [];
+        foreach ($sorted as $r) {
+            $id = (int) ($r['id'] ?? 0);
+            if ($id > 0 && !isset($paySet[$id])) {
+                $writeOffIds[] = $id;
+            }
+        }
+
+        return [
+            'pay_charge_ids'       => $payIds,
+            'write_off_charge_ids' => $writeOffIds,
+            'matched_accrued'      => $running,
+        ];
+    }
+
+    /**
+     * Open packing_dxb accruals (Union Logistics — monthly settlement).
+     *
+     * @return array{rows: list<array<string, mixed>>, totalDue: float}
+     */
+    private function fetchPackingDueRows(Database $db, int $wh): array {
+        $accrualRows = $db->fetchAll(
+            "SELECT ipa.shipment_item_charge_id as id, ipa.shipment_id, ipa.amount,
+                    ipa.accrual_no, s.shipment_no, s.received_date, ipa.date,
+                    p.name as party_name, p.id as party_id,
+                    sic.packing_dxb, sic.quantity,
+                    i.name as item_name, po.po_no
+             FROM import_payable_accruals ipa
+             JOIN shipments s ON s.id = ipa.shipment_id
+             JOIN shipment_item_charges sic ON sic.id = ipa.shipment_item_charge_id
+             JOIN items i ON i.id = sic.item_id
+             JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+             JOIN purchase_orders po ON po.id = poi.po_id
+             JOIN parties p ON p.id = ipa.party_id
+             WHERE ipa.status = 'open' AND ipa.leg = 'packing_dxb'
+               AND (ipa.warehouse_id = ? OR ipa.warehouse_id IS NULL OR s.warehouse_id = ? OR s.warehouse_id IS NULL)
+             ORDER BY ipa.date DESC, ipa.id DESC",
+            [$wh, $wh]
+        );
+        $rows = [];
+        foreach ($accrualRows as $ar) {
+            $qty = max(1, (int) $ar['quantity']);
+            $packTotal = (float) ($ar['packing_dxb'] ?? $ar['amount']);
+            $rows[] = [
+                'id'            => (int) $ar['id'],
+                'shipment_id'   => (int) $ar['shipment_id'],
+                'amount'        => (float) $ar['amount'],
+                'shipment_no'   => $ar['shipment_no'],
+                'received_date' => $ar['received_date'] ?? $ar['date'],
+                'party_name'    => $ar['party_name'],
+                'party_id'      => (int) $ar['party_id'],
+                'item_name'     => $ar['item_name'],
+                'po_no'         => $ar['po_no'],
+                'rate_per_pc'   => round($packTotal / $qty, 3),
+                'quantity'      => $qty,
+                'accrual_no'    => $ar['accrual_no'],
+            ];
+        }
+
+        return [
+            'rows'     => $rows,
+            'totalDue' => (float) array_sum(array_map(static fn ($r) => (float) $r['amount'], $rows)),
+        ];
+    }
+
+    /** @return array{id:int,name:string,party_code:?string}|null */
+    private function importPackingParty(Database $db): ?array {
+        $id = $this->resolveFreightForwarderId($db, $this->defaultPackingDxbForwarderName());
+        if ($id <= 0) {
+            return null;
+        }
+        return $db->fetchOne(
+            "SELECT id, name, party_code FROM parties WHERE id = ? AND is_active = 1",
+            [$id]
+        ) ?: null;
+    }
+
     public function partnerDue(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db = $this->db();
         $due = $this->fetchPartnerDueRows($db, $this->warehouseId());
         $rows = $due['rows'];
@@ -787,7 +2402,7 @@ class LandedCostController extends BaseController {
     }
 
     public function partnerHistory(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db       = $this->db();
         $wh       = $this->warehouseId();
         $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
@@ -812,7 +2427,7 @@ class LandedCostController extends BaseController {
     }
 
     public function partnerPaymentEdit(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         if (!Auth::isAdmin()) {
             $this->flash('error', 'Admin access required to edit partner payments.');
             $this->redirect('?page=landedcost&action=partnerHistory');
@@ -1429,7 +3044,7 @@ class LandedCostController extends BaseController {
     }
 
     public function report(): void {
-        Auth::authorize('purchases', 'view');
+        Auth::authorizeAny(['import_logistics', 'purchases'], 'view');
         $db = $this->db();
         $wh = $this->warehouseId();
 
@@ -1487,7 +3102,8 @@ class LandedCostController extends BaseController {
             [$id]
         );
         $shipment['costs'] = $db->fetchAll(
-            "SELECT sc.*, a.name as account_name, pay.payment_no, pt.name as partner_name
+            "SELECT sc.*, a.name as account_name, pay.payment_no, pay.date as payment_date,
+                    pay.created_at as payment_created_at, pt.name as partner_name
              FROM shipment_costs sc
              LEFT JOIN accounts a ON a.id = sc.account_id
              LEFT JOIN payments pay ON pay.id = sc.payment_id
@@ -1501,9 +3117,17 @@ class LandedCostController extends BaseController {
                     phk.name as hk_party_name, ppack.name as packing_party_name,
                     pkwt.name as kwt_party_name, pp.name as partner_name,
                     pay_hk.payment_no as hk_payment_no,
+                    pay_hk.date as hk_payment_date,
+                    pay_hk.created_at as hk_payment_at,
                     pay_pack.payment_no as packing_payment_no,
+                    pay_pack.date as packing_payment_date,
+                    pay_pack.created_at as packing_payment_at,
                     pay_dxb.payment_no as dxb_payment_no,
-                    pay_pt.payment_no as partner_payment_no
+                    pay_dxb.date as dxb_payment_date,
+                    pay_dxb.created_at as dxb_payment_at,
+                    pay_pt.payment_no as partner_payment_no,
+                    pay_pt.date as partner_payment_date,
+                    pay_pt.created_at as partner_payment_at
              FROM shipment_item_charges sic
              JOIN items i ON i.id = sic.item_id
              JOIN purchase_order_items poi ON poi.id = sic.po_item_id
@@ -1531,11 +3155,14 @@ class LandedCostController extends BaseController {
         $shipmentId = $shipment ? (int) $shipment['id'] : null;
 
         $freightDxbParty = $this->freightDxbForwarderParty($db);
-        $defaultFreightHkPartyId = $this->resolveFreightForwarderId($db, $this->defaultFreightHkForwarderName());
+        $hkFreightForwarders = $this->freightHkForwarderParties($db, $shipment);
+        $defaultFreightHkPartyId = $this->resolveFreightHkDefaultPartyId($db, $shipment, $hkFreightForwarders);
 
         return [
             'purchaseOrders'           => $this->purchaseOrdersForForm($db, $wh, $shipmentId),
             'freightForwarders'        => $this->freightForwarderParties($db),
+            'hkFreightForwarders'      => $hkFreightForwarders,
+            'hkFreightForwarderMissing'=> $this->missingFreightHkPartyCodes($db),
             'importPartner'            => $this->importPartnerParty($db),
             'defaultFreightHkPartyId'  => $defaultFreightHkPartyId,
             'defaultFreightHkPartyName' => $this->forwarderDisplayName($db, $defaultFreightHkPartyId, $this->defaultFreightHkForwarderName()),
@@ -1774,6 +3401,143 @@ class LandedCostController extends BaseController {
         return defined('IMPORT_FREIGHT_HK_FORWARDER_NAME') ? (string) IMPORT_FREIGHT_HK_FORWARDER_NAME : 'Logix One FZE';
     }
 
+    private function defaultFreightHkPartyCode(): string {
+        return defined('IMPORT_FREIGHT_HK_PARTY_CODE') ? (string) IMPORT_FREIGHT_HK_PARTY_CODE : '26049';
+    }
+
+    /** @return list<string> Default first, then alternates (Logiverse, …). */
+    private function freightHkForwarderPartyCodes(): array {
+        $codes = [];
+        $push = static function (string $code) use (&$codes): void {
+            $code = trim($code);
+            if ($code !== '' && !in_array($code, $codes, true)) {
+                $codes[] = $code;
+            }
+        };
+        $push($this->defaultFreightHkPartyCode());
+        $alt = defined('IMPORT_FREIGHT_HK_ALT_PARTY_CODES')
+            ? (string) IMPORT_FREIGHT_HK_ALT_PARTY_CODES
+            : '26045';
+        foreach (explode(',', $alt) as $code) {
+            $push($code);
+        }
+        return $codes;
+    }
+
+    /** @return array{id:int,name:string,party_code:?string}|null */
+    private function findActivePartyByCode(Database $db, string $code): ?array {
+        $code = trim($code);
+        if ($code === '') {
+            return null;
+        }
+        $row = $db->fetchOne(
+            "SELECT id, name, party_code FROM parties WHERE party_code = ? AND is_active = 1",
+            [$code]
+        );
+        if ($row) {
+            return $row;
+        }
+        if (ctype_digit($code)) {
+            $row = $db->fetchOne(
+                "SELECT id, name, party_code FROM parties WHERE id = ? AND is_active = 1",
+                [(int) $code]
+            );
+            if ($row) {
+                return $row;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * HK→DXB parties: Logix One (26049) and Logiverse (26045), looked up by account no.
+     * Type need not be freight_forwarder — Party Master code is the source of truth.
+     *
+     * @param array<string,mixed>|null $shipment
+     * @return list<array{id:int,name:string,party_code:?string}>
+     */
+    private function freightHkForwarderParties(Database $db, ?array $shipment): array {
+        $seen = [];
+        $out  = [];
+        foreach ($this->freightHkForwarderPartyCodes() as $code) {
+            $party = $this->findActivePartyByCode($db, $code);
+            if (!$party) {
+                continue;
+            }
+            $id = (int) $party['id'];
+            if ($id <= 0 || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $out[] = $party;
+        }
+        if ($out === []) {
+            $id = $this->resolveFreightForwarderId($db, $this->defaultFreightHkForwarderName());
+            if ($id > 0) {
+                $row = $db->fetchOne(
+                    "SELECT id, name, party_code FROM parties WHERE id = ? AND is_active = 1",
+                    [$id]
+                );
+                if ($row) {
+                    $seen[(int) $row['id']] = true;
+                    $out[] = $row;
+                }
+            }
+        }
+        if ($shipment) {
+            foreach ($shipment['item_charges'] ?? [] as $c) {
+                $pid = (int) ($c['freight_hk_dxb_party_id'] ?? 0);
+                if ($pid <= 0 || isset($seen[$pid])) {
+                    continue;
+                }
+                $row = $db->fetchOne(
+                    "SELECT id, name, party_code FROM parties WHERE id = ? AND is_active = 1",
+                    [$pid]
+                );
+                if ($row) {
+                    $seen[$pid] = true;
+                    $out[] = $row;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** @return list<string> */
+    private function missingFreightHkPartyCodes(Database $db): array {
+        $missing = [];
+        foreach ($this->freightHkForwarderPartyCodes() as $code) {
+            if (!$this->findActivePartyByCode($db, $code)) {
+                $missing[] = $code;
+            }
+        }
+        return $missing;
+    }
+
+    /**
+     * @param list<array{id:int,name:string,party_code:?string}> $hkParties
+     * @param array<string,mixed>|null $shipment
+     */
+    private function resolveFreightHkDefaultPartyId(Database $db, ?array $shipment, array $hkParties): int {
+        if ($shipment) {
+            $counts = [];
+            foreach ($shipment['item_charges'] ?? [] as $c) {
+                $pid = (int) ($c['freight_hk_dxb_party_id'] ?? 0);
+                if ($pid > 0) {
+                    $counts[$pid] = ($counts[$pid] ?? 0) + 1;
+                }
+            }
+            if ($counts !== []) {
+                arsort($counts);
+                return (int) array_key_first($counts);
+            }
+        }
+        if ($hkParties !== []) {
+            return (int) $hkParties[0]['id'];
+        }
+        return $this->resolveFreightForwarderId($db, $this->defaultFreightHkForwarderName());
+    }
+
     private function defaultFreightDxbForwarderName(): string {
         return defined('IMPORT_FREIGHT_DXB_FORWARDER_NAME') ? (string) IMPORT_FREIGHT_DXB_FORWARDER_NAME : 'Hi-iq';
     }
@@ -1858,7 +3622,7 @@ class LandedCostController extends BaseController {
         if (defined('IMPORT_PARTNER_PARTY_ID')) {
             return (string) IMPORT_PARTNER_PARTY_ID;
         }
-        return '26014';
+        return '26058';
     }
 
     private function importPartnerPartyId(): int {

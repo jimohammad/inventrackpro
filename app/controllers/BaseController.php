@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../helpers/Auth.php';
 require_once __DIR__ . '/../helpers/ListPage.php';
+require_once __DIR__ . '/../helpers/ImeiFormat.php';
 require_once __DIR__ . '/../../config/app.php';
 
 /**
@@ -22,27 +23,96 @@ abstract class BaseController {
             foreach ($rows as $r) {
                 self::$settingsCache[$r['key_name']] = $r['value'];
             }
+            self::migrateCompanyNameWllToLlc($db);
+            self::migrateCompanyAddressSharq($db);
         }
         return self::$settingsCache;
+    }
+
+    /** Insert Sharq before Block 5 when the area is missing. One-time persist. */
+    private static function migrateCompanyAddressSharq(Database $db): void {
+        $addr = trim((string) (self::$settingsCache['company_address'] ?? ''));
+        if ($addr === '' || preg_match('/sharq/i', $addr) || !preg_match('/\bBlock\s*5\b/i', $addr)) {
+            return;
+        }
+        $updated = trim((string) preg_replace('/\bBlock\s*5\b/i', 'Sharq, Block 5', $addr, 1));
+        if ($updated === '' || $updated === $addr) {
+            return;
+        }
+        $db->execute(
+            "INSERT INTO settings (key_name, value) VALUES ('company_address', ?)
+             ON DUPLICATE KEY UPDATE value = ?",
+            [$updated, $updated]
+        );
+        self::$settingsCache['company_address'] = $updated;
+    }
+
+    /** Legal entity suffix: WLL → LLC (Kuwait Companies Law). One-time persist. */
+    private static function migrateCompanyNameWllToLlc(Database $db): void {
+        $name = (string) (self::$settingsCache['company_name'] ?? '');
+        if ($name === '' || !preg_match('/\bW\.?L\.?L\.?\b/i', $name)) {
+            return;
+        }
+        $updated = trim((string) preg_replace('/\bW\.?L\.?L\.?\b/i', 'LLC', $name));
+        if ($updated === '' || $updated === $name) {
+            return;
+        }
+        $db->execute(
+            "INSERT INTO settings (key_name, value) VALUES ('company_name', ?)
+             ON DUPLICATE KEY UPDATE value = ?",
+            [$updated, $updated]
+        );
+        self::$settingsCache['company_name'] = $updated;
     }
 
     /** Active accounts — cached once per request (near-static table). */
     public static function getAccounts(): array {
         if (self::$accountsCache === null) {
+            require_once __DIR__ . '/../services/AccountLedgerLoader.php';
             $db = Database::getInstance();
-            self::$accountsCache = $db->fetchAll(
-                "SELECT id, name, type, gl_code, opening_balance, current_balance, is_default, sort_order
-                 FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+            self::$accountsCache = self::normalizeAccountRows(
+                AccountLedgerLoader::listForDropdown($db)
             );
-            foreach (self::$accountsCache as &$acc) {
-                $acc['normalized_type'] = self::normalizeAccountType(
-                    (string)($acc['type'] ?? ''),
-                    (string)($acc['name'] ?? '')
-                );
-            }
-            unset($acc);
         }
         return self::$accountsCache;
+    }
+
+    /** Clear cached accounts after create/update/delete. */
+    public static function clearAccountsCache(): void {
+        self::$accountsCache = null;
+    }
+
+    /**
+     * @deprecated Use AccountLedgerLoader::listForDropdown() — kept for callers that still reference this.
+     * @return list<array<string,mixed>>
+     */
+    private static function loadAccountsForDropdown(Database $db): array {
+        require_once __DIR__ . '/../services/AccountLedgerLoader.php';
+        return AccountLedgerLoader::listForDropdown($db);
+    }
+
+    /** First-time setup when the ledger table is empty. */
+    public static function seedDefaultLedgerAccountsIfEmpty(Database $db): void {
+        require_once __DIR__ . '/../services/AccountLedgerLoader.php';
+        AccountLedgerLoader::ensureTable($db);
+        AccountLedgerLoader::seedIfEmpty($db);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @return list<array<string,mixed>>
+     */
+    protected static function normalizeAccountRows(array $rows): array {
+        require_once __DIR__ . '/../services/AccountLedgerLoader.php';
+        $rows = AccountLedgerLoader::normalizeRows($rows);
+        foreach ($rows as &$acc) {
+            $acc['normalized_type'] = self::normalizeAccountType(
+                (string) ($acc['type'] ?? ''),
+                (string) ($acc['name'] ?? '')
+            );
+        }
+        unset($acc);
+        return $rows;
     }
 
     /** Human-readable account label with database id (e.g. "#3 — NBK Bank Account"). */
@@ -52,6 +122,9 @@ abstract class BaseController {
         $label = '#' . $id . ' — ' . ($name !== '' ? $name : 'Account');
         if ($withBalance) {
             $label .= ' (' . APP_CURRENCY . ' ' . number_format((float) ($acc['current_balance'] ?? 0), DECIMAL_PLACES) . ')';
+        }
+        if (isset($acc['is_active']) && (int) $acc['is_active'] !== 1) {
+            $label .= ' [inactive]';
         }
         return $label;
     }
@@ -111,18 +184,22 @@ abstract class BaseController {
      */
     protected static function clearDashboardCache(?int $warehouseId = null): void {
         $cacheDir = self::dashboardCacheDir();
-        if (!is_dir($cacheDir)) {
-            return;
+        if (is_dir($cacheDir)) {
+            $pattern = $warehouseId && $warehouseId > 0
+                ? $cacheDir . DIRECTORY_SEPARATOR . 'dash_*_' . $warehouseId . '_*.cache'
+                : $cacheDir . DIRECTORY_SEPARATOR . 'dash_*.cache';
+
+            foreach (glob($pattern) ?: [] as $file) {
+                if (is_file($file)) {
+                    @unlink($file);
+                }
+            }
         }
 
-        $pattern = $warehouseId && $warehouseId > 0
-            ? $cacheDir . DIRECTORY_SEPARATOR . 'dash_*_' . $warehouseId . '_*.cache'
-            : $cacheDir . DIRECTORY_SEPARATOR . 'dash_*.cache';
-
-        foreach (glob($pattern) ?: [] as $file) {
-            if (is_file($file)) {
-                @unlink($file);
-            }
+        // Party Master balance list shares the same write triggers (sales/payments/etc.).
+        if (class_exists('Party', false) || is_file(__DIR__ . '/../models/Party.php')) {
+            require_once __DIR__ . '/../models/Party.php';
+            Party::clearBalanceListCache();
         }
     }
 
@@ -132,11 +209,25 @@ abstract class BaseController {
         // Auto CSRF check on every POST request
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!Auth::verifyCsrf()) {
+                if (self::wantsJson()) {
+                    http_response_code(403);
+                    header('Content-Type: application/json');
+                    echo json_encode(['ok' => false, 'msg' => 'Session expired. Refresh the page and try again.']);
+                    exit;
+                }
                 $this->flash('error', 'Invalid request. Please try again.');
                 header('Location: ' . self::safePostRedirectUrl());
                 exit;
             }
         }
+    }
+
+    /** AJAX fetch with Accept: application/json — do not redirect to HTML. */
+    protected static function wantsJson(): bool {
+        $accept = (string) ($_SERVER['HTTP_ACCEPT'] ?? '');
+        $xhr    = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
+
+        return $xhr === 'xmlhttprequest' || stripos($accept, 'application/json') !== false;
     }
 
     /**

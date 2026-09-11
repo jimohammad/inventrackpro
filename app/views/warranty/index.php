@@ -6,7 +6,7 @@
 </div>
 
 <!-- Filters -->
-<form method="GET" action="" style="background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
+<form method="GET" action="" id="warrantyFilterForm" style="background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
     <input type="hidden" name="page" value="warranty">
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
 
@@ -33,7 +33,7 @@
             <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-calendar3 me-1"></i>To
             </label>
-            <input type="date" name="to_date" value="<?= htmlspecialchars($toDate ?: date('Y-m-d')) ?>"
+            <input type="date" name="to_date" value="<?= htmlspecialchars((string) $toDate) ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
         </div>
@@ -82,7 +82,7 @@
                             <?= htmlspecialchars($r['replacement_no']) ?>
                         </a>
                         <?php if ($r['sale_invoice_no']): ?>
-                        <br><small class="text-muted">Orig: <?= $r['sale_invoice_no'] ?></small>
+                        <br><small class="text-muted">Orig: <?= htmlspecialchars((string)$r['sale_invoice_no']) ?></small>
                         <?php endif; ?>
                     </td>
                     <td><?= date('d M Y', strtotime($r['date'])) ?></td>
@@ -115,6 +115,12 @@
                            class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem;padding:3px 8px;">
                             View
                         </a>
+                        <?php if (Auth::can('warranty', 'edit')): ?>
+                        <a href="?page=warranty&action=edit&id=<?= $r['id'] ?>"
+                           class="btn btn-sm btn-outline-primary" style="font-size:0.75rem;padding:3px 8px;">
+                            Edit
+                        </a>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -123,3 +129,22 @@
         </table>
     </div>
 </div>
+<script>
+(function () {
+    var form = document.getElementById('warrantyFilterForm');
+    var datesTouched = false;
+    if (!form) return;
+    form.querySelectorAll('[name="from_date"],[name="to_date"]').forEach(function (el) {
+        el.addEventListener('change', function () { datesTouched = true; });
+    });
+    form.addEventListener('submit', function () {
+        var search = form.querySelector('[name="search"]');
+        if (search && search.value.trim() && !datesTouched) {
+            var from = form.querySelector('[name="from_date"]');
+            var to = form.querySelector('[name="to_date"]');
+            if (from) from.value = '';
+            if (to) to.value = '';
+        }
+    });
+})();
+</script>

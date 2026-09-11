@@ -6,12 +6,6 @@
 .pf-head a.back:hover { border-color:var(--primary);color:var(--primary);box-shadow:0 4px 12px rgba(99,102,241,.18);transform:translateY(-1px); }
 .pf-head h1 { font-size:1.24rem;font-weight:800;margin:0;letter-spacing:.1px; }
 
-/* Toggle pill for In/Out — compact, in header */
-.pf-toggle { display:inline-flex;background:#f1f5f9;border-radius:10px;padding:3px;gap:0; }
-.pf-toggle button { background:transparent;border:none;padding:7px 16px;border-radius:8px;font-size:.82rem;font-weight:600;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .15s; }
-.pf-toggle button.active.in  { background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 2px 6px rgba(16,185,129,.4); }
-.pf-toggle button.active.out { background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;box-shadow:0 2px 6px rgba(239,68,68,.4); }
-
 /* Card — colored top accent per section */
 .pf-card { background:var(--bg-card);border:1px solid #e7eaf3;border-radius:16px;padding:20px 22px;margin-bottom:14px;position:relative;overflow:hidden;box-shadow:0 10px 24px rgba(15,23,42,.05);transition:box-shadow .2s, border-color .2s; }
 .pf-card:hover { box-shadow:0 14px 30px rgba(15,23,42,.08); border-color:#d9dff0; }
@@ -33,12 +27,16 @@
 .pf-card.c-notes   .pf-sec { color:#b45309; }
 .pf-card.c-notes   .pf-sec .num { background:linear-gradient(135deg,#f59e0b,#d97706); }
 
-/* Meta row: PAY# + date */
-.pf-meta { display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:12px;padding:10px 14px;margin-bottom:14px;box-shadow:0 4px 14px rgba(99,102,241,.12); }
-.pf-meta .num { font-family:monospace;font-weight:800;color:#4338ca;font-size:.88rem;display:flex;align-items:center;gap:5px; }
-.pf-meta .num i { color:#6366f1; }
-.pf-meta input[type=date] { width:auto;padding:6px 10px;border:1.5px solid #a5b4fc;border-radius:7px;font-size:.82rem;font-weight:600;background:#fff;color:#1e293b;outline:none; }
-.pf-meta input[type=date]:focus { border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+.pf-party-row { display:flex; align-items:stretch; gap:10px; }
+.pf-party-row .pf-party-wrap { flex:1; min-width:0; }
+.pf-date-input {
+    flex:0 0 168px; width:168px; height:48px; padding:0 10px;
+    border:1.5px solid #dbe2ee; border-radius:11px;
+    font-size:.88rem; font-weight:600; background:var(--bg-main); color:var(--text-main);
+    outline:none; box-sizing:border-box;
+    transition:border-color .15s, box-shadow .15s, background-color .15s;
+}
+.pf-date-input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(99,102,241,.12); background:#fff; }
 
 /* Party search — AJAX autocomplete */
 .pf-party-wrap { position:relative; }
@@ -72,7 +70,7 @@
 .pf-party-item .pf-party-clear { color:#15803d;font-weight:600; }
 
 /* Balance card */
-.pf-bal { display:none;margin-top:10px;border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between; }
+.pf-bal { display:none;margin-top:10px;border-radius:10px;padding:12px 16px;align-items:center;justify-content:space-between; }
 .pf-bal.show { display:flex; }
 .pf-bal.owes  { background:linear-gradient(135deg,#fff7ed,#ffedd5);border:1.5px solid #fdba74; }
 .pf-bal.youowe{ background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1.5px solid #93c5fd; }
@@ -85,8 +83,6 @@
 .pf-bal.youowe .pf-bal-amt  { color:#1d4ed8; }
 .pf-bal.clear .pf-bal-label { color:#166534; }
 .pf-bal.clear .pf-bal-amt   { color:#15803d; }
-.pf-bal-fill { background:none;border:1.5px solid currentColor;color:inherit;padding:5px 12px;border-radius:7px;font-size:.74rem;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.4px; }
-.pf-bal-fill:hover { opacity:.85; }
 
 /* Account + amount grid */
 .pf-grid2 { display:grid;grid-template-columns:1.2fr 1fr;gap:12px; }
@@ -98,14 +94,7 @@
 }
 .pf-field textarea { height:auto;padding:10px 14px;line-height:1.5; }
 .pf-field input[type=number] { font-weight:700;font-size:1.15rem; }
-.pf-field input[type=date] { font-weight:600; }
 .pf-field input:focus, .pf-field select:focus, .pf-field textarea:focus { border-color:var(--primary);box-shadow:0 0 0 3px rgba(99,102,241,.12); background:#fff; }
-
-/* Method pills */
-.pf-method { display:flex;gap:6px;flex-wrap:wrap;margin-top:6px; }
-.pf-method-pill { padding:6px 14px;border-radius:20px;background:var(--bg-main);border:1.5px solid var(--border-color);color:var(--text-muted);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s;user-select:none; }
-.pf-method-pill:hover { border-color:var(--primary);color:var(--primary); }
-.pf-method-pill.active { background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 2px 6px rgba(99,102,241,.3); }
 
 /* Ref strip when coming from invoice */
 .pf-ref { background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.05));border:1px solid rgba(99,102,241,.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:.84rem; }
@@ -124,6 +113,8 @@
 
 @media (max-width: 540px) {
     .pf-grid2 { grid-template-columns:1fr; }
+    .pf-party-row { flex-direction:column; }
+    .pf-date-input { flex:none; width:100%; }
     .pf-head { align-items:flex-start; gap:8px; }
     .pf-head h1 { font-size:1.05rem; }
     .pf-foot { position:static; padding:0; border:none; box-shadow:none; background:transparent; backdrop-filter:none; display:grid; grid-template-columns:1fr; }
@@ -153,6 +144,67 @@
 .pf-fill-due.show { display:inline-flex; align-items:center; gap:4px; }
 .pf-fill-due:hover { border-color:#6366f1; background:linear-gradient(135deg,#e0e7ff,#c7d2fe); }
 .pf-fill-due:disabled { opacity:.45; cursor:not-allowed; }
+
+.pf-card.c-pos { --card-accent: linear-gradient(180deg,#0ea5e9,#0284c7); }
+.pf-card.c-pos { background:linear-gradient(135deg,#fff,#f7fbff); display:none; }
+.pf-card.c-pos.show { display:block; }
+.pf-card.c-pos .pf-sec { color:#0369a1; }
+.pf-card.c-pos .pf-sec .num { background:linear-gradient(135deg,#0ea5e9,#0284c7); }
+.pf-pos-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+.pf-pos-fillall {
+    flex-shrink:0; padding:6px 10px; border-radius:8px; border:1.5px solid #bae6fd;
+    background:#e0f2fe; color:#0369a1; font-size:.72rem; font-weight:700;
+    cursor:pointer; white-space:nowrap;
+}
+.pf-pos-fillall:hover { border-color:#0ea5e9; background:#bae6fd; }
+.pf-pos-empty { font-size:.82rem; color:#64748b; padding:8px 2px 2px; }
+.pf-pos-row {
+    border:1.5px solid #e2e8f0; border-radius:12px; padding:12px 12px 10px;
+    margin-bottom:8px; background:#fff;
+}
+.pf-pos-row.is-paying { border-color:#7dd3fc; background:linear-gradient(135deg,#fff,#f0f9ff); }
+.pf-pos-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px; margin-bottom:8px; }
+.pf-pos-no { font-weight:800; color:#0f172a; font-size:.92rem; }
+.pf-pos-date { font-size:.76rem; color:#64748b; }
+.pf-pos-cur { font-size:.68rem; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+    background:#e0f2fe; color:#0369a1; padding:2px 7px; border-radius:999px; }
+.pf-pos-st { font-size:.68rem; font-weight:700; padding:2px 7px; border-radius:999px; }
+.pf-pos-st.draft { background:#e0e7ff; color:#3730a3; }
+.pf-pos-st.paid { background:#fef3c7; color:#92400e; }
+.pf-pos-figs { display:flex; flex-wrap:wrap; gap:10px 16px; font-size:.76rem; color:#475569; margin-bottom:10px; }
+.pf-pos-figs strong { font-family:monospace; font-weight:800; color:#0f172a; }
+.pf-pos-grid { display:grid; grid-template-columns:1.1fr 1.3fr auto; gap:8px; align-items:end; }
+.pf-pos-adj { display:flex; align-items:stretch; gap:4px; }
+.pf-pos-sign {
+    width:34px; border:1.5px solid #dbe2ee; border-radius:9px; background:#f8fafc;
+    color:#64748b; font-weight:800; cursor:pointer;
+}
+.pf-pos-sign.is-on.plus { border-color:#86efac; background:#dcfce7; color:#166534; }
+.pf-pos-sign.is-on.minus { border-color:#fca5a5; background:#fee2e2; color:#991b1b; }
+.pf-pos-duebtn {
+    height:40px; padding:0 10px; border-radius:9px; border:1.5px solid #bae6fd;
+    background:#f0f9ff; color:#0369a1; font-size:.7rem; font-weight:700; cursor:pointer; white-space:nowrap;
+}
+.pf-pos-duebtn:hover { background:#e0f2fe; }
+.pf-pos-total { margin-top:6px; font-size:.78rem; color:#0369a1; font-weight:700; font-family:monospace; }
+.pf-pos-tt {
+    margin:0 0 10px; padding:10px 12px; border-radius:10px;
+    background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1.5px solid #7dd3fc;
+}
+.pf-pos-tt-title { font-size:.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.pf-pos-tt-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.pf-pos-tt-rate { margin-top:8px; font-size:.8rem; font-weight:700; color:#0c4a6e; font-family:monospace; }
+.pf-pos-tt-rate:empty { display:none; margin:0; }
+.pf-pos-sum { margin-top:10px; padding:10px 12px; border-radius:10px; background:#e0f2fe; border:1.5px solid #7dd3fc;
+    display:flex; justify-content:space-between; align-items:center; font-size:.82rem; font-weight:700; color:#0c4a6e; }
+@media (max-width: 540px) {
+    .pf-pos-grid { grid-template-columns:1fr; }
+    .pf-pos-duebtn { width:100%; }
+    .pf-pos-tt-grid { grid-template-columns:1fr; }
+}
+
+.pf-page, .pf-page * { border-radius: 0 !important; }
+
 </style>
 
 <?php
@@ -161,22 +213,29 @@
     $isReceive = $mode === 'in';
     $modeTitle = $isReceive ? 'Receive Payment' : 'Make Payment';
     $modeIcon  = $isReceive ? 'bi-arrow-down-circle-fill' : 'bi-arrow-up-circle-fill';
-    $modeColor = $isReceive ? '#10b981' : '#ef4444';
-    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Supplier / Freight Forwarder');
-    $accentBg  = $isReceive
-        ? 'linear-gradient(135deg,#10b981,#059669)'
-        : 'linear-gradient(135deg,#ef4444,#dc2626)';
-    $preselectPartyId = $preselectPartyId ?? 0;
+    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Party');
+    $accentBg  = $isReceive ? '#059669' : '#dc2626';
     $preselectParty   = $preselectParty ?? null;
     $partySearchType  = $partySearchType ?? ($isReceive ? 'customer' : 'payment_out');
     $partyPlaceholder = $isReceive
-        ? 'Type name or phone — Enter to select'
+        ? 'Type customer name — Enter to select'
         : (($importPayable ?? false)
             ? 'Import partner — pre-selected from payable'
-            : 'Type supplier or freight forwarder — Enter to select');
+            : 'Type party name — Enter to select');
     $linkRefId = (int) ($refId ?? 0);
     $importPayableContext = $importPayableContext ?? null;
     $paymentsListBase = $isReceive ? '?page=payments' : '?page=payments&action=out';
+    $defaultAccountId = 0;
+    foreach ($accounts as $accDefault) {
+        $accName = trim((string) ($accDefault['name'] ?? ''));
+        if (!empty($accDefault['is_default'])) {
+            $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+            break;
+        }
+        if ($defaultAccountId <= 0 && strcasecmp($accName, 'Main Cash') === 0) {
+            $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+        }
+    }
 ?>
 <div class="pf-page">
     <div class="pf-head">
@@ -198,6 +257,7 @@
         <?= Auth::csrfField() ?>
         <input type="hidden" name="payment_form_nonce" value="<?= htmlspecialchars($paymentFormNonce ?? '') ?>">
         <input type="hidden" name="print_mode"     id="printMode"     value="0">
+        <input type="hidden" name="after_save"     id="afterSave"     value="">
         <input type="hidden" name="payment_type"   value="<?= $mode ?>">
         <!-- payment_method derived server-side from account.type unless cheque_no provided -->
 
@@ -228,26 +288,24 @@
         <input type="hidden" name="ref_id"   value="">
         <?php endif; ?>
 
-        <!-- Meta row -->
-        <div class="pf-meta">
-            <span class="num"><i class="bi bi-hash me-1"></i><?= htmlspecialchars($nextPayNo) ?></span>
-            <input type="date" name="date" value="<?= date('Y-m-d') ?>" required>
-        </div>
-
         <!-- Party -->
         <div class="pf-card c-party" id="partyCard">
             <div class="pf-sec"><span class="num">1</span> <?= $partyLbl ?></div>
-            <div class="pf-party-wrap">
-                <i class="bi bi-person-circle pf-party-icon" aria-hidden="true"></i>
-                <input type="text" id="partySearch"
-                       class="pf-party-input<?= $preselectParty ? ' selected' : '' ?>"
-                       placeholder="<?= htmlspecialchars($partyPlaceholder) ?>"
-                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-                       value="<?= htmlspecialchars($preselectParty['name'] ?? '') ?>"
-                       <?= ($importPayableContext && $preselectParty) ? 'readonly' : '' ?>>
-                <input type="hidden" name="party_id" id="partyIdInput"
-                       value="<?= $preselectParty ? (int) $preselectParty['id'] : '' ?>" required>
-                <div class="pf-party-drop" id="partyDropdown" role="listbox" aria-label="<?= htmlspecialchars($partyLbl) ?> results"></div>
+            <div class="pf-party-row">
+                <div class="pf-party-wrap">
+                    <i class="bi bi-person-circle pf-party-icon" aria-hidden="true"></i>
+                    <input type="text" id="partySearch"
+                           class="pf-party-input<?= $preselectParty ? ' selected' : '' ?>"
+                           placeholder="<?= htmlspecialchars($partyPlaceholder) ?>"
+                           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                           value="<?= htmlspecialchars($preselectParty['name'] ?? '') ?>"
+                           <?= ($importPayableContext && $preselectParty) ? 'readonly' : '' ?>>
+                    <input type="hidden" name="party_id" id="partyIdInput"
+                           value="<?= $preselectParty ? (int) $preselectParty['id'] : '' ?>" required>
+                    <div class="pf-party-drop" id="partyDropdown" role="listbox" aria-label="<?= htmlspecialchars($partyLbl) ?> results"></div>
+                </div>
+                <input type="date" class="pf-date-input" name="date" id="payDate"
+                       value="<?= date('Y-m-d') ?>" required aria-label="Payment date" title="Payment date">
             </div>
             <div class="pf-bal" id="partyBal">
                 <div>
@@ -257,6 +315,22 @@
             </div>
         </div>
 
+        <?php if (!empty($allocatePos)): ?>
+        <div class="pf-card c-pos" id="poCard">
+            <div class="pf-pos-head">
+                <div class="pf-sec" style="margin-bottom:0;"><span class="num"><i class="bi bi-file-earmark-text"></i></span> Purchase Orders</div>
+                <button type="button" class="pf-pos-fillall" id="btnFillAllPos" style="display:none;">
+                    Pay all unpaid
+                </button>
+            </div>
+            <div id="poList"></div>
+            <div class="pf-pos-sum" id="poSum" style="display:none;">
+                <span id="poSumLabel">Paying 0 PO(s)</span>
+                <span id="poSumAmt">0.000</span>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Account + Amount -->
         <div class="pf-card c-account">
             <div class="pf-sec"><span class="num">2</span> Account &amp; Amount</div>
@@ -265,7 +339,7 @@
                     <label>Account <span id="acctTypeBadge" style="font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:5px;display:none;text-transform:uppercase;letter-spacing:.4px;"></span></label>
                     <select name="account_id" id="accountSelect" required>
                         <?php foreach ($accounts as $acc): ?>
-                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
+                        <option value="<?= $acc['id'] ?>" data-type="<?= htmlspecialchars($acc['normalized_type'] ?? $acc['type']) ?>"<?= $defaultAccountId > 0 && (int) $acc['id'] === $defaultAccountId ? ' selected' : '' ?>><?= htmlspecialchars(BaseController::formatAccountLabel($acc)) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -308,16 +382,12 @@
         <!-- Footer -->
         <div class="pf-foot">
             <a href="<?= htmlspecialchars($paymentsListBase) ?>" class="pf-btn cancel">Cancel</a>
-            <button type="submit" class="pf-btn save" data-print-mode="0">
+            <button type="submit" class="pf-btn save" data-print-mode="0" data-after-save="">
                 <i class="bi bi-check-lg"></i> Save
             </button>
-            <button type="submit" class="pf-btn print" data-print-mode="1">
+            <button type="submit" class="pf-btn print" data-print-mode="1" data-after-save=""
+                title="Prints with your Default Print (A5 or Thermal) from the profile menu. Shortcut: Ctrl+S / F12">
                 <i class="bi bi-printer"></i> Save &amp; Print
-            </button>
-            <button type="submit" class="pf-btn print" id="btnPayThermal" data-print-mode="2"
-                title="Ctrl+S / Cmd+S or F12: save and open thermal receipt"
-                style="background:linear-gradient(135deg,#059669,#047857);">
-                <i class="bi bi-receipt"></i> Save &amp; Thermal
             </button>
         </div>
     </form>
@@ -328,12 +398,14 @@ var partyBalance = 0;
 var paymentMode = <?= json_encode($mode) ?>;
 var isPaymentOut = paymentMode === 'out';
 var partySearchType = <?= json_encode($partySearchType) ?>;
-var warehouseId = <?= (int) (Auth::warehouseId() ?: 0) ?>;
-var lastAccountKey = 'iqbal_last_pay_account_' + paymentMode + '_' + warehouseId;
 var partyStore = { results: [] };
 var partyTimer = null;
 var partyHighlightIdx = -1;
 var partySearchAbort = null;
+var allocatePos = <?= !empty($allocatePos) ? 'true' : 'false' ?>;
+var supplierPos = [];
+var posAbort = null;
+var posMoneyCurr = <?= json_encode(defined('APP_CURRENCY') ? APP_CURRENCY : 'KWD') ?>;
 
 function partyIdSelected() {
     var el = document.getElementById('partyIdInput');
@@ -379,12 +451,20 @@ function setBalLabel(label, iconClass, text) {
 function updateFillDueButton() {
     var btn = document.getElementById('btnFillDue');
     if (!btn) return;
-    var show = partyIdSelected() && partyBalance > 0.001;
+    var hasPos = allocatePos && supplierPos.length > 0;
+    var show = partyIdSelected() && (partyBalance > 0.001 || hasPos);
     btn.classList.toggle('show', show);
     btn.disabled = !show;
+    btn.innerHTML = hasPos
+        ? '<i class="bi bi-magic"></i> Fill POs'
+        : '<i class="bi bi-magic"></i> Fill due';
 }
 
 function fillDueAmount() {
+    if (allocatePos && supplierPos.length) {
+        fillAllPoRemaining();
+        return;
+    }
     if (!(partyBalance > 0.001)) return;
     var amtEl = document.getElementById('amt1');
     if (!amtEl) return;
@@ -456,27 +536,6 @@ function showPartyBalance(balOverride) {
         .catch(function() { box.classList.remove('show'); updateFillDueButton(); });
 }
 
-function restoreLastAccount() {
-    var sel = document.getElementById('accountSelect');
-    if (!sel) return;
-    try {
-        var saved = localStorage.getItem(lastAccountKey);
-        if (!saved) return;
-        for (var i = 0; i < sel.options.length; i++) {
-            if (sel.options[i].value === saved) {
-                sel.selectedIndex = i;
-                break;
-            }
-        }
-    } catch (e) { /* private mode */ }
-}
-
-function persistLastAccount() {
-    var sel = document.getElementById('accountSelect');
-    if (!sel || !sel.value) return;
-    try { localStorage.setItem(lastAccountKey, sel.value); } catch (e) { /* ignore */ }
-}
-
 function escapeHtml(text) {
     return String(text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -496,6 +555,9 @@ function updatePartyHighlight() {
 }
 
 function partyBalanceHint(bal) {
+    if (bal === null || bal === undefined || bal === '') {
+        return '';
+    }
     var curr = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
     var n = parseFloat(bal) || 0;
     if (isPaymentOut) {
@@ -508,19 +570,25 @@ function partyBalanceHint(bal) {
     return '<span class="pf-party-clear">Account clear</span>';
 }
 
-function renderPartyDropdown(parties) {
+function renderPartyDropdown(parties, keepHighlight) {
     var drop = document.getElementById('partyDropdown');
     if (!parties.length) { drop.style.display = 'none'; setPartyDropdownOpen(false); partyHighlightIdx = -1; return; }
     partyStore.results = parties;
-    partyHighlightIdx = parties.length === 1 ? 0 : -1;
+    if (!keepHighlight) {
+        partyHighlightIdx = parties.length === 1 ? 0 : -1;
+    } else if (partyHighlightIdx >= parties.length) {
+        partyHighlightIdx = parties.length === 1 ? 0 : -1;
+    }
     drop.innerHTML = parties.map(function(p, idx) {
         var meta = [];
         if (p.type === 'freight_forwarder') meta.push('<span style="color:#0284c7;font-weight:600;">Freight forwarder</span>');
-        if (p.phone) meta.push(escapeHtml(p.phone));
-        meta.push(partyBalanceHint(p.balance));
+        if (p.type === 'customer' && isPaymentOut) meta.push('<span style="color:#059669;font-weight:600;">Customer</span>');
+        if (p.type === 'supplier' && isPaymentOut) meta.push('<span style="color:#b45309;font-weight:600;">Supplier</span>');
+        var hint = partyBalanceHint(p.balance);
+        if (hint) meta.push(hint);
         return '<div class="pf-party-item' + (idx === partyHighlightIdx ? ' active' : '') + '" data-idx="' + idx + '" role="option">'
             + '<strong>' + escapeHtml(p.name) + '</strong>'
-            + '<div class="pf-party-meta">' + meta.join(' · ') + '</div>'
+            + (meta.length ? '<div class="pf-party-meta">' + meta.join(' · ') + '</div>' : '')
             + '</div>';
     }).join('');
     drop.style.display = 'block';
@@ -536,7 +604,9 @@ function selectParty(party, focusAmount) {
     document.getElementById('partyDropdown').style.display = 'none';
     setPartyDropdownOpen(false);
     partyHighlightIdx = -1;
-    showPartyBalance(party.balance);
+    // Ledger Due is loaded once for the selected party (not for every dropdown row).
+    showPartyBalance();
+    loadSupplierPos(party.id);
     if (focusAmount !== false) {
         var amtEl = document.getElementById('amt1');
         if (amtEl) {
@@ -551,16 +621,308 @@ function selectParty(party, focusAmount) {
 function searchParties(q) {
     if (partySearchAbort) partySearchAbort.abort();
     partySearchAbort = new AbortController();
-    fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(q) + '&type=' + encodeURIComponent(partySearchType), {
-        signal: partySearchAbort.signal
-    })
+    var signal = partySearchAbort.signal;
+    fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(q)
+        + '&type=' + encodeURIComponent(partySearchType) + '&balances=0', { signal: signal })
         .then(function(r) { return r.json(); })
-        .then(function(parties) { renderPartyDropdown(parties); })
+        .then(function(parties) {
+            renderPartyDropdown(parties);
+        })
         .catch(function(err) {
             if (err && err.name !== 'AbortError') {
                 document.getElementById('partyDropdown').style.display = 'none';
                 setPartyDropdownOpen(false);
             }
+        });
+}
+
+function poMoney(n) {
+    return (parseFloat(n) || 0).toFixed(3);
+}
+
+function signedAdjForRow(rowEl) {
+    if (!rowEl) return 0;
+    var signBtn = rowEl.querySelector('.pf-pos-sign.is-on');
+    var magEl = rowEl.querySelector('.pf-pos-adj-amt');
+    var mag = Math.abs(parseFloat(magEl && magEl.value) || 0);
+    if (mag < 0.0005) return 0;
+    return (signBtn && signBtn.classList.contains('minus')) ? -mag : mag;
+}
+
+function remainingAfterAdj(po, adj) {
+    return Math.max(0, (parseFloat(po.unpaid_kwd) || 0) + (parseFloat(adj) || 0));
+}
+
+function setPoAdjFromSigned(row, adj) {
+    adj = Math.round((parseFloat(adj) || 0) * 1000) / 1000;
+    var mag = Math.abs(adj);
+    var isMinus = adj < -0.0005;
+    row.querySelectorAll('.pf-pos-sign').forEach(function(btn) {
+        var sign = btn.getAttribute('data-sign');
+        btn.classList.toggle('is-on', isMinus ? sign === 'minus' : sign === 'plus');
+    });
+    var magEl = row.querySelector('.pf-pos-adj-amt');
+    if (magEl) magEl.value = poMoney(mag);
+}
+
+function formatTtRate(rate) {
+    var s = rate.toFixed(6);
+    s = s.replace(/0+$/, '').replace(/\.$/, '');
+    return s;
+}
+
+function applyTtBank(poId) {
+    var row = document.querySelector('#poList .pf-pos-row[data-po-id="' + poId + '"]');
+    if (!row) return;
+    var po = supplierPos.find(function(p) { return String(p.id) === String(poId); });
+    if (!po) return;
+    var bankEl = row.querySelector('.pf-pos-tt-bank');
+    var fEl = row.querySelector('.pf-pos-tt-foreign');
+    var rateEl = row.querySelector('.pf-pos-tt-rate');
+    var bank = parseFloat(bankEl && bankEl.value) || 0;
+    var foreign = parseFloat(fEl && fEl.value) || 0;
+    if (foreign < 0.001) {
+        foreign = parseFloat(po.remaining_foreign) || parseFloat(po.subtotal_foreign) || 0;
+    }
+    if (rateEl) {
+        if (bank > 0.001 && foreign > 0.001) {
+            rateEl.textContent = '1 ' + (po.currency || '') + ' = ' + formatTtRate(bank / foreign) + ' KWD';
+        } else {
+            rateEl.textContent = '';
+        }
+    }
+    if (bank <= 0.001) {
+        syncPoPayTotal();
+        return;
+    }
+    var unpaid = parseFloat(po.unpaid_kwd) || 0;
+    setPoAdjFromSigned(row, bank - unpaid);
+    var payEl = row.querySelector('.pf-pos-pay');
+    if (payEl) {
+        payEl.value = poMoney(bank);
+        payEl.dataset.autofill = '1';
+    }
+    syncPoPayTotal();
+}
+
+function syncPoPayTotal() {
+    var amtEl = document.getElementById('amt1');
+    var sumBox = document.getElementById('poSum');
+    var sumLabel = document.getElementById('poSumLabel');
+    var sumAmt = document.getElementById('poSumAmt');
+    var total = 0;
+    var count = 0;
+    document.querySelectorAll('#poList .pf-pos-row').forEach(function(row) {
+        var payEl = row.querySelector('.pf-pos-pay');
+        var pay = parseFloat(payEl && payEl.value) || 0;
+        var adj = signedAdjForRow(row);
+        var adjHidden = row.querySelector('.pf-pos-adj-hidden');
+        if (adjHidden) adjHidden.value = adj.toFixed(3);
+        var po = supplierPos.find(function(p) { return String(p.id) === String(row.getAttribute('data-po-id')); });
+        if (po && payEl) {
+            var cap = remainingAfterAdj(po, adj);
+            if (pay > cap + 0.0005) {
+                payEl.value = poMoney(cap);
+                pay = cap;
+            }
+        }
+        row.classList.toggle('is-paying', pay > 0.001);
+        var lineEl = row.querySelector('.pf-pos-total');
+        if (lineEl) {
+            lineEl.textContent = pay > 0.001
+                ? ('This payment: ' + posMoneyCurr + ' ' + poMoney(pay)
+                    + (Math.abs(adj) > 0.001 ? ('  ·  adj ' + (adj > 0 ? '+' : '') + poMoney(adj)) : ''))
+                : '';
+        }
+        if (pay > 0.001) {
+            total += pay;
+            count += 1;
+        }
+    });
+    total = Math.round(total * 1000) / 1000;
+    if (sumBox) {
+        sumBox.style.display = count > 0 ? 'flex' : 'none';
+        if (sumLabel) sumLabel.textContent = 'Paying ' + count + ' PO' + (count === 1 ? '' : 's');
+        if (sumAmt) sumAmt.textContent = posMoneyCurr + ' ' + poMoney(total);
+    }
+    if (amtEl) {
+        if (count > 0) {
+            amtEl.value = poMoney(total);
+            amtEl.readOnly = true;
+            amtEl.title = 'Total from selected purchase orders';
+        } else {
+            amtEl.readOnly = false;
+            amtEl.title = '';
+        }
+    }
+}
+
+function fillPoRemaining(poId) {
+    var row = document.querySelector('#poList .pf-pos-row[data-po-id="' + poId + '"]');
+    if (!row) return;
+    var po = supplierPos.find(function(p) { return String(p.id) === String(poId); });
+    if (!po) return;
+    if (po.kwd_unknown) return;
+    var adj = signedAdjForRow(row);
+    var payEl = row.querySelector('.pf-pos-pay');
+    if (payEl) {
+        payEl.value = poMoney(remainingAfterAdj(po, adj));
+        payEl.dataset.autofill = '1';
+    }
+    syncPoPayTotal();
+}
+
+function fillAllPoRemaining() {
+    supplierPos.forEach(function(po) { fillPoRemaining(po.id); });
+}
+
+function setPoAdjSign(poId, sign) {
+    var row = document.querySelector('#poList .pf-pos-row[data-po-id="' + poId + '"]');
+    if (!row) return;
+    row.querySelectorAll('.pf-pos-sign').forEach(function(btn) {
+        btn.classList.toggle('is-on', btn.getAttribute('data-sign') === sign);
+    });
+    var payEl = row.querySelector('.pf-pos-pay');
+    if (payEl && payEl.dataset.autofill === '1') {
+        fillPoRemaining(poId);
+        return;
+    }
+    syncPoPayTotal();
+}
+
+function onPoAdjMagChange(poId) {
+    var row = document.querySelector('#poList .pf-pos-row[data-po-id="' + poId + '"]');
+    if (!row) return;
+    var payEl = row.querySelector('.pf-pos-pay');
+    if (payEl && (payEl.dataset.autofill === '1' || payEl.value === '')) {
+        fillPoRemaining(poId);
+        return;
+    }
+    syncPoPayTotal();
+}
+
+function clearSupplierPos() {
+    supplierPos = [];
+    if (posAbort) {
+        try { posAbort.abort(); } catch (e) { /* ignore */ }
+        posAbort = null;
+    }
+    var card = document.getElementById('poCard');
+    var list = document.getElementById('poList');
+    var fillAll = document.getElementById('btnFillAllPos');
+    var sumBox = document.getElementById('poSum');
+    if (card) card.classList.remove('show');
+    if (list) list.innerHTML = '';
+    if (fillAll) fillAll.style.display = 'none';
+    if (sumBox) sumBox.style.display = 'none';
+    var amtEl = document.getElementById('amt1');
+    if (amtEl) {
+        amtEl.readOnly = false;
+        amtEl.title = '';
+    }
+    updateFillDueButton();
+}
+
+function renderSupplierPos(orders) {
+    var card = document.getElementById('poCard');
+    var list = document.getElementById('poList');
+    var fillAll = document.getElementById('btnFillAllPos');
+    if (!card || !list) return;
+    supplierPos = orders || [];
+    card.classList.add('show');
+    if (!supplierPos.length) {
+        list.innerHTML = '<div class="pf-pos-empty">No unpaid purchase orders for this party. Enter an amount below for a normal Payment Out.</div>';
+        if (fillAll) fillAll.style.display = 'none';
+        syncPoPayTotal();
+        updateFillDueButton();
+        return;
+    }
+    if (fillAll) fillAll.style.display = 'inline-flex';
+    list.innerHTML = supplierPos.map(function(po) {
+        var st = po.status === 'paid' ? 'paid' : 'draft';
+        var stLabel = st === 'paid' ? 'Partial / awaiting goods' : 'Draft';
+        var foreign = '';
+        if (po.currency && po.currency !== 'KWD' && (parseFloat(po.subtotal_foreign) || 0) > 0) {
+            foreign = '<span>' + escapeHtml(po.currency) + ' <strong>' + poMoney(po.subtotal_foreign) + '</strong></span>';
+        }
+        var dateLabel = '';
+        if (po.date) {
+            var d = new Date(po.date + 'T00:00:00');
+            dateLabel = isNaN(d.getTime()) ? po.date : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+        var kwdUnknown = !!po.kwd_unknown;
+        var remF = parseFloat(po.remaining_foreign) || parseFloat(po.subtotal_foreign) || 0;
+        var ttBox = '';
+        if (po.currency && po.currency !== 'KWD' && remF > 0.001) {
+            ttBox = '<div class="pf-pos-tt">'
+                + '<div class="pf-pos-tt-title"><i class="bi bi-currency-exchange"></i> TT rate — type what the bank took</div>'
+                + '<div class="pf-pos-tt-grid">'
+                + '<div class="pf-field"><label>Foreign this TT (' + escapeHtml(po.currency) + ')</label>'
+                + '<input type="number" class="pf-pos-tt-foreign" step="0.001" min="0" value="' + poMoney(remF) + '" inputmode="decimal">'
+                + '</div>'
+                + '<div class="pf-field"><label>Bank took (KWD)</label>'
+                + '<input type="number" class="pf-pos-tt-bank" step="0.001" min="0" placeholder="Exact bank KWD" inputmode="decimal">'
+                + '</div></div>'
+                + '<div class="pf-pos-tt-rate"></div>'
+                + '</div>';
+        }
+        return '<div class="pf-pos-row" data-po-id="' + po.id + '">'
+            + '<div class="pf-pos-meta">'
+            + '<span class="pf-pos-no">' + escapeHtml(po.po_no) + '</span>'
+            + (dateLabel ? '<span class="pf-pos-date">' + escapeHtml(dateLabel) + '</span>' : '')
+            + '<span class="pf-pos-cur">' + escapeHtml(po.currency || 'KWD') + '</span>'
+            + '<span class="pf-pos-st ' + st + '">' + stLabel + '</span>'
+            + '</div>'
+            + '<div class="pf-pos-figs">'
+            + '<span>Total <strong>' + (kwdUnknown ? '—' : poMoney(po.total_kwd)) + '</strong></span>'
+            + '<span>Paid <strong>' + poMoney(po.paid_kwd) + '</strong></span>'
+            + '<span>Unpaid <strong>' + (kwdUnknown ? '—' : poMoney(po.unpaid_kwd)) + '</strong></span>'
+            + foreign
+            + '</div>'
+            + ttBox
+            + '<div class="pf-pos-grid">'
+            + '<div class="pf-field"><label>Pay amount</label>'
+            + '<input type="number" class="pf-pos-pay" name="po_pay[' + po.id + '][amount]" step="0.001" min="0" placeholder="0.000" inputmode="decimal">'
+            + '</div>'
+            + '<div class="pf-field"><label>Bank adj. (+ / −)</label>'
+            + '<div class="pf-pos-adj">'
+            + '<button type="button" class="pf-pos-sign plus is-on" data-sign="plus" data-po-id="' + po.id + '" title="Add (bank fee)">+</button>'
+            + '<button type="button" class="pf-pos-sign minus" data-sign="minus" data-po-id="' + po.id + '" title="Subtract (rounding / discount)">−</button>'
+            + '<input type="number" class="pf-pos-adj-amt" step="0.001" min="0" value="0.000" inputmode="decimal" title="Adjustment amount">'
+            + '<input type="hidden" class="pf-pos-adj-hidden" name="po_pay[' + po.id + '][adjustment]" value="0.000">'
+            + '</div></div>'
+            + (kwdUnknown ? '' : '<button type="button" class="pf-pos-duebtn" data-fill-po="' + po.id + '">Pay unpaid</button>')
+            + '</div>'
+            + '<div class="pf-pos-total"></div>'
+            + '</div>';
+    }).join('');
+    syncPoPayTotal();
+    updateFillDueButton();
+}
+
+function loadSupplierPos(partyId) {
+    if (!allocatePos) return;
+    var id = parseInt(partyId, 10) || 0;
+    if (id <= 0) {
+        clearSupplierPos();
+        return;
+    }
+    if (posAbort) {
+        try { posAbort.abort(); } catch (e) { /* ignore */ }
+    }
+    posAbort = new AbortController();
+    var card = document.getElementById('poCard');
+    var list = document.getElementById('poList');
+    if (card) card.classList.add('show');
+    if (list) list.innerHTML = '<div class="pf-pos-empty">Loading purchase orders…</div>';
+    fetch('?page=payments&action=supplierOpenPos&id=' + encodeURIComponent(id), { signal: posAbort.signal })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderSupplierPos((data && data.orders) ? data.orders : []);
+        })
+        .catch(function(err) {
+            if (err && err.name === 'AbortError') return;
+            clearSupplierPos();
         });
 }
 
@@ -575,6 +937,7 @@ function initPartySearch() {
         document.getElementById('partyBal').classList.remove('show','owes','youowe','clear');
         partyBalance = 0;
         updateFillDueButton();
+        clearSupplierPos();
         clearTimeout(partyTimer);
         var q = input.value.trim();
         if (q.length < 1) {
@@ -583,7 +946,7 @@ function initPartySearch() {
             partyHighlightIdx = -1;
             return;
         }
-        partyTimer = setTimeout(function() { searchParties(q); }, 150);
+        partyTimer = setTimeout(function() { searchParties(q); }, 300);
     });
 
     input.addEventListener('keydown', function(e) {
@@ -644,13 +1007,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var chequeToggle = document.getElementById('chequeToggle');
     var btnFillDue = document.getElementById('btnFillDue');
 
-    restoreLastAccount();
-
     if (accountSelect) {
-        accountSelect.addEventListener('change', function() {
-            onAccountChange();
-            persistLastAccount();
-        });
+        accountSelect.addEventListener('change', onAccountChange);
     }
     if (chequeToggle) {
         chequeToggle.addEventListener('click', function(e) {
@@ -658,8 +1016,47 @@ document.addEventListener('DOMContentLoaded', function() {
             toggleCheque();
         });
     }
+
     if (btnFillDue) {
         btnFillDue.addEventListener('click', fillDueAmount);
+    }
+
+    var btnFillAllPos = document.getElementById('btnFillAllPos');
+    if (btnFillAllPos) {
+        btnFillAllPos.addEventListener('click', fillAllPoRemaining);
+    }
+    var poList = document.getElementById('poList');
+    if (poList) {
+        poList.addEventListener('click', function(e) {
+            var signBtn = e.target.closest('.pf-pos-sign');
+            if (signBtn) {
+                e.preventDefault();
+                setPoAdjSign(signBtn.getAttribute('data-po-id'), signBtn.getAttribute('data-sign'));
+                return;
+            }
+            var fillBtn = e.target.closest('[data-fill-po]');
+            if (fillBtn) {
+                e.preventDefault();
+                fillPoRemaining(fillBtn.getAttribute('data-fill-po'));
+            }
+        });
+        poList.addEventListener('input', function(e) {
+            var row = e.target.closest('.pf-pos-row');
+            if (!row) return;
+            var poId = row.getAttribute('data-po-id');
+            if (e.target.classList.contains('pf-pos-pay')) {
+                e.target.dataset.autofill = '0';
+                syncPoPayTotal();
+                return;
+            }
+            if (e.target.classList.contains('pf-pos-tt-bank') || e.target.classList.contains('pf-pos-tt-foreign')) {
+                applyTtBank(poId);
+                return;
+            }
+            if (e.target.classList.contains('pf-pos-adj-amt')) {
+                onPoAdjMagChange(poId);
+            }
+        });
     }
 
     if (payForm) {
@@ -667,6 +1064,8 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.addEventListener('click', function() {
                 var pm = document.getElementById('printMode');
                 if (pm) pm.value = btn.getAttribute('data-print-mode') || '0';
+                var as = document.getElementById('afterSave');
+                if (as) as.value = btn.getAttribute('data-after-save') || '';
             });
         });
 
@@ -676,11 +1075,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('partySearch').focus();
                 return;
             }
+            if (allocatePos) {
+                syncPoPayTotal();
+            }
             if (payForm.dataset.submitting === '1') {
                 e.preventDefault();
                 return;
             }
-            persistLastAccount();
             payForm.dataset.submitting = '1';
             payForm.querySelectorAll('button[type="submit"]').forEach(function(btn) {
                 btn.disabled = true;
@@ -691,19 +1092,21 @@ document.addEventListener('DOMContentLoaded', function() {
             if (((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) || e.key === 'F12') {
                 e.preventDefault();
                 var pm = document.getElementById('printMode');
-                if (pm) pm.value = '2';
+                if (pm) pm.value = '1';
+                var as = document.getElementById('afterSave');
+                if (as) as.value = '';
                 if (typeof payForm.requestSubmit === 'function') {
                     payForm.requestSubmit();
                 } else {
-                    var tb = document.getElementById('btnPayThermal');
-                    if (tb) tb.click();
+                    var pb = payForm.querySelector('button[type="submit"][data-print-mode="1"]');
+                    if (pb) pb.click();
                 }
             }
         }, true);
     }
 
     // Page-entry reveal animation (staggered)
-    var revealTargets = document.querySelectorAll('.pf-meta, .pf-ref, .pf-card, .pf-foot');
+    var revealTargets = document.querySelectorAll('.pf-ref, .pf-card, .pf-foot');
     revealTargets.forEach(function(el, i) {
         el.classList.add('pf-anim-enter');
         setTimeout(function() { el.classList.add('is-visible'); }, 30 + (i * 55));
@@ -712,9 +1115,11 @@ document.addEventListener('DOMContentLoaded', function() {
     onAccountChange();
     initPartySearch();
     var partySearchEl = document.getElementById('partySearch');
+    var preselectBal = <?= isset($preselectBalance) && $preselectBalance !== null ? json_encode((float) $preselectBalance) : 'null' ?>;
     if (partyIdSelected()) {
         if (partySearchEl && partySearchEl.value) partySearchEl.title = partySearchEl.value;
-        showPartyBalance();
+        showPartyBalance(preselectBal);
+        loadSupplierPos(document.getElementById('partyIdInput').value);
     }
     updateFillDueButton();
     setTimeout(function() {

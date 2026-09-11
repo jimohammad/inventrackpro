@@ -25,10 +25,14 @@ class IMEIController extends BaseController {
         $filters = [
             'search'       => $this->input('search', '', 'get'),
             'status'       => $this->input('status', '', 'get'),
+            'item_id'      => $this->inputInt('item_id', 0, 'get') ?: null,
             'warehouse_id' => isset($_GET['warehouse_id'])
                 ? $this->inputInt('warehouse_id', 0, 'get')
                 : Auth::warehouseId(),
         ];
+        if (empty($filters['item_id'])) {
+            unset($filters['item_id']);
+        }
 
         $imeis      = $this->imeiModel->getAll($filters);
         $warehouses = self::getWarehouses();
@@ -118,128 +122,21 @@ class IMEIController extends BaseController {
     }
 
     /**
-     * Bulk IMEI registration page — scan IMEIs for existing stock
+     * Removed: free-form IMEI Register (scan onto existing stock without a purchase).
+     * Serials enter stock via purchase scan, sale return, or Stock Audit register-missing.
      */
     public function register(): void {
-        Auth::authorize('imei', 'add');
-
-        $db = Database::getInstance();
-        // Get IMEI-trackable items with current stock in this warehouse
-        $whId = Auth::warehouseId();
-        $items = $db->fetchAll(
-            "SELECT i.id, i.name, i.sku, i.sale_price, COALESCE(s.quantity, 0) as stock,
-                    (SELECT COUNT(*) FROM imei_records ir WHERE ir.item_id = i.id AND ir.warehouse_id = ? AND ir.status IN ('in_stock','returned')) as imei_count
-             FROM items i
-             LEFT JOIN stock s ON s.item_id = i.id AND s.warehouse_id = ?
-             WHERE i.is_active = 1 AND i.has_imei = 1
-             ORDER BY i.name",
-            [$whId, $whId]
-        );
-
-        $pageTitle = 'Register IMEI - Stock';
-        $page      = 'imei';
-
-        ob_start();
-        include __DIR__ . '/../views/imei/register.php';
-        $content = ob_get_clean();
-        include __DIR__ . '/../views/layout.php';
+        Auth::authorize('imei', 'view');
+        $this->flash('error', 'IMEI Register has been removed. Scan serials on the purchase invoice.');
+        $this->redirect('?page=purchases');
     }
 
-    /**
-     * AJAX: save a single scanned IMEI
-     */
+    /** Removed with IMEI Register. Old scan UI must not write stock serials. */
     public function saveImei(): void {
         Auth::authorize('imei', 'add');
         header('Content-Type: application/json');
-
-        if (!$this->isPost()) { echo json_encode(['error' => 'POST required']); return; }
-
-        $imei    = strtoupper(trim($this->input('imei')));
-        $itemId  = $this->inputInt('item_id');
-        $whId    = Auth::warehouseId();
-
-        if (!$imei || !$itemId) {
-            echo json_encode(['error' => 'IMEI and item are required']);
-            return;
-        }
-
-        // Allow phone IMEIs (digits only) and laptop/device serials (alphanumeric + / -)
-        if (!preg_match('/^[A-Z0-9\\/\\-]+$/i', $imei)) {
-            echo json_encode(['error' => 'Serial contains invalid characters']);
-            return;
-        }
-
-        $db = Database::getInstance();
-
-        // Min length: 6 for serials, 13-15 for numeric IMEIs
-        $isNumeric = ctype_digit($imei);
-        $itemRow  = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$itemId]);
-        $itemName = strtolower($itemRow['name'] ?? '');
-        $minLen   = $isNumeric ? ((strpos($itemName, 'h40') !== false) ? 13 : 15) : 6;
-
-        if (strlen($imei) < $minLen) {
-            echo json_encode(['error' => "Serial too short (" . strlen($imei) . " chars) — need at least {$minLen}"]);
-            return;
-        }
-
-        // Check-then-insert must be atomic: lock any existing row so two concurrent
-        // scans of the same IMEI cannot both pass the duplicate check.
-        try {
-            $db->beginTransaction();
-            $existing = $db->fetchOne("SELECT id, status, item_id, warehouse_id, sale_id FROM imei_records WHERE imei = ? FOR UPDATE", [$imei]);
-            if ($existing) {
-                if ($existing['status'] === 'in_stock') {
-                    // Already in stock — real duplicate, block it
-                    $db->rollback();
-                    $existingItem = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
-                    echo json_encode(['error' => "Already in stock — {$existingItem['name']}"]);
-                    return;
-                }
-
-                // Reject re-stock if this IMEI is still linked to an active sale line.
-                if (($existing['status'] ?? '') === 'sold') {
-                    $hasLiveSaleLink = $db->fetchOne(
-                        "SELECT 1 AS ok
-                         FROM sale_item_imei sii
-                         JOIN sale_items si ON si.id = sii.sale_item_id
-                         JOIN sales s ON s.id = si.sale_id
-                         WHERE sii.imei_id = ? AND s.status != 'cancelled'
-                         LIMIT 1",
-                        [(int) $existing['id']]
-                    );
-                    if ($hasLiveSaleLink) {
-                        $db->rollback();
-                        echo json_encode(['error' => 'Cannot re-stock: this IMEI is linked to an active sale. Use a return/cancellation flow instead.']);
-                        return;
-                    }
-                }
-
-                // Previously sold or transferred — re-stock it
-                $db->execute(
-                    "UPDATE imei_records SET item_id = ?, warehouse_id = ?, status = 'in_stock', notes = 'Re-stocked via bulk scan', updated_at = NOW() WHERE id = ?",
-                    [$itemId, $whId, $existing['id']]
-                );
-            } else {
-                $db->insert(
-                    "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at) VALUES (?, ?, ?, 'in_stock', 'Bulk scan registration', NOW())",
-                    [$imei, $itemId, $whId]
-                );
-            }
-            $db->commit();
-        } catch (Exception $ex) {
-            $db->rollback();
-            error_log('saveImei failed: ' . $ex->getMessage());
-            echo json_encode(['error' => 'Could not save IMEI. Please retry.']);
-            return;
-        }
-
-        // Get updated count
-        $count = $db->fetchOne(
-            "SELECT COUNT(*) as c FROM imei_records WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
-            [$itemId, $whId]
-        );
-
-        echo json_encode(['success' => true, 'imei' => $imei, 'count' => (int)$count['c']]);
+        http_response_code(410);
+        echo json_encode(['error' => 'IMEI Register has been removed. Scan serials on the purchase invoice.']);
     }
 
     /**
@@ -306,17 +203,12 @@ class IMEIController extends BaseController {
 
         try {
             $db->beginTransaction();
-            $existing = $db->fetchOne("SELECT id, status, item_id FROM imei_records WHERE imei = ? FOR UPDATE", [$imei]);
-            if ($existing) {
+            $result = $this->imeiModel->attachToPurchase($imei, $itemId, $whId, $purchaseId);
+            if (empty($result['ok'])) {
                 $db->rollback();
-                $itemName = $db->fetchOne("SELECT name FROM items WHERE id = ?", [$existing['item_id']]);
-                echo json_encode(['error' => "IMEI already exists — {$itemName['name']} ({$existing['status']})"]);
+                echo json_encode(['error' => $result['msg'] ?? 'Could not save IMEI.']);
                 return;
             }
-            $db->insert(
-                "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at) VALUES (?, ?, ?, ?, 'in_stock', NOW())",
-                [$imei, $itemId, $whId, $purchaseId]
-            );
             $db->commit();
         } catch (Exception $ex) {
             $db->rollback();
@@ -330,7 +222,12 @@ class IMEIController extends BaseController {
             [$purchaseId, $itemId]
         );
 
-        echo json_encode(['success' => true, 'imei' => $imei, 'count' => (int)$count['c']]);
+        echo json_encode([
+            'success'   => true,
+            'imei'      => $imei,
+            'count'     => (int)$count['c'],
+            'restocked' => !empty($result['restocked']),
+        ]);
     }
 
     /**
@@ -398,16 +295,11 @@ class IMEIController extends BaseController {
                 }
                 $seen[$imei] = true;
 
-                $existing = $db->fetchOne("SELECT id, status FROM imei_records WHERE imei = ?", [$imei]);
-                if ($existing) {
-                    $skipped[] = ['imei' => $imei, 'reason' => 'Already in system (status: ' . $existing['status'] . ')'];
+                $attach = $this->imeiModel->attachToPurchase($imei, $itemId, $whId, $purchaseId);
+                if (empty($attach['ok'])) {
+                    $skipped[] = ['imei' => $imei, 'reason' => $attach['msg'] ?? 'Could not save'];
                     continue;
                 }
-
-                $db->insert(
-                    "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status, created_at) VALUES (?, ?, ?, ?, 'in_stock', NOW())",
-                    [$imei, $itemId, $whId, $purchaseId]
-                );
                 $saved[] = $imei;
             }
             $db->commit();
@@ -461,12 +353,18 @@ class IMEIController extends BaseController {
     private function resolveSaleLookupImei(string $imei): array {
         $db  = Database::getInstance();
         $whId = Auth::warehouseId();
+        Item::ensureSerialKindColumn();
+        $imei = ImeiFormat::normalize($imei);
 
         $row = $db->fetchOne(
             "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
-                    i.name as item_name, i.sale_price, i.sku, i.has_imei
+                    i.name as item_name, i.sale_price, i.sku, i.has_imei,
+                    COALESCE(i.serial_kind, 'phone') AS serial_kind,
+                    COALESCE(i.max_sale_qty, 0) AS max_sale_qty,
+                    COALESCE(c.name, '') AS category_name
              FROM imei_records ir
              JOIN items i ON i.id = ir.item_id
+             LEFT JOIN categories c ON c.id = i.category_id
              WHERE ir.imei = ?
              ORDER BY
                 CASE
@@ -494,9 +392,13 @@ class IMEIController extends BaseController {
 
             $row = $db->fetchOne(
                 "SELECT ir.id, ir.imei, ir.item_id, ir.status, ir.warehouse_id,
-                        i.name as item_name, i.sale_price, i.sku, i.has_imei
+                        i.name as item_name, i.sale_price, i.sku, i.has_imei,
+                        COALESCE(i.serial_kind, 'phone') AS serial_kind,
+                        COALESCE(i.max_sale_qty, 0) AS max_sale_qty,
+                        COALESCE(c.name, '') AS category_name
                  FROM imei_records ir
                  JOIN items i ON i.id = ir.item_id
+                 LEFT JOIN categories c ON c.id = i.category_id
                  WHERE ir.imei = ?
                  ORDER BY
                     CASE
@@ -522,13 +424,16 @@ class IMEIController extends BaseController {
         }
 
         return [
-            'found'      => true,
-            'imei'       => $row['imei'],
-            'item_id'    => (int) $row['item_id'],
-            'item_name'  => $row['item_name'],
-            'sale_price' => $row['sale_price'],
-            'sku'        => $row['sku'],
-            'has_imei'   => (int) $row['has_imei'],
+            'found'        => true,
+            'imei'         => $row['imei'],
+            'item_id'      => (int) $row['item_id'],
+            'item_name'    => $row['item_name'],
+            'sale_price'   => $row['sale_price'],
+            'sku'          => $row['sku'],
+            'has_imei'     => (int) $row['has_imei'],
+            'serial_kind'  => ImeiFormat::kindFromItem($row, (string) ($row['item_name'] ?? ''), (string) ($row['category_name'] ?? '')),
+            'category_name'=> (string) ($row['category_name'] ?? ''),
+            'max_sale_qty' => (int) ($row['max_sale_qty'] ?? 0),
         ];
     }
 
@@ -539,7 +444,7 @@ class IMEIController extends BaseController {
         $this->authorizeSaleImeiLookup();
         header('Content-Type: application/json');
 
-        $imei = strtoupper(trim($this->input('imei', '', 'get')));
+        $imei = ImeiFormat::normalize($this->input('imei', '', 'get'));
         if ($imei === '') {
             echo json_encode(['found' => false]);
             return;
@@ -580,7 +485,7 @@ class IMEIController extends BaseController {
             $body = json_decode((string) file_get_contents('php://input'), true);
             if (is_array($body['imeis'] ?? null)) {
                 foreach ($body['imeis'] as $part) {
-                    $part = strtoupper(trim((string) $part));
+                    $part = ImeiFormat::normalize((string) $part);
                     if ($part !== '') {
                         $rawList[] = $part;
                     }
@@ -590,7 +495,10 @@ class IMEIController extends BaseController {
 
         $unique = [];
         foreach ($rawList as $imei) {
-            $unique[$imei] = true;
+            $imei = ImeiFormat::normalize((string) $imei);
+            if ($imei !== '') {
+                $unique[$imei] = true;
+            }
         }
 
         return array_slice(array_keys($unique), 0, 50);
@@ -773,6 +681,32 @@ class IMEIController extends BaseController {
                     ];
                 }
 
+                $dumps = [];
+                try {
+                    $dumps = $db->fetchAll(
+                        "SELECT d.id, d.dump_no, d.date, d.status, d.grand_total, p.name AS party_name, di.unit_price
+                         FROM device_dump_items di
+                         JOIN device_dumps d ON d.id = di.dump_id
+                         LEFT JOIN parties p ON p.id = d.party_id
+                         WHERE di.imei_id = ?
+                         ORDER BY d.date, d.id",
+                        [$id]
+                    ) ?: [];
+                } catch (Throwable $e) {
+                    $dumps = [];
+                }
+                foreach ($dumps as $dp) {
+                    $voided = (($dp['status'] ?? '') === 'cancelled') ? ' (voided)' : '';
+                    $timeline[] = [
+                        'date'  => $dp['date'],
+                        'icon'  => 'bi-recycle',
+                        'color' => '#c2410c',
+                        'title' => 'Dump credit' . $voided,
+                        'desc'  => "Ref: {$e($dp['dump_no'])}<br>Party: {$e($dp['party_name'])}<br>Credit: " . APP_CURRENCY . ' ' . number_format((float) ($dp['unit_price'] ?? 0), DECIMAL_PLACES),
+                        'link'  => '?page=dumps&action=view&id=' . (int) $dp['id'],
+                    ];
+                }
+
                 // Sort timeline by date
                 usort($timeline, fn($a, $b) => strtotime($a['date']) - strtotime($b['date']));
             }
@@ -804,6 +738,10 @@ class IMEIController extends BaseController {
         $whId = Auth::warehouseId();
 
         $itemId = $this->inputInt('item_id', 0, 'get');
+        $whId   = (int) $whId;
+
+        require_once __DIR__ . '/../services/StockQuantityService.php';
+        StockQuantityService::ensureAdjustmentsSchema($db);
 
         // Single-item reconciliation page
         if ($itemId) {
@@ -827,10 +765,28 @@ class IMEIController extends BaseController {
                 [$itemId, $whId]
             );
 
+            $diag = null;
+            if ((int) $item['imei_count'] > (int) $item['stock']) {
+                $diag = StockQuantityService::imeiOverDiagnosis($db, $itemId, $whId);
+            }
+            $pendingWriteOff = StockQuantityService::pendingWriteOffPreview($db, $itemId, $whId);
+
             $pageTitle = 'Audit: ' . $item['name'];
             $page      = 'imei';
 
             ob_start();
+            if (!empty($diag)) {
+                include __DIR__ . '/../views/partials/imei_mismatch_diag.php';
+            }
+            if (StockQuantityService::writeOffEnabled()
+                && (int) ($item['has_imei'] ?? 0) === 1
+                && (
+                    (int) ($pendingWriteOff['write_off_qty'] ?? 0) > 0
+                    || (int) ($pendingWriteOff['stock_qty'] ?? 0) > (int) ($pendingWriteOff['imei_count'] ?? 0)
+                )
+            ) {
+                include __DIR__ . '/../views/partials/imei_pending_writeoff.php';
+            }
             include __DIR__ . '/../views/imei/audit_item.php';
             $content = ob_get_clean();
             include __DIR__ . '/../views/layout.php';
@@ -845,7 +801,8 @@ class IMEIController extends BaseController {
                      WHERE ir.item_id = i.id AND ir.warehouse_id = ? AND ir.status IN ('in_stock','returned')) as imei_count
              FROM items i
              LEFT JOIN stock s ON s.item_id = i.id AND s.warehouse_id = ?
-             WHERE i.is_active = 1 AND i.has_imei = 1
+             WHERE i.has_imei = 1
+               AND (i.is_active = 1 OR COALESCE(s.quantity, 0) > 0)
              HAVING imei_count != stock
              ORDER BY ABS(imei_count - stock) DESC, i.name ASC",
             [$whId, $whId]
@@ -896,99 +853,97 @@ class IMEIController extends BaseController {
     }
 
     /**
-     * Admin: Delete all in_stock + returned IMEI records for an item in current warehouse.
-     * Use to wipe and re-scan from scratch. Sold/transferred/defective records are preserved (history).
-     * Join tables (return/sale/purchase/transfer IMEI links) are cleared first so FK constraints pass.
+     * AJAX bulk scan during audit — validate many pasted IMEIs in one request.
+     * Returns per-IMEI ok/code/msg using the same rules as auditScan().
      */
-    public function clearItemImeis(): void {
+    public function auditScanBulk(): void {
+        header('Content-Type: application/json');
+
         if (!Auth::isAdmin()) {
-            header('Content-Type: application/json');
             echo json_encode(['ok' => false, 'msg' => 'Admin only.']);
             return;
         }
         if (!$this->isPost()) {
-            header('Content-Type: application/json');
             echo json_encode(['ok' => false, 'msg' => 'POST required.']);
             return;
         }
-        header('Content-Type: application/json');
 
-        $itemId = $this->inputInt('item_id');
+        $itemId = $this->inputInt('item_id', 0);
         $whId   = Auth::warehouseId();
-        if (!$itemId) { echo json_encode(['ok' => false, 'msg' => 'Missing item_id.']); return; }
+        $raw    = $this->inputImeiBulk('imeis');
+
+        if ($itemId <= 0 || $raw === '') {
+            echo json_encode(['ok' => false, 'msg' => 'Missing parameters.']);
+            return;
+        }
+
+        $parts = preg_split('/[\r\n,;\s]+/', strtoupper($raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $unique = [];
+        foreach ($parts as $imei) {
+            $imei = trim($imei);
+            if ($imei === '' || !preg_match('/^[A-Z0-9\/\-]+$/i', $imei)) {
+                continue;
+            }
+            $unique[$imei] = true;
+        }
+        $imeis = array_slice(array_keys($unique), 0, 500);
+
+        if ($imeis === []) {
+            echo json_encode(['ok' => false, 'msg' => 'No valid IMEIs in paste.']);
+            return;
+        }
 
         $db = Database::getInstance();
-
-        // Count first for the response
-        $row = $db->fetchOne(
-            "SELECT COUNT(*) as c FROM imei_records
-             WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
-            [$itemId, $whId]
+        $placeholders = implode(',', array_fill(0, count($imeis), '?'));
+        $rows = $db->fetchAll(
+            "SELECT id, imei, status, warehouse_id, item_id FROM imei_records WHERE imei IN ($placeholders)",
+            $imeis
         );
-        $count = (int)($row['c'] ?? 0);
-        if ($count === 0) { echo json_encode(['ok' => true, 'deleted' => 0, 'msg' => 'Nothing to delete.']); return; }
-
-        $params = [$itemId, $whId];
-        $scope  = 'ir.item_id = ? AND ir.warehouse_id = ? AND ir.status IN (\'in_stock\',\'returned\')';
-
-        try {
-            $db->beginTransaction();
-
-            // IMEIs with sale/return history must NOT be hard-deleted — that would
-            // destroy the sale_item_imei / return_item_imei audit trail. Mark them
-            // 'transferred' instead so stock counts realign but history survives.
-            $histRow = $db->fetchOne(
-                "SELECT COUNT(*) as c FROM imei_records ir
-                 WHERE {$scope}
-                   AND (EXISTS (SELECT 1 FROM return_item_imei rii WHERE rii.imei_id = ir.id)
-                     OR EXISTS (SELECT 1 FROM sale_item_imei sii WHERE sii.imei_id = ir.id))",
-                $params
-            );
-            $preserved = (int)($histRow['c'] ?? 0);
-            if ($preserved > 0) {
-                $note = 'Removed from stock via IMEI clear on ' . date('Y-m-d H:i') . ' (history preserved)';
-                $db->execute(
-                    "UPDATE imei_records ir
-                     SET ir.status = 'transferred',
-                         ir.notes = CONCAT_WS(' | ', ir.notes, ?),
-                         ir.updated_at = NOW()
-                     WHERE {$scope}
-                       AND (EXISTS (SELECT 1 FROM return_item_imei rii WHERE rii.imei_id = ir.id)
-                         OR EXISTS (SELECT 1 FROM sale_item_imei sii WHERE sii.imei_id = ir.id))",
-                    array_merge([$note], $params)
-                );
-            }
-
-            // Remaining in-scope records have no sale/return history. Their join rows
-            // (purchase/transfer) reference imei_records without ON DELETE CASCADE.
-            $db->execute(
-                "DELETE sti FROM stock_transfer_imei sti
-                 INNER JOIN imei_records ir ON ir.id = sti.imei_id
-                 WHERE {$scope}",
-                $params
-            );
-            $db->execute(
-                "DELETE pii FROM purchase_item_imei pii
-                 INNER JOIN imei_records ir ON ir.id = pii.imei_id
-                 WHERE {$scope}",
-                $params
-            );
-            $db->execute(
-                "DELETE FROM imei_records
-                 WHERE item_id = ? AND warehouse_id = ? AND status IN ('in_stock','returned')",
-                $params
-            );
-            $db->commit();
-            $deleted = $count - $preserved;
-            $this->logActivity('clear_imeis', 'imei_records', $itemId,
-                "Cleared {$count} in_stock/returned IMEIs for item #{$itemId} in warehouse #{$whId}: {$deleted} deleted, {$preserved} marked transferred (sale/return history preserved)");
-            $msg = "Removed {$count} IMEI(s) from stock" . ($preserved > 0 ? " ({$preserved} kept for audit history)" : '') . '.';
-            echo json_encode(['ok' => true, 'deleted' => $count, 'msg' => $msg]);
-        } catch (Exception $e) {
-            $db->rollback();
-            error_log('clearItemImeis failed: ' . $e->getMessage());
-            echo json_encode(['ok' => false, 'msg' => 'Failed to clear IMEIs. Please retry.']);
+        $byImei = [];
+        foreach ($rows as $row) {
+            $byImei[strtoupper((string) $row['imei'])] = $row;
         }
+
+        $results = [];
+        $matched = 0;
+        foreach ($imeis as $imei) {
+            $rec = $byImei[$imei] ?? null;
+            if (!$rec) {
+                $results[] = ['imei' => $imei, 'ok' => false, 'code' => 'not_found', 'msg' => 'Not in system'];
+                continue;
+            }
+            if ((int) $rec['item_id'] !== $itemId) {
+                $results[] = ['imei' => $imei, 'ok' => false, 'code' => 'wrong_item', 'msg' => 'Different item'];
+                continue;
+            }
+            if (!in_array($rec['status'], ['in_stock', 'returned'], true)) {
+                $results[] = ['imei' => $imei, 'ok' => false, 'code' => 'wrong_status', 'msg' => 'Status: ' . $rec['status']];
+                continue;
+            }
+            if ((int) $rec['warehouse_id'] !== $whId) {
+                $results[] = ['imei' => $imei, 'ok' => false, 'code' => 'wrong_wh', 'msg' => 'Different warehouse'];
+                continue;
+            }
+            $matched++;
+            $results[] = ['imei' => $imei, 'ok' => true, 'id' => (int) $rec['id'], 'msg' => '✓'];
+        }
+
+        echo json_encode([
+            'ok'      => true,
+            'matched' => $matched,
+            'total'   => count($imeis),
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * Removed with IMEI Register. Old Clear buttons on that page must not wipe serials.
+     */
+    public function clearItemImeis(): void {
+        Auth::authorize('imei', 'add');
+        header('Content-Type: application/json');
+        http_response_code(410);
+        echo json_encode(['ok' => false, 'msg' => 'IMEI Register has been removed.']);
     }
 
     /**
@@ -1032,6 +987,102 @@ class IMEIController extends BaseController {
             $db->rollback();
             echo json_encode(['ok' => false, 'msg' => 'Failed: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * AJAX: register multiple missing IMEIs during audit paste (physical phones not yet in system).
+     */
+    public function auditRegisterBulk(): void {
+        header('Content-Type: application/json');
+
+        if (!Auth::isAdmin()) {
+            echo json_encode(['ok' => false, 'msg' => 'Admin only.']);
+            return;
+        }
+        if (!$this->isPost()) {
+            echo json_encode(['ok' => false, 'msg' => 'POST required.']);
+            return;
+        }
+
+        $itemId = $this->inputInt('item_id', 0);
+        $whId   = Auth::warehouseId();
+        $raw    = $this->inputImeiBulk('imeis');
+
+        if ($itemId <= 0 || $raw === '') {
+            echo json_encode(['ok' => false, 'msg' => 'Missing parameters.']);
+            return;
+        }
+
+        $parts = preg_split('/[\r\n,;\s]+/', strtoupper($raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $unique = [];
+        foreach ($parts as $imei) {
+            $imei = trim($imei);
+            if ($imei === '' || !preg_match('/^[A-Z0-9\/\-]+$/i', $imei)) {
+                continue;
+            }
+            $unique[$imei] = true;
+        }
+        $imeis = array_slice(array_keys($unique), 0, 100);
+
+        if ($imeis === []) {
+            echo json_encode(['ok' => false, 'msg' => 'No valid IMEIs to register.']);
+            return;
+        }
+
+        $db = Database::getInstance();
+        $placeholders = implode(',', array_fill(0, count($imeis), '?'));
+        $existingRows = $db->fetchAll(
+            "SELECT imei, status FROM imei_records WHERE imei IN ($placeholders)",
+            $imeis
+        );
+        $existing = [];
+        foreach ($existingRows as $row) {
+            $existing[strtoupper((string) $row['imei'])] = (string) $row['status'];
+        }
+
+        $registered = [];
+        $skipped = [];
+        $note = 'Registered during stock audit on ' . date('Y-m-d H:i');
+
+        $db->beginTransaction();
+        try {
+            foreach ($imeis as $imei) {
+                if (isset($existing[$imei])) {
+                    $skipped[] = ['imei' => $imei, 'msg' => 'Already exists (status: ' . $existing[$imei] . ')'];
+                    continue;
+                }
+                $newId = $db->insert(
+                    "INSERT INTO imei_records (imei, item_id, warehouse_id, status, notes, created_at)
+                     VALUES (?, ?, ?, 'in_stock', ?, NOW())",
+                    [$imei, $itemId, $whId, $note]
+                );
+                $registered[] = ['imei' => $imei, 'id' => (int) $newId];
+                $existing[$imei] = 'in_stock';
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('auditRegisterBulk failed: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Failed to register IMEIs. Please retry.']);
+            return;
+        }
+
+        if ($registered !== []) {
+            $this->logActivity(
+                'audit_register_imei_bulk',
+                'imei_records',
+                $itemId,
+                'Audit-registered ' . count($registered) . ' IMEI(s) for item #' . $itemId
+            );
+        }
+
+        echo json_encode([
+            'ok'         => true,
+            'registered' => count($registered),
+            'results'    => $registered,
+            'skipped'    => $skipped,
+            'msg'        => count($registered) . ' IMEI(s) registered',
+        ]);
     }
 
     /**
@@ -1094,5 +1145,82 @@ class IMEIController extends BaseController {
         }
 
         $this->redirect('?page=imei&action=audit');
+    }
+
+    /**
+     * Admin: write off book qty that is higher than scanned IMEIs (physically missing units).
+     */
+    public function auditWriteOffPending(): void {
+        require_once __DIR__ . '/../services/StockQuantityService.php';
+        if (!StockQuantityService::writeOffEnabled()) {
+            $this->flash('error', 'Stock qty write-off is temporarily disabled.');
+            $itemId = $this->inputInt('item_id');
+            $this->redirect($itemId > 0 ? ('?page=imei&action=audit&item_id=' . $itemId) : '?page=imei&action=audit');
+            return;
+        }
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=imei');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=imei&action=audit');
+            return;
+        }
+
+        $itemId = $this->inputInt('item_id');
+        $whId   = (int) Auth::warehouseId();
+        $notes  = trim($this->input('notes', ''));
+
+        if ($itemId <= 0 || $whId <= 0) {
+            $this->flash('error', 'Item and warehouse are required.');
+            $this->redirect('?page=imei&action=audit');
+            return;
+        }
+
+        $db = Database::getInstance();
+        StockQuantityService::ensureAdjustmentsSchema($db);
+
+        $db->beginTransaction();
+        try {
+            $result = StockQuantityService::writeOffImeiPending(
+                $db,
+                $itemId,
+                $whId,
+                Auth::id(),
+                $notes
+            );
+            $db->commit();
+            self::clearDashboardCache($whId);
+
+            $this->logActivity(
+                'stock_writeoff_imei_pending',
+                'stock',
+                $itemId,
+                'Wrote off ' . (int) $result['written_off']
+                . ' missing unit(s) for item #' . $itemId
+                . ' warehouse #' . $whId
+                . ' qty ' . (int) $result['before'] . ' → ' . (int) $result['after']
+            );
+
+            if (!empty($result['rebuilt_only'])) {
+                $this->flash(
+                    'success',
+                    'Stock qty was stale. Rebuilt to ' . (int) $result['after']
+                    . ' to match documents / IMEIs. No write-off row needed.'
+                );
+            } else {
+                $this->flash(
+                    'success',
+                    'Wrote off ' . (int) $result['written_off'] . ' missing unit(s). '
+                    . 'Qty is now ' . (int) $result['after'] . ' (matches scanned IMEIs).'
+                );
+            }
+        } catch (Exception $e) {
+            $db->rollbackQuiet();
+            $this->flash('error', $e->getMessage());
+        }
+
+        $this->redirect('?page=imei&action=audit&item_id=' . $itemId);
     }
 }

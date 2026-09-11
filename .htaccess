@@ -54,9 +54,11 @@
     Header set Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
 </IfModule>
 
-# Correct MIME for PWA manifest
+# Correct MIME for PWA manifest + local fonts
 <IfModule mod_mime.c>
     AddType application/manifest+json .webmanifest
+    AddType font/woff2 .woff2
+    AddType font/woff .woff
 </IfModule>
 
 # Deny direct access to sensitive paths
@@ -70,8 +72,15 @@ RedirectMatch 403 ^/\.git(?:/|$)
     RewriteRule ^\.gitignore - [F,L]
     RewriteRule ^\.user(\.ini)?$ - [F,L]
 
-    # Unified customer apps hub (single PWA → Warranty / Service / Pricelist)
-    RewriteRule ^apps/?$ apps.php [L,QSA,NC]
+    # Unified customer apps hub (single PWA → Warranty / Service / Pricelist / Order)
+    # Route via index.php (same pattern as /imei) so it works without a root apps.php upload
+    RewriteRule ^apps/?$ index.php?page=appshub [L,QSA,NC]
+    RewriteRule ^apps/order/status/?$ index.php?page=appsorder&action=status [L,QSA,NC]
+    RewriteRule ^apps/order/?$ index.php?page=appsorder [L,QSA,NC]
+
+    # Short URL for public order requests (prior confirmation)
+    RewriteRule ^order/status/?$ index.php?page=appsorder&action=status [L,QSA,NC]
+    RewriteRule ^order/?$ index.php?page=appsorder [L,QSA,NC]
 
     # Pretty URL for public IMEI warranty tracking
     # Never rewrite real files/dirs under /imei/ (PWA leftovers or future static assets)
@@ -91,6 +100,15 @@ RedirectMatch 403 ^/\.git(?:/|$)
 
     # Short URL for public customer statements (legacy 32-char hex or new base64url tokens)
     RewriteRule ^s/([A-Za-z0-9_-]{8,64})/?$ statement.php?token=$1 [L,QSA,NC]
+
+    # Manpower invoice-pack verification QR (signed token)
+    RewriteRule ^v/([A-Za-z0-9._-]+)/?$ index.php?page=verify&token=$1 [L,QSA,NC]
+
+    # PO bank-document pack verification QR (signed token)
+    RewriteRule ^d/([A-Za-z0-9._-]+)/?$ index.php?page=podocsverify&token=$1 [L,QSA,NC]
+
+    # Payment receipt verification QR (signed token)
+    RewriteRule ^r/([A-Za-z0-9._-]+)/?$ index.php?page=paymentverify&token=$1 [L,QSA,NC]
 </IfModule>
 
 <FilesMatch "^\.env|^\.ht|^\.user\.ini$|^user\.ini$|^\.user$|\.sql$|\.php\.bak$|\.php\.old$|\.php\.swp$|\.php~$|\.log$|\.bak$|\.old$|\.swp$|~$|\.(md|markdown|code-workspace|yml|yaml|toml|lock)$|^(composer\.json|composer\.lock|package\.json|package-lock\.json|yarn\.lock)$">

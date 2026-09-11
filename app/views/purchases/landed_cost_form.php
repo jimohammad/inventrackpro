@@ -4,39 +4,47 @@ $formAction = $isEdit ? '?page=landedcost&action=update' : '?page=landedcost&act
 $selectedPoIds = $selectedPoIds ?? [];
 $existingChargesMap = $existingChargesMap ?? [];
 $partnerLabel = !empty($importPartner['name']) ? $importPartner['name'] : 'Partner';
+$hkPartyOptions = !empty($hkFreightForwarders) ? $hkFreightForwarders : ($freightForwarders ?? []);
+$hkPartyOptionLabel = static function (array $p): string {
+    $name = (string) ($p['name'] ?? '');
+    $code = trim((string) ($p['party_code'] ?? ''));
+    return $code !== '' ? $name . ' · ' . $code : $name;
+};
+$hkPartyOptionsHtml = '';
+foreach ($hkPartyOptions as $ff) {
+    $id = (int) ($ff['id'] ?? 0);
+    if ($id <= 0) {
+        continue;
+    }
+    $sel = ((int) ($defaultFreightHkPartyId ?? 0) === $id) ? ' selected' : '';
+    $label = htmlspecialchars($hkPartyOptionLabel($ff));
+    $nameAttr = htmlspecialchars((string) ($ff['name'] ?? ''), ENT_QUOTES);
+    $hkPartyOptionsHtml .= '<option value="' . $id . '" data-name="' . $nameAttr . '"' . $sel . '>' . $label . '</option>';
+}
 ?>
 <style>
 .import-ship-wrap { display: flex; flex-direction: column; gap: 16px; }
 .import-ship-hero {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
     padding: 18px 22px; border-radius: 14px;
     background: linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
     color: #fff; box-shadow: 0 8px 24px rgba(15, 118, 110, 0.22);
 }
-.import-ship-hero h1 { font-size: 1.15rem; font-weight: 700; margin: 0; color: #fff; }
-.import-ship-hero p { margin: 6px 0 0; font-size: 0.82rem; color: rgba(255,255,255,0.82); max-width: 720px; }
+.import-ship-hero h1 { font-size: 1.15rem; font-weight: 700; margin: 0; color: #fff; grid-column: 2; text-align: center; }
 .import-ship-hero .btn-back {
+    grid-column: 3; justify-self: end;
     border: 1.5px solid rgba(255,255,255,0.35); color: #fff; background: rgba(255,255,255,0.08);
     border-radius: 8px; padding: 6px 14px; font-size: 0.82rem; text-decoration: none; white-space: nowrap;
 }
 .import-ship-hero .btn-back:hover { background: rgba(255,255,255,0.16); color: #fff; }
-.import-legends { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.import-legend {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-    font-size: 0.72rem; font-weight: 600; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-}
-.import-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .import-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,0.04); }
 .import-card-head {
     padding: 12px 18px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     color: #475569; background: linear-gradient(180deg, #f8fafc, #f1f5f9); border-bottom: 1px solid #e2e8f0;
 }
 .import-card-body { padding: 18px; }
-.import-meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-@media (max-width: 992px) { .import-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.import-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 280px)); gap: 14px; }
 @media (max-width: 576px) { .import-meta-grid { grid-template-columns: 1fr; } }
-.import-meta-grid .span-2 { grid-column: span 2; }
-@media (max-width: 576px) { .import-meta-grid .span-2 { grid-column: span 1; } }
 .import-field label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; margin-bottom: 5px; }
 .import-field .form-control, .import-field .form-select { border-radius: 8px; border-color: #cbd5e1; font-size: 0.88rem; }
 .import-field .form-control:focus, .import-field .form-select:focus { border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
@@ -77,6 +85,12 @@ table.ic-charges-tbl .col-item .ic-po-no { font-size: 0.72rem; font-weight: 700;
 table.ic-charges-tbl .col-item .ic-item-name { display: block; font-size: 0.78rem; color: #334155; line-height: 1.35; margin-top: 2px; }
 table.ic-charges-tbl .col-qty, table.ic-charges-tbl .col-price { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight: 600; }
+.ic-hk-fwd-th { padding: 4px 6px !important; vertical-align: middle; min-width: 148px; }
+.ic-hk-fwd-head {
+    width: 100%; font-size: 0.68rem; font-weight: 700; text-transform: none; letter-spacing: 0;
+    color: #1e3a8a; border: 1px solid #93c5fd; border-radius: 6px; padding: 4px 6px; background: #fff;
+}
+.ic-hk-fwd-head:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); outline: none; }
 .ic-charge-cell { min-width: 96px; }
 .ic-charge-cell input[type="number"] {
     width: 100%; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;
@@ -154,18 +168,7 @@ table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight
 
 <div class="import-ship-wrap">
     <div class="import-ship-hero">
-        <div>
-            <h1><i class="bi bi-box-seam me-2"></i><?= $isEdit ? 'Edit Import Shipment' : 'New Import Shipment' ?></h1>
-            <p>Consolidate PO lines, enter per-piece logistics in KWD, and preview true landed cost before Kuwait receipt.</p>
-            <div class="import-legends">
-                <span class="import-legend"><span class="import-legend-dot" style="background:#60a5fa;"></span> HK→DXB · <?= htmlspecialchars($defaultFreightHkPartyName ?? 'Logix One FZE') ?></span>
-                <span class="import-legend"><span class="import-legend-dot" style="background:#a78bfa;"></span> Packing · Union Logistics</span>
-                <span class="import-legend"><span class="import-legend-dot" style="background:#2dd4bf;"></span> DXB→KW · Hi-IQ</span>
-                <?php if (!empty($importPartner)): ?>
-                <span class="import-legend"><span class="import-legend-dot" style="background:#fbbf24;"></span> Partner · <?= htmlspecialchars($importPartner['name']) ?></span>
-                <?php endif; ?>
-            </div>
-        </div>
+        <h1><i class="bi bi-box-seam me-2"></i><?= $isEdit ? 'Edit Import Shipment' : 'New Import Shipment' ?></h1>
         <a href="<?= $isEdit ? '?page=landedcost&action=view&id=' . (int) $shipment['id'] : '?page=landedcost' ?>" class="btn-back">
             <i class="bi bi-arrow-left me-1"></i> Back
         </a>
@@ -173,12 +176,20 @@ table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight
 
     <?php if (empty($importPartner)): ?>
     <div class="alert alert-warning border-0 shadow-sm small mb-0 py-2 px-3">
-        Import partner (account <?= htmlspecialchars(defined('IMPORT_PARTNER_PARTY_CODE') ? IMPORT_PARTNER_PARTY_CODE : '26014') ?>) not found. Partner profit cannot be saved until the party is active.
+        Import partner (account <?= htmlspecialchars(defined('IMPORT_PARTNER_PARTY_CODE') ? IMPORT_PARTNER_PARTY_CODE : '26058') ?>) not found. Partner profit cannot be saved until the party is active.
     </div>
     <?php endif; ?>
     <?php if (empty($defaultFreightDxbPartyId)): ?>
     <div class="alert alert-warning border-0 shadow-sm small mb-0 py-2 px-3">
         DXB→KW party (<?= htmlspecialchars(defined('IMPORT_FREIGHT_DXB_PARTY_CODE') ? IMPORT_FREIGHT_DXB_PARTY_CODE : '26044') ?>) not found. Add active party <strong>HI-IQ Toys and Computer Kids Co.</strong>
+    </div>
+    <?php endif; ?>
+    <?php if (!empty($hkFreightForwarderMissing)): ?>
+    <div class="alert alert-warning border-0 shadow-sm small mb-0 py-2 px-3">
+        HK→DXB forwarder account
+        <strong><?= htmlspecialchars(implode(', ', $hkFreightForwarderMissing)) ?></strong>
+        not found in Party Master.
+        Expected <strong>Logix One FZE (26049)</strong> and <strong>Logiverse FZCO (26045)</strong>.
     </div>
     <?php endif; ?>
 
@@ -200,37 +211,12 @@ table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight
                         <label>Date</label>
                         <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($isEdit ? ($shipment['date'] ?? date('Y-m-d')) : date('Y-m-d')) ?>" required>
                     </div>
-                    <div class="import-field">
-                        <label>Route stage</label>
-                        <select name="route_stage" class="form-select">
-                            <option value="dubai_hub"<?= ($isEdit && ($shipment['route_stage'] ?? '') === 'kuwait_inbound') ? '' : ' selected' ?>>Dubai hub (consolidation)</option>
-                            <option value="kuwait_inbound"<?= ($isEdit && ($shipment['route_stage'] ?? '') === 'kuwait_inbound') ? ' selected' : '' ?>>Kuwait inbound</option>
-                        </select>
-                    </div>
-                    <div class="import-field">
-                        <label>Status</label>
-                        <select name="status" class="form-select">
-                            <option value="draft"<?= ($isEdit && ($shipment['status'] ?? '') === 'draft') ? ' selected' : '' ?>>Draft</option>
-                            <option value="in_transit"<?= ($isEdit && ($shipment['status'] ?? '') === 'in_transit') || !$isEdit ? ' selected' : '' ?>>In transit</option>
-                        </select>
-                    </div>
-                    <div class="import-field span-2">
-                        <label>Description</label>
-                        <input type="text" name="description" class="form-control" placeholder="e.g. Mixed HK container — March" value="<?= htmlspecialchars($isEdit ? ($shipment['description'] ?? '') : '') ?>">
-                    </div>
-                    <div class="import-field span-2">
-                        <label>Notes</label>
-                        <input type="text" name="notes" class="form-control" placeholder="Optional internal notes" value="<?= htmlspecialchars($isEdit ? ($shipment['notes'] ?? '') : '') ?>">
-                    </div>
                 </div>
             </div>
         </div>
 
         <div class="import-card">
-            <div class="import-card-head d-flex justify-content-between align-items-center">
-                <span>Purchase orders</span>
-                <span class="text-muted fw-normal text-lowercase" style="letter-spacing:0;font-size:0.72rem;">import + local POs (AED/USD/KWD) · draft / paid · not yet in Kuwait stock</span>
-            </div>
+            <div class="import-card-head">Purchase orders</div>
             <div style="max-height:260px;overflow-y:auto;">
                 <?php if (empty($purchaseOrders)): ?>
                 <div class="ic-placeholder"><i class="bi bi-inbox"></i>No open POs available.</div>
@@ -299,7 +285,11 @@ table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight
                             <th class="col-item">PO / Item</th>
                             <th class="col-qty">Qty</th>
                             <th class="col-price">Price/pc</th>
-                            <th>/pc · <?= htmlspecialchars($defaultFreightHkPartyName ?? 'Logix One FZE') ?></th>
+                            <th class="ic-hk-fwd-th">
+                                <select id="hkForwarderSelect" class="ic-hk-fwd-head" aria-label="HK to DXB forwarder">
+                                    <?= $hkPartyOptionsHtml ?>
+                                </select>
+                            </th>
                             <th>/pc · Union Logistics</th>
                             <th>/pc · Hi-IQ</th>
                             <th>/pc</th>
@@ -331,24 +321,14 @@ table.ic-charges-tbl .col-price { text-align: right; color: #64748b; font-weight
         <td class="col-price ic-price-display"></td>
         <td>
             <div class="ic-charge-cell">
+                <input type="hidden" name="ic_freight_hk_party[]" class="ic-hk-party">
                 <input type="number" name="ic_freight_hk[]" class="ic-charge-input" step="0.001" min="0" placeholder="0.000">
-                <select name="ic_freight_hk_party[]">
-                    <option value="">— Forwarder —</option>
-                    <?php foreach (($freightForwarders ?? []) as $ff): ?>
-                    <option value="<?= (int) $ff['id'] ?>"<?= ((int) ($defaultFreightHkPartyId ?? 0) === (int) $ff['id']) ? ' selected' : '' ?>><?= htmlspecialchars($ff['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
             </div>
         </td>
         <td>
             <div class="ic-charge-cell">
+                <input type="hidden" name="ic_packing_dxb_party[]" value="<?= (int) ($defaultPackingPartyId ?? 0) ?>">
                 <input type="number" name="ic_packing_dxb[]" class="ic-charge-input" step="0.001" min="0" placeholder="0.000">
-                <select name="ic_packing_dxb_party[]">
-                    <option value="">— Forwarder —</option>
-                    <?php foreach (($freightForwarders ?? []) as $ff): ?>
-                    <option value="<?= (int) $ff['id'] ?>"<?= ((int) ($defaultPackingPartyId ?? 0) === (int) $ff['id']) ? ' selected' : '' ?>><?= htmlspecialchars($ff['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
             </div>
         </td>
         <td>
@@ -371,6 +351,24 @@ document.addEventListener('DOMContentLoaded', function () {
     const DECIMAL_PLACES = <?= (int) DECIMAL_PLACES ?>;
     const existingCharges = <?= json_encode($existingChargesMap, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
     const checks = document.querySelectorAll('.po-check');
+    const shipmentForm = document.getElementById('shipmentForm');
+    // Enter in text/number fields must not save the shipment (accidental submit).
+    // Textareas keep Enter for new lines; lump-sum inputs still distribute via their own handler.
+    if (shipmentForm) {
+        shipmentForm.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') {
+                return;
+            }
+            const t = e.target;
+            if (!t || t.tagName !== 'INPUT') {
+                return;
+            }
+            if (['submit', 'button', 'hidden', 'checkbox', 'radio'].includes(t.type)) {
+                return;
+            }
+            e.preventDefault();
+        }, true);
+    }
     const body = document.getElementById('itemChargesBody');
     const wrap = document.getElementById('itemChargesWrap');
     const placeholder = document.getElementById('itemChargesPlaceholder');
@@ -458,6 +456,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function applyHkForwarderToRows() {
+        const sel = document.getElementById('hkForwarderSelect');
+        const partyId = sel ? sel.value : '';
+        if (!partyId) {
+            return;
+        }
+        chargeRows().forEach(function (row) {
+            const el = row.querySelector('[name="ic_freight_hk_party[]"]');
+            if (el) {
+                el.value = partyId;
+            }
+        });
+    }
+
+    function syncHkHeaderFromRows() {
+        const sel = document.getElementById('hkForwarderSelect');
+        if (!sel) {
+            return;
+        }
+        const ids = chargeRows().map(function (row) {
+            const el = row.querySelector('[name="ic_freight_hk_party[]"]');
+            return el ? el.value : '';
+        }).filter(Boolean);
+        if (ids.length && ids.every(function (id) { return id === ids[0]; })) {
+            sel.value = ids[0];
+        }
+    }
+
     function selectedPoIds() {
         return Array.from(checks).filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
     }
@@ -465,6 +491,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function chargeRows() {
         return Array.from(body.querySelectorAll('.item-charge-row'));
     }
+
 
     function totalChargeQty(rows) {
         return rows.reduce(function (sum, row) {
@@ -601,6 +628,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     resetAllLumpSums();
                 } else {
                     syncAllLumpSumsFromRows();
+                    const anySavedHk = (data.items || []).some(function (item) {
+                        const saved = existingCharges[String(item.po_item_id)] || existingCharges[item.po_item_id];
+                        return saved && parseAmount(saved.freight_hk_party_id) > 0;
+                    });
+                    if (anySavedHk) {
+                        syncHkHeaderFromRows();
+                    }
+                    applyHkForwarderToRows();
                 }
             })
             .catch(function () {
@@ -614,6 +649,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function scheduleLoad() {
         clearTimeout(loadTimer);
         loadTimer = setTimeout(loadItems, 200);
+    }
+
+    const hkForwarderSelect = document.getElementById('hkForwarderSelect');
+    if (hkForwarderSelect) {
+        hkForwarderSelect.addEventListener('change', applyHkForwarderToRows);
     }
 
     checks.forEach(function (c) {

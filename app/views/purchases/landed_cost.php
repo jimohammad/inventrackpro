@@ -5,10 +5,11 @@
     </div>
     <div class="d-flex gap-2">
         <a href="?page=landedcost&action=payables" class="btn btn-outline-success btn-sm"><i class="bi bi-truck me-1"></i> Freight payables</a>
+        <a href="?page=landedcost&action=packingDue" class="btn btn-outline-info btn-sm"><i class="bi bi-box-seam me-1"></i> Packing due</a>
         <a href="?page=landedcost&action=partnerDue" class="btn btn-outline-warning btn-sm"><i class="bi bi-calendar-event me-1"></i> Partner due</a>
         <a href="?page=landedcost&action=partnerHistory" class="btn btn-outline-success btn-sm"><i class="bi bi-clock-history me-1"></i> Partner history</a>
         <a href="?page=landedcost&action=report" class="btn btn-outline-primary btn-sm"><i class="bi bi-table me-1"></i> Cost report</a>
-        <?php if (Auth::can('purchases', 'add')): ?>
+        <?php if (Auth::canAny(['import_logistics', 'purchases'], 'add')): ?>
         <a href="?page=landedcost&action=create" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-lg me-1"></i> New shipment
         </a>
@@ -23,7 +24,7 @@
             <i class="bi bi-globe2 fs-1 text-muted d-block mb-3"></i>
             <p class="fw-600 mb-1">No import shipments yet</p>
             <p class="text-muted mb-3" style="font-size:0.85rem;">Attach paid/draft POs, add Dubai/Kuwait logistics in KWD, then receive in Kuwait to update stock cost.</p>
-            <?php if (Auth::can('purchases', 'add')): ?>
+            <?php if (Auth::canAny(['import_logistics', 'purchases'], 'add')): ?>
             <a href="?page=landedcost&action=create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i> New shipment</a>
             <?php endif; ?>
         </div>
@@ -33,8 +34,6 @@
                 <tr>
                     <th style="padding:10px 16px;">Shipment</th>
                     <th>Date</th>
-                    <th>Stage</th>
-                    <th>Description</th>
                     <th class="text-center">POs</th>
                     <th class="text-center">Purchases</th>
                     <th class="text-end">Accrued KWD</th>
@@ -61,8 +60,6 @@
                     </a>
                 </td>
                 <td style="color:#64748b;"><?= date('d M Y', strtotime($s['date'])) ?></td>
-                <td><small><?= ($s['route_stage'] ?? '') === 'kuwait_inbound' ? 'Kuwait' : 'Dubai' ?></small></td>
-                <td><?= htmlspecialchars($s['description'] ?? '—') ?></td>
                 <td class="text-center"><?= (int) ($s['po_count'] ?? 0) ?></td>
                 <td class="text-center"><?= (int) ($s['purchase_count'] ?? 0) ?></td>
                 <td class="text-end fw-semibold" style="color:#059669;">
@@ -79,7 +76,7 @@
                 <td class="text-nowrap">
                     <a href="?page=landedcost&action=view&id=<?= (int) $s['id'] ?>"
                        class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem;">View</a>
-                    <?php if (Auth::can('purchases', 'add') && ($s['status'] ?? '') !== 'applied'): ?>
+                    <?php if (Auth::canAny(['import_logistics', 'purchases'], 'add') && ($s['status'] ?? '') !== 'applied'): ?>
                     <a href="?page=landedcost&action=edit&id=<?= (int) $s['id'] ?>"
                        class="btn btn-sm btn-outline-primary" style="font-size:0.75rem;">Edit</a>
                     <?php endif; ?>

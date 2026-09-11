@@ -1,8 +1,11 @@
 <!-- Account Statement Report -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Account Statement</h1>
-        <p class="page-subtitle">Full transaction history per account<?php if (!empty($statementScopeLabel)): ?> · <?= htmlspecialchars($statementScopeLabel) ?><?php endif; ?></p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Account Statement</h1>
+            <p class="page-subtitle">Full transaction history per account<?php if (!empty($statementScopeLabel)): ?> · <?= htmlspecialchars($statementScopeLabel) ?><?php endif; ?></p>
+        </div>
     </div>
     <?php if ($account && !empty($transactions)): ?>
     <div class="d-flex gap-2">
@@ -29,6 +32,35 @@
                     </option>
                     <?php endforeach; ?>
                 </select>
+                <?php if (empty($accounts)): ?>
+                <div class="alert alert-warning border-0 mt-2 mb-0 py-3 px-3">
+                    <div class="fw-bold mb-2"><i class="bi bi-info-circle me-1"></i> No cash/bank accounts in the list</div>
+                    <p class="small mb-2 mb-md-1">This dropdown shows your company <strong>ledger accounts</strong> (Main Cash, NBK Bank, KNET wallet, etc.) — not customer names.</p>
+                    <?php if (!empty($canOpenAccounts)): ?>
+                    <ol class="small mb-2 ps-3">
+                        <li>Open <a href="?page=accounts" class="fw-semibold">Finance → Accounts</a> (or press <kbd>Alt+A</kbd>)</li>
+                        <?php if (!empty($canManageAccounts)): ?>
+                        <li>Click purple <strong>New Account</strong></li>
+                        <li>Name it (e.g. <em>NBK Bank Account</em>), set type to <strong>Bank</strong>, save</li>
+                        <?php else: ?>
+                        <li>If the list is empty, ask an admin to add accounts — or refresh this page after they do</li>
+                        <?php endif; ?>
+                        <li>Return here and pick the account from this dropdown</li>
+                    </ol>
+                    <a href="?page=accounts" class="btn btn-sm btn-primary">
+                        <i class="bi bi-wallet2 me-1"></i> Open Accounts
+                    </a>
+                    <?php else: ?>
+                    <p class="small mb-0">Ask an admin to grant you <strong>Accounts</strong> or <strong>Settings</strong> access, then add bank/cash accounts under Finance → Accounts.</p>
+                    <?php endif; ?>
+                    <?php if (!empty($accountsTableCount) && (int) $accountsTableCount > 0): ?>
+                    <p class="small text-muted mb-0 mt-2"><?= (int) $accountsTableCount ?> account(s) exist in the database but are hidden — open Accounts to check they are active.</p>
+                    <?php endif; ?>
+                    <?php if (Auth::isAdmin() && !empty($accountsLoadError)): ?>
+                    <p class="small text-danger mb-0 mt-2">Admin: load error — <?= htmlspecialchars((string) $accountsLoadError) ?></p>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="col-md-3">
                 <label class="form-label" style="font-weight:600;font-size:0.82rem;">From Date</label>
@@ -127,7 +159,7 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($tx['date'])) ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#1e293b;white-space:nowrap;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.78rem;color:#1e293b;white-space:nowrap;">
                         <?= htmlspecialchars($tx['ref'] ?? '—') ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;">
@@ -196,7 +228,7 @@
 <script>$(document).ready(function(){ initReportLedgerDataTable('accountStmtTable'); });</script>
 <style>
 @media print {
-    .no-print, .sidebar, nav, .topbar { display:none !important; }
+    .no-print, .sidebar, nav, .topbar, .app-topbar { display:none !important; }
     .print-only { display:block !important; }
     body { background:#fff !important; }
     .card { box-shadow:none !important; border:none !important; }

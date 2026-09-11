@@ -33,13 +33,30 @@
         thead th { color:#fff; padding:8px 10px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
         tbody tr:nth-child(even) { background:#f8faff; }
         tbody td { padding:7px 10px; border-bottom:1px solid #f0f3f8; font-size:11px; }
-        tfoot tr { background:#eef2ff; border-top:2px solid #c7d2fe; }
-        tfoot td { padding:8px 10px; font-weight:700; font-size:11px; }
+        .stmt-when { white-space:nowrap; }
+        .stmt-when .stmt-time { display:block; font-size:9px; color:#64748b; font-weight:500; margin-top:1px; }
+        tfoot tr.closing-row { background:#eef2ff; border-top:2px solid #c7d2fe; }
+        tfoot tr.closing-row td { padding:10px 10px; font-weight:800; font-size:12px; color:#1e3a5f; }
+        tfoot tr.closing-row .debit { color:#dc2626; }
+        tfoot tr.closing-row .credit { color:#059669; }
+        tfoot tr.closing-row .bal-dr { color:#d97706; font-size:13px; }
+        tfoot tr.closing-row .bal-cr { color:#059669; font-size:13px; }
+
+        .closing-banner {
+            margin-top:18px; padding:16px 20px; border-radius:8px;
+            display:flex; justify-content:space-between; align-items:center;
+            border:2px solid #1e3a5f; background:#1e3a5f;
+        }
+        .closing-banner-label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#fff; }
+        .closing-banner-amount { font-size:22px; font-weight:800; color:#fff !important; }
+        .closing-banner-amount.bal-dr,
+        .closing-banner-amount.bal-cr { color:#fff; }
 
         .type-badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:9px; font-weight:700; text-transform:uppercase; }
         .type-sale     { background:rgba(99,102,241,0.12); color:#6366f1; }
         .type-purchase { background:rgba(245,158,11,0.12); color:#b45309; }
         .type-payment  { background:rgba(16,185,129,0.12); color:#059669; }
+        .type-po_advance { background:rgba(194,65,12,0.12); color:#c2410c; }
         .type-discount { background:rgba(139,92,246,0.12); color:#8b5cf6; }
 
         .text-right  { text-align:right; }
@@ -116,7 +133,7 @@
     <table>
         <thead>
             <tr>
-                <th style="width:90px;">Date</th>
+                <th style="width:120px;">Date</th>
                 <th>Ref No</th>
                 <th style="width:75px;">Type</th>
                 <th class="text-right" style="width:110px;">Debit</th>
@@ -125,13 +142,20 @@
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($transactions as $t): ?>
+        <?php foreach ($transactions as $t):
+            $when = Party::statementWhenParts($t['date'] ?? '', $t['created_at'] ?? '');
+        ?>
         <tr>
-            <td><?= date('d M Y', strtotime($t['date'])) ?></td>
+            <td class="stmt-when">
+                <?= htmlspecialchars($when['day']) ?>
+                <?php if ($when['time'] !== ''): ?>
+                <span class="stmt-time"><?= htmlspecialchars($when['time']) ?></span>
+                <?php endif; ?>
+            </td>
             <td style="font-weight:600;"><?= htmlspecialchars($t['ref_no']) ?></td>
             <td>
-                <span class="type-badge type-<?= $t['txn_type'] ?>">
-                    <?= ucfirst($t['txn_type']) ?>
+                <span class="type-badge type-<?= htmlspecialchars((string) $t['txn_type']) ?>">
+                    <?= ($t['txn_type'] ?? '') === 'po_advance' ? 'PO Advance' : ucfirst(str_replace('_', ' ', (string) $t['txn_type'])) ?>
                 </span>
             </td>
             <td class="text-right <?= $t['debit'] > 0 ? 'debit' : '' ?>">
@@ -148,7 +172,7 @@
         <?php endforeach; ?>
         </tbody>
         <tfoot>
-            <tr>
+            <tr class="closing-row">
                 <td colspan="3">Closing Balance</td>
                 <td class="text-right debit"><?= APP_CURRENCY ?> <?= number_format($totalDebit, DECIMAL_PLACES) ?></td>
                 <td class="text-right credit"><?= APP_CURRENCY ?> <?= number_format($totalCredit, DECIMAL_PLACES) ?></td>
@@ -160,9 +184,16 @@
         </tfoot>
     </table>
 
+    <div class="closing-banner">
+        <div class="closing-banner-label">Closing Balance</div>
+        <div class="closing-banner-amount">
+            <?= APP_CURRENCY ?> <?= number_format(abs($closing), DECIMAL_PLACES) ?>
+        </div>
+    </div>
+
     <div class="footer">
         <span><?= APP_NAME ?> &mdash; Auto-generated statement</span>
-        <span><?= date('d M Y') ?></span>
+        <span><?= date('d M Y, h:i A') ?></span>
     </div>
 </div>
 

@@ -13,7 +13,7 @@ Custom PHP/MySQL ERP for Iqbal Sons (multi-warehouse mobile and electronics busi
 - `config/` - App config (`app.php`) and database (`database.php`, reads `.env`)
 - `assets/` - JS/CSS (Bootstrap, DataTables, Select2)
 - `database/` - Schema and migration SQL files
-- `wf/`, `wh2/` - Partial forks of the main app (may drift from root)
+- `wf/`, `wh2/` - Incomplete partial forks (may drift; excluded from graphify via `.graphifyignore`)
 
 ## Decision Priority
 1. Security
@@ -22,12 +22,11 @@ Custom PHP/MySQL ERP for Iqbal Sons (multi-warehouse mobile and electronics busi
 4. Performance
 5. Style and refactoring preferences
 
-## Context Navigation
+## Context Navigation (speed-first)
 - **Business rules** (balances, PO/import, warehouse, ref_type): read `docs/domain/README.md` first.
-- Architecture/discovery questions: run `/graphify query "your question"` first.
-- Start navigation from `graphify-out/wiki/index.md`.
-- Read `graphify-out/GRAPH_REPORT.md` before architecture answers.
-- For known-file edits, read files directly.
+- **Known file path:** read it directly (do not graphify first).
+- **Cross-module architecture only:** `graphify query "..."`. Skip wiki / GRAPH_REPORT for routine work.
+- After structural PHP changes: `graphify update .`. Skip for view-only / tiny fixes.
 
 ## Development Commands
 ```bash
@@ -40,8 +39,8 @@ php -l app/controllers/SalesController.php
 # Syntax check all PHP files (PowerShell)
 Get-ChildItem -Recurse -Filter *.php | ForEach-Object { php -l $_.FullName }
 
-# Rebuild graphify after structural changes
-python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"
+# After structural PHP changes only (AST, free)
+graphify update .
 ```
 
 ## Core Conventions
@@ -52,13 +51,13 @@ python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; 
 - No automated test suite - validate with syntax checks and endpoint smoke tests
 
 ## Warehouse isolation (Main vs Fahaheel)
-- Branches are **fully independent** — never mix `warehouse_id` in UI, balances, or reports.
+- Branches are **fully independent** - never mix `warehouse_id` in UI, balances, or reports.
 - Scope all operational queries to `Auth::warehouseId()`; see `.cursor/rules/warehouse-isolation.mdc`.
 - Only **Stock Transfers** intentionally cross branches.
 
 ## Non-Negotiable Patterns
-- Party balance queries must use directional `CASE WHEN payment_type` logic.
-- Payment direction: receipts increase balance, payments decrease.
+- Party balance queries must use directional `CASE WHEN payment_type` logic (**Directional Party Balance Pattern** - full rules in `docs/domain/party-balance-payments.md`).
+- Payment direction (cash/bank accounts): receipts increase balance, payments decrease (same file, Payment direction section).
 - If touching discount `ref_type`, search all `ref_type` usages.
 - Returns must reverse the original stock movement and respect warehouse location.
 - All stock changes must stay inside transactions with row-level locking.
@@ -89,7 +88,7 @@ Before considering a change complete:
 2. If change touches discount, payment, or stock logic, search related references (for example all `ref_type` usages).
 3. Check whether matching changes are also needed in `wf/` or `wh2/`.
 4. For schema changes, validate against the deployed DB.
-5. After structural changes, rebuild graphify.
+5. After structural PHP changes only: `graphify update .` (skip tiny fixes).
 6. Smoke-test the affected endpoint manually.
 
 ## Don't Do This
@@ -102,6 +101,6 @@ Before considering a change complete:
 - Do not bypass the singleton wrapper with raw `new PDO(...)`.
 
 ## Caveats
-- `wf/` and `wh2/` are not clean aliases of the root app; verify behavior in each subtree.
+- `wf/` and `wh2/` are incomplete forks (no local `BaseController`/models under `wf/`); not clean aliases - verify before copying changes; omitted from graphify.
 - Schema SQL and runtime SQL may drift; deployed DB is the source of truth.
 - Some controllers may not fully follow the `BaseModel` pattern; do not assume consistency.

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Return <?= $return['return_no'] ?></title>
+<title>Return <?= htmlspecialchars((string) ($return['return_no'] ?? '')) ?></title>
 <?php
 $thermal = isset($returnPrintThermal)
     ? (bool) $returnPrintThermal
@@ -187,7 +187,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
         <div class="inv-title">
             <h1>SALE RETURN</h1>
             <p>
-                <strong># <?= $return['return_no'] ?></strong><br>
+                <strong># <?= htmlspecialchars((string) ($return['return_no'] ?? '')) ?></strong><br>
                 Date: <?= date('d M Y', strtotime($return['date'])) ?><br>
                 Warehouse: <?= htmlspecialchars($return['warehouse_name'] ?? '—') ?>
             </p>
@@ -293,7 +293,7 @@ tfoot td { padding:4px 6px; font-size:8.5px; font-weight:700; border-top:1.5px s
     </div>
 
     <!-- Details -->
-    <div class="receipt-row"><span class="lbl">Return No</span><span class="val"><?= $return['return_no'] ?></span></div>
+    <div class="receipt-row"><span class="lbl">Return No</span><span class="val"><?= htmlspecialchars((string) ($return['return_no'] ?? '')) ?></span></div>
     <div class="receipt-row"><span class="lbl">Date</span><span class="val"><?= date('d M Y', strtotime($return['date'])) ?></span></div>
     <div class="receipt-row"><span class="lbl">Customer</span><span class="val"><?= htmlspecialchars($return['party_name']) ?></span></div>
     <?php if (!empty($return['party_phone'])): ?>
@@ -377,7 +377,7 @@ function exportPDF() {
     btn.innerHTML = 'Generating...';
     html2pdf().set({
         margin: [10, 12, 10, 12],
-        filename: '<?= $return['return_no'] ?>.pdf',
+        filename: <?= json_encode(($return['return_no'] ?? 'return') . '.pdf') ?>,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }

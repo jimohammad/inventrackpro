@@ -19,6 +19,11 @@
                            value="<?= htmlspecialchars($settings['company_name'] ?? '') ?>">
                 </div>
                 <div class="col-md-6">
+                    <label class="form-label">Company Name (Arabic)</label>
+                    <input type="text" name="settings[company_name_ar]" class="form-control" dir="rtl" lang="ar"
+                           value="<?= htmlspecialchars($settings['company_name_ar'] ?? '') ?>">
+                </div>
+                <div class="col-md-6">
                     <label class="form-label">Company Email</label>
                     <input type="email" name="settings[company_email]" class="form-control"
                            value="<?= htmlspecialchars($settings['company_email'] ?? '') ?>">
@@ -32,6 +37,23 @@
                     <label class="form-label">Company Address</label>
                     <input type="text" name="settings[company_address]" class="form-control"
                            value="<?= htmlspecialchars($settings['company_address'] ?? '') ?>">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Company Address (Arabic)</label>
+                    <input type="text" name="settings[company_address_ar]" class="form-control" dir="rtl" lang="ar"
+                           value="<?= htmlspecialchars($settings['company_address_ar'] ?? '') ?>">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Commercial Registration (CR)</label>
+                    <input type="text" name="settings[company_cr]" class="form-control"
+                           value="<?= htmlspecialchars($settings['company_cr'] ?? '') ?>"
+                           placeholder="رقم السجل التجاري">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Trade License No</label>
+                    <input type="text" name="settings[company_license]" class="form-control"
+                           value="<?= htmlspecialchars($settings['company_license'] ?? '') ?>"
+                           placeholder="رقم الرخصة التجارية">
                 </div>
             </div>
         </div>

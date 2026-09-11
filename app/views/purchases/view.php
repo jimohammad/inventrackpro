@@ -80,6 +80,15 @@ $foreignBadgeFg = match ($foreignCurrency) {
             <i class="bi bi-upc-scan me-1"></i> Scan IMEIs
         </a>
         <?php endif; ?>
+        <?php if (Auth::isAdmin() && $pStatus !== 'cancelled'): ?>
+        <form method="POST" action="?page=purchases&action=repairStock" class="d-inline" id="formRepairPurchaseStockHeader">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$purchase['id'] ?>">
+            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Rebuild stock qty from documents (IMEI not required)">
+                <i class="bi bi-box-seam me-1"></i> Rebuild stock
+            </button>
+        </form>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -88,13 +97,30 @@ $foreignBadgeFg = match ($foreignCurrency) {
      style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #fde68a;border-radius:12px;color:#92400e;">
     <div style="font-size:0.88rem;font-weight:600;">
         <i class="bi bi-upc-scan me-1"></i>
-        <?= (int)$imeiPendingLines ?> line(s) still need <?= (int)$imeiPendingQty ?> IMEI(s) — stock is recorded; scan when ready.
+        <?= (int)$imeiPendingLines ?> line(s) still need <?= (int)$imeiPendingQty ?> IMEI(s) — stock qty is already on Stock List; scan when ready.
     </div>
     <a href="?page=purchases&action=imeiScan&id=<?= (int)$purchase['id'] ?>"
        class="btn btn-sm"
        style="background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;font-weight:700;border:none;">
         Scan now
     </a>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($stockMissingFromList) && $pStatus !== 'cancelled' && Auth::isAdmin()): ?>
+<div class="alert mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2"
+     style="background:linear-gradient(135deg,#fef2f2,#fee2e2);border:1.5px solid #fecaca;border-radius:12px;color:#991b1b;">
+    <div style="font-size:0.88rem;font-weight:600;">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Warehouse stock qty is 0 for one or more lines — they will not appear on Stock List. Rebuild from this purchase (IMEI scan not required).
+    </div>
+    <form method="POST" action="?page=purchases&action=repairStock" class="d-inline" id="formRepairPurchaseStock">
+        <?= Auth::csrfField() ?>
+        <input type="hidden" name="id" value="<?= (int)$purchase['id'] ?>">
+        <button type="submit" class="btn btn-sm btn-danger" style="font-weight:700;">
+            <i class="bi bi-arrow-repeat me-1"></i> Rebuild stock
+        </button>
+    </form>
 </div>
 <?php endif; ?>
 
@@ -168,6 +194,8 @@ $foreignBadgeFg = match ($foreignCurrency) {
                                 <th style="padding:8px 12px 8px 20px;width:36px;color:var(--text-muted);font-weight:600;font-size:0.7rem;text-transform:uppercase;">#</th>
                                 <th style="padding:8px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">Item</th>
                                 <th style="padding:8px;text-align:center;width:56px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">Qty</th>
+                                <th style="padding:8px;text-align:center;width:72px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">In stock</th>
+                                <th style="padding:8px;text-align:center;width:72px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">IMEIs</th>
                                 <?php if ($showForeign): ?>
                                 <th style="padding:8px;text-align:right;width:90px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">Price (<?= htmlspecialchars($foreignCurrency) ?>)</th>
                                 <th style="padding:8px;text-align:right;width:100px;font-weight:600;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);">Total (<?= htmlspecialchars($foreignCurrency) ?>)</th>
@@ -178,10 +206,21 @@ $foreignBadgeFg = match ($foreignCurrency) {
                         </thead>
                         <tbody>
                             <?php foreach ($purchase['items'] as $i => $item): ?>
+                            <?php
+                                $lineStock = (int) ($item['stock_qty'] ?? 0);
+                                $lineImei  = (int) ($item['imei_scanned'] ?? 0);
+                                $lineQty   = (int) $item['quantity'];
+                            ?>
                             <tr style="border-bottom:1px solid var(--border-color);">
                                 <td style="padding:10px 12px 10px 20px;color:var(--text-muted);font-size:0.75rem;"><?= $i + 1 ?></td>
                                 <td style="padding:10px 8px;font-weight:600;line-height:1.35;"><?= htmlspecialchars($item['item_name']) ?></td>
-                                <td style="padding:10px 8px;text-align:center;font-weight:700;"><?= (int)$item['quantity'] ?></td>
+                                <td style="padding:10px 8px;text-align:center;font-weight:700;"><?= $lineQty ?></td>
+                                <td style="padding:10px 8px;text-align:center;font-weight:700;color:<?= $lineStock > 0 ? '#059669' : '#dc2626' ?>;">
+                                    <?= $lineStock ?>
+                                </td>
+                                <td style="padding:10px 8px;text-align:center;font-size:0.78rem;color:var(--text-muted);">
+                                    <?= $lineImei ?>/<?= $lineQty ?>
+                                </td>
                                 <?php if ($showForeign): ?>
                                 <td style="padding:10px 8px;text-align:right;color:#475569;"><?= isset($item['unit_price_foreign']) ? number_format((float)$item['unit_price_foreign'], DECIMAL_PLACES) : '—' ?></td>
                                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:#f59e0b;"><?= isset($item['total_foreign']) ? number_format((float)$item['total_foreign'], DECIMAL_PLACES) : '—' ?></td>
@@ -312,6 +351,43 @@ $foreignBadgeFg = match ($foreignCurrency) {
         </div>
         <?php endif; ?>
 
+        <?php if (!empty($linkedReturns)): ?>
+        <div class="card mb-3" style="border:none;border:1px solid rgba(180,83,9,0.25);">
+            <div class="card-body px-0 py-0">
+                <div style="padding:12px 18px;border-bottom:1px solid var(--border-color);font-weight:700;font-size:0.82rem;display:flex;justify-content:space-between;align-items:center;background:rgba(245,158,11,0.08);">
+                    <span><i class="bi bi-arrow-return-left me-1" style="color:#b45309;"></i> Purchase returns</span>
+                    <span style="color:#b45309;font-size:0.75rem;"><?= count($linkedReturns) ?></span>
+                </div>
+                <?php foreach ($linkedReturns as $lr): ?>
+                <div class="d-flex justify-content-between align-items-center" style="padding:12px 18px;border-bottom:1px solid var(--border-color);">
+                    <div>
+                        <?php if (Auth::can('returns', 'view')): ?>
+                        <a href="?page=returns&amp;action=detail&amp;id=<?= (int) $lr['id'] ?>"
+                           style="font-weight:700;font-size:0.84rem;color:#b45309;text-decoration:none;">
+                            <?= htmlspecialchars((string) $lr['return_no']) ?>
+                        </a>
+                        <?php else: ?>
+                        <div style="font-weight:700;font-size:0.84rem;color:#b45309;"><?= htmlspecialchars((string) $lr['return_no']) ?></div>
+                        <?php endif; ?>
+                        <small class="text-muted">
+                            <?= date('d M Y', strtotime((string) ($lr['created_at'] ?? $lr['date']))) ?>
+                            <?php if (!empty($lr['created_by_name'])): ?>
+                            · by <?= htmlspecialchars((string) $lr['created_by_name']) ?>
+                            <?php endif; ?>
+                        </small>
+                    </div>
+                    <div class="text-end">
+                        <div style="color:#b45309;font-weight:700;font-size:0.88rem;"><?= pv_money($lr['grand_total'] ?? 0) ?></div>
+                        <span class="badge px-2 py-1" style="border-radius:6px;background:rgba(16,185,129,0.15);color:#059669;font-size:0.7rem;">
+                            <?= htmlspecialchars(ucfirst((string) ($lr['status'] ?? ''))) ?>
+                        </span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Linked payments -->
         <div class="card" style="border:none;">
             <div class="card-body px-0 py-0">
@@ -349,7 +425,7 @@ $foreignBadgeFg = match ($foreignCurrency) {
 }
 </style>
 
-<?php if (Auth::can('purchases', 'delete') && $pStatus !== 'cancelled'): ?>
+<?php if ((Auth::can('purchases', 'delete') || Auth::isAdmin()) && $pStatus !== 'cancelled'): ?>
 <script>
 (function () {
     var cancelForm = document.getElementById('formCancelPurchase');
@@ -367,6 +443,19 @@ $foreignBadgeFg = match ($foreignCurrency) {
                 e.preventDefault();
             }
         });
+    }
+    var repairForm = document.getElementById('formRepairPurchaseStock');
+    var repairFormHeader = document.getElementById('formRepairPurchaseStockHeader');
+    function confirmRepair(e) {
+        if (!confirm('Rebuild warehouse stock for items on this purchase from documents?\n\nIMEI scans are not required. Stock List quantity will be corrected.')) {
+            e.preventDefault();
+        }
+    }
+    if (repairForm) {
+        repairForm.addEventListener('submit', confirmRepair);
+    }
+    if (repairFormHeader) {
+        repairFormHeader.addEventListener('submit', confirmRepair);
     }
 })();
 </script>

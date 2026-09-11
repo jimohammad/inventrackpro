@@ -1,8 +1,11 @@
 <!-- Expenses Report -->
 <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <div>
-        <h1 class="page-title">Expenses Report</h1>
-        <p class="page-subtitle">All expenses by date range, category, or account</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Expenses Report</h1>
+            <p class="page-subtitle">All expenses by date range, category, or account</p>
+        </div>
     </div>
     <?php if (!empty($expenses)):
         $expPrintQs = 'from_date=' . urlencode((string) $fromDate)
@@ -156,7 +159,7 @@
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;color:#475569;white-space:nowrap;">
                         <?= date('d M Y', strtotime($exp['date'])) ?>
                     </td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#1e293b;white-space:nowrap;">
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.78rem;color:#1e293b;white-space:nowrap;">
                         <?= htmlspecialchars($exp['expense_no'] ?? '—') ?>
                     </td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;">

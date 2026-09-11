@@ -7,12 +7,19 @@ Graphify maps **code structure**; these files map **what must stay true**.
 
 | You are changing… | Read first |
 |-------------------|------------|
-| Reports, balances, statements, payments | [party-balance-payments.md](party-balance-payments.md) |
+| Reports, balances, statements, payments, wholesale/retail customers | [party-balance-payments.md](party-balance-payments.md) |
 | Warehouse picker, branch reports, public links | [warehouse-isolation.md](warehouse-isolation.md) |
 | Purchase orders, import shipments, landed cost | [purchase-orders-import.md](purchase-orders-import.md) |
-| Sales/purchase returns, stock, IMEI | [stock-imei.md](stock-imei.md) |
+| Stock, returns, IMEI | [stock-imei.md](stock-imei.md) |
+| Shop-to-shop stock (Main ↔ Lite) | [intershop-stock.md](intershop-stock.md) |
+| Sales invoice JSON → purchase on another shop | [invoice-file-exchange.md](invoice-file-exchange.md) |
 | Discounts, payment `ref_type` | [discounts-ref-types.md](discounts-ref-types.md) |
 | Accounts, net worth, freight payables | [accounts-landed-cost.md](accounts-landed-cost.md) |
+| Public apps order confirmation | [apps-order-requests.md](apps-order-requests.md) |
+| Mandoob van counts | [mandoob-inventory.md](mandoob-inventory.md) |
+| Employee records (HR) | [employees.md](employees.md) |
+| Dump credit (unrepairable sold units) | [device-dumps.md](device-dumps.md) |
+| Salesman invoice edit (admin unlock) | [stock-imei.md](stock-imei.md) |
 
 ## Template (for new rules)
 
@@ -26,20 +33,14 @@ Each domain file uses:
 ## After code changes
 
 1. Update the matching domain file if behavior changed  
-2. Run `graphify update .` (code AST, free)  
-3. Run the **Verify** checks in the matching domain file (manual SQL or `tools/*.php` on staging/production)  
+2. Run the **Verify** checks in the matching domain file (manual SQL or `tools/*.php` on staging/production)  
+3. `graphify update .` only after **structural** PHP changes (controllers/models/services) — not every tweak (Cursor speed)
 
-## Semantic search (graphify + Gemini)
+## Graphify (optional map)
 
-Domain docs are indexed in `graphify-out/graph.json`. Examples:
-
-```bash
-graphify query "KWD purchase order import logistics"
-graphify explain "purchase_orders_import"
-```
-
-Wiki (community overview): `graphify-out/wiki/index.md`  
-Re-build after large doc changes: `graphify . --wiki` then `graphify cluster-only .` and `graphify export wiki`
+- **Speed policy:** domain docs first; graphify only for cross-module architecture questions.
+- **Ignored:** `wf/`, `wh2/`, and PWA/icon assets (`.graphifyignore`) — incomplete forks / noise.
+- Rebuild rarely: `/graphify .` after large architecture or domain-doc rewrites; day-to-day use `graphify update .` when structure changes.
 
 ## Bug fixes
 

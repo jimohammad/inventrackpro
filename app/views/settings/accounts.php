@@ -102,21 +102,127 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
 }
 .trf-edit:hover{color:#92400e;filter:brightness(1.05);}
 
-/* Permanent transfer form */
-#transferPanel{overflow:visible;}
+/* Transfer modal */
+.acc-modal-backdrop{
+    position:fixed;inset:0;z-index:1050;
+    background:rgba(15,23,42,0.45);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;
+    padding:16px;
+}
+.acc-modal-backdrop.is-open{display:flex;}
+.acc-modal{
+    width:100%;max-width:640px;max-height:min(92vh,820px);overflow:auto;
+    background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,0.28);
+    animation:accModalIn 0.18s ease-out;
+}
+@keyframes accModalIn{
+    from{opacity:0;transform:translateY(10px) scale(0.98);}
+    to{opacity:1;transform:translateY(0) scale(1);}
+}
+.acc-modal .acc-panel-header{position:sticky;top:0;z-index:1;background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(5,150,105,0.06));}
 .acc-form-row.trf-form-row{
     display:grid;
-    grid-template-columns:minmax(0,1.4fr) 44px minmax(0,1.4fr) minmax(120px,0.85fr) minmax(130px,0.85fr);
+    grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr);
     gap:14px;
     align-items:start;
 }
-@media(max-width:1100px){
-    .acc-form-row.trf-form-row{grid-template-columns:1fr 1fr;}
-    .acc-form-row.trf-form-row .transfer-arrow{grid-column:1/-1;padding-top:0;}
+.acc-form-row.trf-form-meta{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+    margin-top:14px;
 }
 @media(max-width:640px){
     .acc-form-row.trf-form-row{grid-template-columns:1fr;}
+    .acc-form-row.trf-form-row .transfer-arrow{padding-top:0;transform:rotate(90deg);}
+    .acc-form-row.trf-form-meta{grid-template-columns:1fr;}
 }
+body.acc-modal-open{overflow:hidden;}
+
+/* Account filters */
+.acc-filter-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    width:100%;margin-bottom:12px;padding:8px 12px;
+    background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+    border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,0.04);
+}
+.acc-filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.acc-filter-group--balance{margin-left:auto;}
+.acc-filter-label{
+    font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+    color:#94a3b8;white-space:nowrap;
+}
+.acc-segmented{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.acc-segmented button{
+    display:inline-flex;align-items:center;gap:4px;padding:6px 12px;
+    font-size:0.8rem;font-weight:600;line-height:1.2;border-radius:999px;white-space:nowrap;
+    border:1px solid transparent;cursor:pointer;background:transparent;
+    transition:background 0.15s ease,color 0.15s ease,box-shadow 0.15s ease,transform 0.15s ease;
+}
+.acc-segmented button:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(15,23,42,0.08);}
+.acc-segmented button.is-active{box-shadow:0 2px 8px rgba(15,23,42,0.14);}
+.acc-segmented button.af-all{color:#475569;background:#f1f5f9;border-color:#e2e8f0;}
+.acc-segmented button.af-all.is-active{background:#64748b;color:#fff;border-color:#64748b;}
+.acc-segmented button.af-cash{color:#047857;background:rgba(16,185,129,0.14);border-color:rgba(16,185,129,0.28);}
+.acc-segmented button.af-cash.is-active{background:#10b981;color:#fff;border-color:#10b981;}
+.acc-segmented button.af-bank{color:#1d4ed8;background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.28);}
+.acc-segmented button.af-bank.is-active{background:#3b82f6;color:#fff;border-color:#3b82f6;}
+.acc-segmented button.af-mobile_wallet{color:#6d28d9;background:rgba(139,92,246,0.14);border-color:rgba(139,92,246,0.28);}
+.acc-segmented button.af-mobile_wallet.is-active{background:#8b5cf6;color:#fff;border-color:#8b5cf6;}
+.acc-segmented button.af-other{color:#b45309;background:rgba(245,158,11,0.16);border-color:rgba(245,158,11,0.32);}
+.acc-segmented button.af-other.is-active{background:#f59e0b;color:#fff;border-color:#f59e0b;}
+.acc-segmented button.af-bal-all{color:#4338ca;background:rgba(99,102,241,0.12);border-color:rgba(99,102,241,0.24);}
+.acc-segmented button.af-bal-all.is-active{background:#6366f1;color:#fff;border-color:#6366f1;}
+.acc-segmented button.af-bal-positive{color:#059669;background:rgba(16,185,129,0.14);border-color:rgba(16,185,129,0.28);}
+.acc-segmented button.af-bal-positive.is-active{background:#10b981;color:#fff;border-color:#10b981;}
+.acc-segmented button.af-bal-zero{color:#64748b;background:#f1f5f9;border-color:#e2e8f0;}
+.acc-segmented button.af-bal-zero.is-active{background:#64748b;color:#fff;border-color:#64748b;}
+.acc-segmented button.af-bal-negative{color:#dc2626;background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.26);}
+.acc-segmented button.af-bal-negative.is-active{background:#ef4444;color:#fff;border-color:#ef4444;}
+.acc-filter-meta{font-size:0.75rem;color:var(--text-muted);margin:-6px 0 12px;min-height:1.1em;}
+.acc-card-wrap.is-hidden{display:none !important;}
+.acc-empty-filter{
+    grid-column:1/-1;text-align:center;padding:28px 16px;color:var(--text-muted);font-size:0.85rem;display:none;
+}
+.acc-empty-filter.is-visible{display:block;}
+.txn-filter-bar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:12px 16px;border-bottom:1px solid var(--border-color);background:rgba(248,250,252,0.7);
+}
+.txn-search-wrap{position:relative;flex:1;min-width:180px;}
+.txn-search-wrap .bi-search{
+    position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;pointer-events:none;font-size:0.9rem;
+}
+.txn-search-input{
+    width:100%;padding:8px 12px 8px 36px;border:1.5px solid #e0e7ff;border-radius:8px;
+    font-size:0.85rem;background:#fff;outline:none;color:var(--text-main);
+}
+.txn-search-input:focus{border-color:#818cf8;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
+.txn-type-select{
+    padding:8px 12px;border:1.5px solid #e0e7ff;border-radius:8px;font-size:0.82rem;
+    font-weight:600;background:#fff;color:var(--text-main);outline:none;min-width:140px;
+}
+.txn-type-select:focus{border-color:#818cf8;}
+.txn-dir-select{
+    padding:8px 12px;border:1.5px solid #e0e7ff;border-radius:8px;font-size:0.82rem;
+    font-weight:600;background:#fff;color:var(--text-main);outline:none;min-width:120px;
+}
+.txn-dir-select:focus{border-color:#818cf8;}
+.txn-filter-meta{font-size:0.72rem;color:var(--text-muted);white-space:nowrap;}
+#accountTxnTable tbody tr.is-hidden{display:none;}
+#accountTxnTable tbody tr.txn-selectable{cursor:pointer;}
+#accountTxnTable tbody tr.is-selected{background:rgba(99,102,241,0.08);}
+#accountTxnTable tbody tr.is-selected td{box-shadow:inset 3px 0 0 #6366f1;}
+.txn-edit-selected{
+    font-size:.78rem;font-weight:700;text-decoration:none;
+    opacity:.45;
+}
+.txn-edit-selected:not(.is-ready){cursor:not-allowed;}
+.txn-edit-selected.is-ready{opacity:1;cursor:pointer;}
+.txn-lock{opacity:.35;cursor:not-allowed;}
+a.trf-no{text-decoration:none;}
+a.trf-no:hover{text-decoration:underline;}
 </style>
 
 <!-- Header -->
@@ -126,33 +232,109 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
         <p>Manage cash, bank and wallet balances</p>
     </div>
     <div class="acc-actions">
+        <?php if (Auth::can('settings', 'add') || Auth::isAdmin()): ?>
+        <button type="button" class="btn-acc btn-transfer" onclick="openTransferModal()" title="Transfer funds (Alt+T)">
+            <i class="bi bi-arrow-left-right"></i> Transfer
+            <kbd style="margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,0.22);font-size:0.68rem;font-weight:700;letter-spacing:0.02em;">Alt+T</kbd>
+        </button>
+        <?php endif; ?>
+        <?php if (Auth::can('settings', 'edit') || Auth::isAdmin()): ?>
         <button class="btn-acc" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,0.3);" onclick="togglePanel('adjustPanel')">
             <i class="bi bi-sliders"></i> Adjust Balance
         </button>
+        <?php endif; ?>
+        <?php if (Auth::can('settings', 'add') || Auth::isAdmin()): ?>
         <button class="btn-acc btn-new-acc" onclick="togglePanel('newAccPanel')">
             <i class="bi bi-plus-lg"></i> New Account
         </button>
+        <?php endif; ?>
     </div>
 </div>
 
+<?php
+$typeColors = ['cash' => '#10b981', 'bank' => '#3b82f6', 'mobile_wallet' => '#8b5cf6', 'other' => '#f59e0b'];
+$typeIcons  = ['cash' => 'bi-cash-stack', 'bank' => 'bi-bank', 'mobile_wallet' => 'bi-phone', 'other' => 'bi-wallet2'];
+$typeCounts = ['cash' => 0, 'bank' => 0, 'mobile_wallet' => 0, 'other' => 0];
+$totalBal = 0;
+foreach ($accounts as $accCountRow) {
+    $t = $accCountRow['normalized_type'] ?? $accCountRow['type'] ?? 'other';
+    if (!isset($typeCounts[$t])) {
+        $t = 'other';
+    }
+    $typeCounts[$t]++;
+    $totalBal += (float) $accCountRow['current_balance'];
+}
+$accCountAll = count($accounts);
+?>
+
+<?php if (!empty($accounts)): ?>
+<div class="acc-filter-bar" id="accFilterBar">
+    <div class="acc-filter-group">
+        <span class="acc-filter-label">Type</span>
+        <div class="acc-segmented" role="group" aria-label="Account type">
+            <button type="button" class="af-all is-active" data-acc-type="all">All <span style="opacity:.75;">(<?= $accCountAll ?>)</span></button>
+            <?php if ($typeCounts['cash'] > 0): ?>
+            <button type="button" class="af-cash" data-acc-type="cash"><i class="bi bi-cash-stack"></i> Cash <span style="opacity:.75;">(<?= $typeCounts['cash'] ?>)</span></button>
+            <?php endif; ?>
+            <?php if ($typeCounts['bank'] > 0): ?>
+            <button type="button" class="af-bank" data-acc-type="bank"><i class="bi bi-bank"></i> Bank <span style="opacity:.75;">(<?= $typeCounts['bank'] ?>)</span></button>
+            <?php endif; ?>
+            <?php if ($typeCounts['mobile_wallet'] > 0): ?>
+            <button type="button" class="af-mobile_wallet" data-acc-type="mobile_wallet"><i class="bi bi-phone"></i> Wallet <span style="opacity:.75;">(<?= $typeCounts['mobile_wallet'] ?>)</span></button>
+            <?php endif; ?>
+            <?php if ($typeCounts['other'] > 0): ?>
+            <button type="button" class="af-other" data-acc-type="other"><i class="bi bi-wallet2"></i> Other <span style="opacity:.75;">(<?= $typeCounts['other'] ?>)</span></button>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="acc-filter-group acc-filter-group--balance">
+        <span class="acc-filter-label">Balance</span>
+        <div class="acc-segmented" role="group" aria-label="Balance filter">
+            <button type="button" class="af-bal-all is-active" data-acc-balance="all">All</button>
+            <button type="button" class="af-bal-positive" data-acc-balance="positive">Positive</button>
+            <button type="button" class="af-bal-zero" data-acc-balance="zero">Zero</button>
+            <button type="button" class="af-bal-negative" data-acc-balance="negative">Negative</button>
+        </div>
+    </div>
+</div>
+<div class="acc-filter-meta" id="accFilterMeta"></div>
+<?php endif; ?>
+
 <!-- Accounts List -->
-<div class="acc-list">
+<div class="acc-list" id="accList">
     <?php if (empty($accounts)): ?>
-    <div style="text-align:center;padding:40px;color:var(--text-muted);">No accounts yet. Create one above.</div>
+    <div class="alert alert-info border-0 text-start mx-auto" style="max-width:520px;padding:24px;">
+        <div class="fw-bold mb-2"><i class="bi bi-bank me-1"></i> No ledger accounts yet</div>
+        <?php if (Auth::can('settings', 'add') || Auth::isAdmin()): ?>
+        <ol class="small mb-3 ps-3">
+            <li>Click the purple <strong>New Account</strong> button above</li>
+            <li>Name it (e.g. <em>NBK Bank Account</em>, <em>Main Cash</em>)</li>
+            <li>Choose type: <strong>Bank</strong> for bank accounts, <strong>Cash</strong> for drawer</li>
+            <li>Enter opening balance if you know today’s balance</li>
+            <li>Click <strong>Create Account</strong></li>
+        </ol>
+        <button type="button" class="btn btn-sm btn-primary" onclick="togglePanel('newAccPanel')">
+            <i class="bi bi-plus-lg me-1"></i> New Account
+        </button>
+        <?php else: ?>
+        <p class="small mb-0">Refresh this page — default accounts may appear automatically. To add more, ask an admin with Settings access.</p>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
-    <?php
-    $totalBal = 0;
-    $typeColors = ['cash' => '#10b981', 'bank' => '#3b82f6', 'mobile_wallet' => '#8b5cf6', 'other' => '#f59e0b'];
-    $typeIcons  = ['cash' => 'bi-cash-stack', 'bank' => 'bi-bank', 'mobile_wallet' => 'bi-phone', 'other' => 'bi-wallet2'];
-    foreach ($accounts as $acc):
+    <?php foreach ($accounts as $acc):
         $accType = $acc['normalized_type'] ?? $acc['type'];
         $color = $typeColors[$accType] ?? '#6366f1';
         $icon  = $typeIcons[$accType] ?? 'bi-wallet2';
-        $isPos = $acc['current_balance'] >= 0;
-        $totalBal += (float)$acc['current_balance'];
+        $bal   = (float) $acc['current_balance'];
+        $isPos = $bal >= 0;
+        $isActive = ($selectedAccountId === (int)$acc['id']);
     ?>
-    <?php $isActive = ($selectedAccountId === (int)$acc['id']); ?>
-    <a href="?page=accounts<?= $isActive ? '' : '&account_id=' . $acc['id'] ?>" style="text-decoration:none;color:inherit;">
+    <a href="?page=accounts<?= $isActive ? '' : '&account_id=' . $acc['id'] ?>"
+       class="acc-card-wrap"
+       style="text-decoration:none;color:inherit;"
+       data-acc-type="<?= htmlspecialchars((string) $accType) ?>"
+       data-acc-balance="<?= $bal > 0.0005 ? 'positive' : ($bal < -0.0005 ? 'negative' : 'zero') ?>"
+       data-acc-amount="<?= htmlspecialchars((string) $bal) ?>">
     <div class="acc-row <?= $isActive ? 'active' : '' ?>" style="--acc-color:<?= $color ?>;cursor:pointer;">
         <div class="acc-row-del">
             <form method="POST" action="?page=accounts&action=delete" style="display:inline;"
@@ -177,77 +359,84 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
             </div>
         </div>
         <div class="acc-row-bal <?= $isPos ? 'pos' : 'neg' ?>">
-            <?= APP_CURRENCY ?> <?= number_format($acc['current_balance'], DECIMAL_PLACES) ?>
+            <?= APP_CURRENCY ?> <?= number_format($bal, DECIMAL_PLACES) ?>
         </div>
     </div>
     </a>
     <?php endforeach; ?>
+    <div class="acc-empty-filter" id="accEmptyFilter">
+        <i class="bi bi-search" style="font-size:1.6rem;opacity:.35;display:block;margin-bottom:8px;"></i>
+        No accounts match your filters.
+    </div>
     <?php if (!empty($accounts)): ?>
-    <div class="acc-total-bar" style="grid-column:1/-1;">
-        <span>Total Balance</span>
-        <span class="acc-total-val"><?= APP_CURRENCY ?> <?= number_format($totalBal, DECIMAL_PLACES) ?></span>
+    <div class="acc-total-bar" id="accTotalBar" style="grid-column:1/-1;">
+        <span id="accTotalLabel">Total Balance</span>
+        <span class="acc-total-val" id="accTotalVal" data-currency="<?= htmlspecialchars(APP_CURRENCY) ?>" data-decimals="<?= (int) DECIMAL_PLACES ?>"><?= APP_CURRENCY ?> <?= number_format($totalBal, DECIMAL_PLACES) ?></span>
     </div>
     <?php endif; ?>
 </div>
 
-<!-- Transfer Funds (permanent) -->
-<div class="acc-panel" id="transferPanel" style="margin-bottom:24px;">
-    <div class="acc-panel-header green">
-        <div class="acc-panel-title"><i class="bi bi-arrow-left-right" style="color:#10b981;"></i> Transfer Funds Between Accounts</div>
-    </div>
-    <div class="acc-panel-body">
-        <form method="POST" action="?page=accounts&action=transfer">
-            <?= Auth::csrfField() ?>
-            <input type="hidden" name="account_transfer_nonce" value="<?= htmlspecialchars($accountTransferNonce ?? '') ?>">
-            <div class="acc-form-row trf-form-row">
+<?php if (Auth::can('settings', 'add') || Auth::isAdmin()): ?>
+<!-- Transfer Funds Modal -->
+<div class="acc-modal-backdrop" id="transferModal" role="dialog" aria-modal="true" aria-labelledby="transferModalTitle">
+    <div class="acc-modal" role="document">
+        <div class="acc-panel-header green">
+            <div class="acc-panel-title" id="transferModalTitle"><i class="bi bi-arrow-left-right" style="color:#10b981;"></i> Transfer Funds Between Accounts</div>
+            <button type="button" class="panel-close" onclick="closeTransferModal()" aria-label="Close">×</button>
+        </div>
+        <div class="acc-panel-body">
+            <form method="POST" action="?page=accounts&action=transfer" id="transferForm">
+                <?= Auth::csrfField() ?>
+                <input type="hidden" name="account_transfer_nonce" value="<?= htmlspecialchars($accountTransferNonce ?? '') ?>">
+                <div class="acc-form-row trf-form-row">
+                    <div class="acc-field acc-field-green">
+                        <label>From Account <span style="color:#ef4444;">*</span></label>
+                        <select name="from_account_id" id="fromAcc" required>
+                            <option value="">Select source account...</option>
+                            <?php foreach ($accounts as $a): ?>
+                            <option value="<?= $a['id'] ?>" data-balance="<?= $a['current_balance'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultFromId ?? 0) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($a['name']) ?> — <?= APP_CURRENCY ?> <?= number_format($a['current_balance'], DECIMAL_PLACES) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="fromBalance" style="margin-top:5px;font-size:0.77rem;color:#10b981;font-weight:600;min-height:16px;"></div>
+                    </div>
 
-                <div class="acc-field acc-field-green">
-                    <label>From Account <span style="color:#ef4444;">*</span></label>
-                    <select name="from_account_id" id="fromAcc" required>
-                        <option value="">Select source account...</option>
-                        <?php foreach ($accounts as $a): ?>
-                        <option value="<?= $a['id'] ?>" data-balance="<?= $a['current_balance'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultFromId ?? 0) ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($a['name']) ?> — <?= APP_CURRENCY ?> <?= number_format($a['current_balance'], DECIMAL_PLACES) ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div id="fromBalance" style="margin-top:5px;font-size:0.77rem;color:#10b981;font-weight:600;min-height:16px;"></div>
+                    <div class="transfer-arrow"><i class="bi bi-arrow-right-circle-fill" style="color:#10b981;"></i></div>
+
+                    <div class="acc-field acc-field-green">
+                        <label>To Account <span style="color:#ef4444;">*</span></label>
+                        <select name="to_account_id" id="toAcc" required>
+                            <option value="">Select destination...</option>
+                            <?php foreach ($accounts as $a): ?>
+                            <option value="<?= $a['id'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultToId ?? 0) ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </div>
-
-                <div class="transfer-arrow"><i class="bi bi-arrow-right-circle-fill" style="color:#10b981;"></i></div>
-
-                <div class="acc-field acc-field-green">
-                    <label>To Account <span style="color:#ef4444;">*</span></label>
-                    <select name="to_account_id" id="toAcc" required>
-                        <option value="">Select destination...</option>
-                        <?php foreach ($accounts as $a): ?>
-                        <option value="<?= $a['id'] ?>" <?= (int) $a['id'] === (int) ($transferDefaultToId ?? 0) ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="acc-form-row trf-form-meta">
+                    <div class="acc-field acc-field-green">
+                        <label>Amount <span style="color:#ef4444;">*</span></label>
+                        <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required>
+                    </div>
+                    <div class="acc-field acc-field-green">
+                        <label>Date</label>
+                        <input type="date" name="date" value="<?= date('Y-m-d') ?>">
+                    </div>
                 </div>
-
-                <div class="acc-field acc-field-green">
-                    <label>Amount <span style="color:#ef4444;">*</span></label>
-                    <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required>
-                </div>
-
-                <div class="acc-field acc-field-green">
-                    <label>Date</label>
-                    <input type="date" name="date" value="<?= date('Y-m-d') ?>">
-                </div>
-            </div>
-            <div class="acc-form-row" style="margin-top:0;">
-                <div class="acc-field acc-field-green" style="grid-column:1/-1;">
+                <div class="acc-field acc-field-green" style="margin-top:14px;">
                     <label>Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
                     <input type="text" name="notes" placeholder="Reason for transfer...">
                 </div>
-            </div>
-            <div class="acc-save-row">
-                <button type="submit" class="btn-panel-save green"><i class="bi bi-arrow-left-right me-1"></i> Execute Transfer</button>
-            </div>
-        </form>
+                <div class="acc-save-row">
+                    <button type="button" class="btn-panel-cancel" onclick="closeTransferModal()">Cancel</button>
+                    <button type="submit" class="btn-panel-save green"><i class="bi bi-arrow-left-right me-1"></i> Execute Transfer</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+<?php endif; ?>
 
 <!-- Account Transactions Panel -->
 <?php if ($selectedAccount): ?>
@@ -274,13 +463,40 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                 </button>
             </form>
             <?php endif; ?>
+            <?php if (Auth::isAdmin() && !empty($accountTxns)): ?>
+            <button type="button" id="txnEditSelectedBtn" class="btn btn-sm btn-outline-warning txn-edit-selected"
+                    aria-disabled="true" title="Select a transaction first">
+                <i class="bi bi-pencil me-1"></i> Edit selected
+            </button>
+            <?php endif; ?>
             <a href="?page=accounts" style="font-size:.78rem;color:var(--text-muted);text-decoration:none;" title="Close">✕ Close</a>
         </div>
     </div>
     <?php if (empty($accountTxns)): ?>
     <div class="hist-empty"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>No transactions found for this account.</div>
     <?php else: ?>
-    <table class="hist-tbl">
+    <div class="txn-filter-bar" id="txnFilterBar">
+        <div class="txn-search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text" id="txnSearch" class="txn-search-input" autocomplete="off" spellcheck="false"
+                   placeholder="Search ref, party, notes…">
+        </div>
+        <select id="txnTypeFilter" class="txn-type-select" aria-label="Transaction type">
+            <option value="all">All types</option>
+            <option value="payment">Payment</option>
+            <option value="expense">Expense</option>
+            <option value="transfer">Transfer</option>
+            <option value="po_payment">PO Payment</option>
+            <option value="adjustment">Adjustment</option>
+        </select>
+        <select id="txnDirFilter" class="txn-dir-select" aria-label="Direction">
+            <option value="all">In + Out</option>
+            <option value="in">In only</option>
+            <option value="out">Out only</option>
+        </select>
+        <span class="txn-filter-meta" id="txnFilterMeta"></span>
+    </div>
+    <table class="hist-tbl" id="accountTxnTable">
         <thead>
             <tr>
                 <th>Date</th>
@@ -288,11 +504,16 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                 <th>Type</th>
                 <th>Party / Description</th>
                 <th style="text-align:right;">Amount</th>
+                <?php if (Auth::isAdmin()): ?>
+                <th style="text-align:center;width:56px;">Edit</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($accountTxns as $txn):
-            $isCredit = (float)$txn['amount'] > 0;
+        <?php
+        $accLedgerId = (int) $selectedAccount['id'];
+        foreach ($accountTxns as $txn):
+            $amt = (float) $txn['amount'];
             $typeLabel = match($txn['txn_type']) {
                 'payment'    => ['label'=>'Payment',    'color'=>'#10b981', 'bg'=>'rgba(16,185,129,.1)',  'icon'=>'bi-cash'],
                 'expense'    => ['label'=>'Expense',    'color'=>'#ef4444', 'bg'=>'rgba(239,68,68,.1)',   'icon'=>'bi-receipt'],
@@ -301,22 +522,72 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
                 'adjustment' => ['label'=>'Adjustment', 'color'=>'#d97706', 'bg'=>'rgba(245,158,11,.18)', 'icon'=>'bi-sliders'],
                 default      => ['label'=>$txn['txn_type'], 'color'=>'#6b7280', 'bg'=>'rgba(107,114,128,.1)', 'icon'=>'bi-circle'],
             };
+            $txnSearch = strtolower(trim(
+                ($txn['ref_no'] ?? '') . ' ' .
+                ($txn['invoice_ref'] ?? '') . ' ' .
+                ($txn['party'] ?? '') . ' ' .
+                ($txn['note'] ?? '') . ' ' .
+                ($typeLabel['label'] ?? '')
+            ));
+            $txnId = (int) ($txn['id'] ?? 0);
+            $txnKind = (string) ($txn['txn_type'] ?? '');
+            $editUrl = '';
+            $lockReason = '';
+            $refUrl = '';
+            if ($txnKind === 'payment') {
+                $refUrl = '?page=payments&action=detail&id=' . $txnId;
+                $rt = (string) ($txn['pay_ref_type'] ?? '');
+                if ($rt === 'discount') {
+                    $lockReason = 'Discount payments are edited from Discounts.';
+                } elseif ($rt === 'purchase_order') {
+                    $lockReason = 'PO advances cannot be edited.';
+                } else {
+                    $editUrl = '?page=payments&action=edit&id=' . $txnId . '&return_account_id=' . $accLedgerId;
+                }
+            } elseif ($txnKind === 'expense') {
+                $editUrl = '?page=expenses&action=edit&id=' . $txnId . '&return_account_id=' . $accLedgerId;
+            } elseif ($txnKind === 'transfer') {
+                $editUrl = '?page=accounts&edit_transfer=' . $txnId . '&account_id=' . $accLedgerId;
+            } elseif ($txnKind === 'adjustment') {
+                $editUrl = '?page=accounts&account_id=' . $accLedgerId . '&edit_txn=adjustment&txn_id=' . $txnId;
+            } elseif ($txnKind === 'po_payment') {
+                $refUrl = '?page=purchaseorders&action=show&id=' . $txnId;
+                $lockReason = 'Unlinked PO payouts cannot be edited here.';
+            }
         ?>
-        <tr>
+        <tr data-txn-type="<?= htmlspecialchars((string) $txn['txn_type']) ?>"
+            data-txn-dir="<?= $amt >= 0 ? 'in' : 'out' ?>"
+            data-txn-search="<?= htmlspecialchars($txnSearch) ?>"
+            data-txn-edit-url="<?= htmlspecialchars($editUrl) ?>"
+            data-txn-lock-reason="<?= htmlspecialchars($lockReason) ?>"
+            class="<?= Auth::isAdmin() ? 'txn-selectable' : '' ?>">
             <td style="color:var(--text-muted);font-size:.8rem;white-space:nowrap;"><?= date('d M Y', strtotime($txn['date'])) ?></td>
-            <td><span class="trf-no"><?= htmlspecialchars($txn['ref_no'] ?: '—') ?></span><?php if (!empty($txn['invoice_ref'])): ?><br><span style="font-size:.7rem;color:var(--text-muted);"><?= htmlspecialchars($txn['invoice_ref']) ?></span><?php endif; ?></td>
+            <td><?php if ($refUrl !== ''): ?><a class="trf-no" href="<?= htmlspecialchars($refUrl) ?>"><?= htmlspecialchars($txn['ref_no'] ?: '—') ?></a><?php else: ?><span class="trf-no"><?= htmlspecialchars($txn['ref_no'] ?: '—') ?></span><?php endif; ?><?php if (!empty($txn['invoice_ref'])): ?><br><span style="font-size:.7rem;color:var(--text-muted);"><?= htmlspecialchars($txn['invoice_ref']) ?></span><?php endif; ?></td>
             <td><span style="background:<?= $typeLabel['bg'] ?>;color:<?= $typeLabel['color'] ?>;padding:3px 9px;border-radius:20px;font-size:.7rem;font-weight:700;white-space:nowrap;"><i class="bi <?= $typeLabel['icon'] ?> me-1"></i><?= $typeLabel['label'] ?></span></td>
             <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= htmlspecialchars($txn['party'] . ($txn['note'] ? ' — ' . $txn['note'] : '')) ?>">
                 <?= htmlspecialchars($txn['party']) ?>
                 <?php if ($txn['note']): ?><br><span style="font-size:.72rem;color:var(--text-muted);"><?= htmlspecialchars($txn['note']) ?></span><?php endif; ?>
             </td>
-            <td style="text-align:right;font-weight:800;font-size:.9rem;color:<?= (float)$txn['amount'] >= 0 ? '#10b981' : '#ef4444' ?>;white-space:nowrap;">
-                <?= (float)$txn['amount'] >= 0 ? '+' : '' ?><?= APP_CURRENCY ?> <?= number_format(abs((float)$txn['amount']), DECIMAL_PLACES) ?>
+            <td style="text-align:right;font-weight:800;font-size:.9rem;color:<?= $amt >= 0 ? '#10b981' : '#ef4444' ?>;white-space:nowrap;">
+                <?= $amt >= 0 ? '+' : '' ?><?= APP_CURRENCY ?> <?= number_format(abs($amt), DECIMAL_PLACES) ?>
             </td>
+            <?php if (Auth::isAdmin()): ?>
+            <td style="text-align:center;" onclick="event.stopPropagation();">
+                <?php if ($editUrl !== ''): ?>
+                <a href="<?= htmlspecialchars($editUrl) ?>" class="trf-edit pin-protect" title="Edit transaction"><i class="bi bi-pencil"></i></a>
+                <?php else: ?>
+                <span class="trf-edit txn-lock" title="<?= htmlspecialchars($lockReason !== '' ? $lockReason : 'Cannot edit this transaction') ?>"><i class="bi bi-lock"></i></span>
+                <?php endif; ?>
+            </td>
+            <?php endif; ?>
         </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
+    <div class="hist-empty" id="txnEmptyFilter" style="display:none;">
+        <i class="bi bi-search" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
+        No transactions match your search / filters.
+    </div>
     <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -475,6 +746,61 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
 </div>
 <?php endif; ?>
 
+<!-- Edit Adjustment Panel -->
+<?php if (!empty($editingAdjustment) && Auth::isAdmin()): ?>
+<div class="acc-panel" id="editAdjustmentPanel" style="display:block;border-color:rgba(245,158,11,0.35);">
+    <div class="acc-panel-header" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05));">
+        <div class="acc-panel-title"><i class="bi bi-pencil-square" style="color:#f59e0b;"></i> Edit Adjustment <span style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-left:8px;font-family:monospace;">ADJ-<?= str_pad((string)$editingAdjustment['id'], 6, '0', STR_PAD_LEFT) ?></span></div>
+        <a class="panel-close" href="?page=accounts<?= !empty($selectedAccountId) ? '&account_id=' . (int)$selectedAccountId : '' ?>" style="text-decoration:none;" title="Close">×</a>
+    </div>
+    <div class="acc-panel-body">
+        <form method="POST" action="?page=accounts&action=updateAdjustment">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int)$editingAdjustment['id'] ?>">
+            <input type="hidden" name="return_account_id" value="<?= (int)($selectedAccountId ?? 0) ?>">
+            <div class="acc-form-row">
+                <div class="acc-field">
+                    <label>Account <span style="color:#ef4444;">*</span></label>
+                    <select name="account_id" required>
+                        <option value="">-- Select Account --</option>
+                        <?php foreach ($accounts as $acc): ?>
+                        <option value="<?= $acc['id'] ?>" <?= (int)$editingAdjustment['account_id'] === (int)$acc['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($acc['name']) ?> (<?= APP_CURRENCY ?> <?= number_format($acc['current_balance'], DECIMAL_PLACES) ?>)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="acc-field">
+                    <label>Adjustment Type <span style="color:#ef4444;">*</span></label>
+                    <select name="adjust_type" required>
+                        <option value="add" <?= ($editingAdjustment['direction'] ?? '') === 'add' ? 'selected' : '' ?>>Add (Cash found / correction +)</option>
+                        <option value="subtract" <?= ($editingAdjustment['direction'] ?? '') === 'subtract' ? 'selected' : '' ?>>Subtract (Cash short / correction -)</option>
+                    </select>
+                </div>
+                <div class="acc-field">
+                    <label>Amount <span style="color:#ef4444;">*</span></label>
+                    <input type="number" name="amount" step="0.001" min="0.001" placeholder="0.000" required
+                           value="<?= htmlspecialchars(number_format((float)$editingAdjustment['amount'], DECIMAL_PLACES, '.', ''), ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+                <div class="acc-field">
+                    <label>Date</label>
+                    <input type="date" name="adj_date" value="<?= htmlspecialchars($editingAdjustment['date'] ?? date('Y-m-d'), ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+            </div>
+            <div class="acc-field" style="margin-top:14px;">
+                <label>Reason</label>
+                <input type="text" name="reason" placeholder="e.g. Cash count adjustment, short change, excess found..."
+                       value="<?= htmlspecialchars($editingAdjustment['reason'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+            </div>
+            <div class="acc-save-row">
+                <a class="btn-panel-cancel" href="?page=accounts<?= !empty($selectedAccountId) ? '&account_id=' . (int)$selectedAccountId : '' ?>" style="display:inline-flex;align-items:center;text-decoration:none;">Cancel</a>
+                <button type="submit" class="btn-panel-save pin-protect" style="background:linear-gradient(135deg,#f59e0b,#d97706);"><i class="bi bi-check-lg me-1"></i> Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Transfer History -->
 <div class="hist-card">
     <div class="hist-head">
@@ -526,8 +852,33 @@ table.hist-tbl tbody tr:hover{background:rgba(16,185,129,0.03);}
 </div>
 
 <script>
+function closeTransferModal() {
+    var modal = document.getElementById('transferModal');
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    document.body.classList.remove('acc-modal-open');
+}
+
+function openTransferModal() {
+    var modal = document.getElementById('transferModal');
+    if (!modal) return;
+    ['newAccPanel', 'adjustPanel'].forEach(function (p) {
+        var el = document.getElementById(p);
+        if (el) el.style.display = 'none';
+    });
+    modal.classList.add('is-open');
+    document.body.classList.add('acc-modal-open');
+    updateBalance();
+    setTimeout(function () {
+        var amount = modal.querySelector('input[name="amount"]');
+        if (amount) amount.focus();
+    }, 50);
+}
+
 function togglePanel(id) {
+    closeTransferModal();
     const panel = document.getElementById(id);
+    if (!panel) return;
     const allPanels = ['newAccPanel', 'adjustPanel'];
     allPanels.forEach(p => {
         const el = document.getElementById(p);
@@ -552,20 +903,206 @@ function updateBalance() {
     }
 }
 
-$(document).ready(() => {
+(function initTransferModal() {
+    var modal = document.getElementById('transferModal');
+    if (!modal) return;
+    modal.addEventListener('click', function (e) {
+        if (e.target === modal) closeTransferModal();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && modal.classList.contains('is-open')) {
+            closeTransferModal();
+        }
+    });
+    // Deep-link: ?page=accounts&transfer=1 (from Alt+T elsewhere)
+    try {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('transfer') === '1') {
+            openTransferModal();
+            params.delete('transfer');
+            var clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState({}, '', clean);
+            }
+        }
+    } catch (err) { /* ignore */ }
+})();
+
+(function initAccountFilters() {
+    var typeFilter = 'all';
+    var balanceFilter = 'all';
+    var meta = document.getElementById('accFilterMeta');
+    var emptyEl = document.getElementById('accEmptyFilter');
+    var totalVal = document.getElementById('accTotalVal');
+    var totalLabel = document.getElementById('accTotalLabel');
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.acc-card-wrap'));
+    if (!cards.length) return;
+
+    var currency = totalVal ? (totalVal.getAttribute('data-currency') || 'KWD') : 'KWD';
+    var decimals = totalVal ? parseInt(totalVal.getAttribute('data-decimals') || '3', 10) : 3;
+
+    function formatMoney(n) {
+        return currency + ' ' + Number(n).toLocaleString(undefined, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+    }
+
+    function applyFilters() {
+        var visible = 0;
+        var sum = 0;
+        cards.forEach(function (card) {
+            var typeOk = typeFilter === 'all' || card.getAttribute('data-acc-type') === typeFilter;
+            var balOk = balanceFilter === 'all' || card.getAttribute('data-acc-balance') === balanceFilter;
+            var show = typeOk && balOk;
+            card.classList.toggle('is-hidden', !show);
+            if (show) {
+                visible++;
+                sum += parseFloat(card.getAttribute('data-acc-amount') || '0') || 0;
+            }
+        });
+        if (emptyEl) emptyEl.classList.toggle('is-visible', visible === 0);
+        if (totalVal) totalVal.textContent = formatMoney(sum);
+        if (totalLabel) {
+            totalLabel.textContent = (visible === cards.length) ? 'Total Balance' : ('Filtered Total (' + visible + ')');
+        }
+        if (meta) {
+            if (visible === cards.length && typeFilter === 'all' && balanceFilter === 'all') {
+                meta.textContent = '';
+            } else {
+                meta.textContent = 'Showing ' + visible + ' of ' + cards.length + ' accounts';
+            }
+        }
+    }
+
+    document.querySelectorAll('#accFilterBar [data-acc-type]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            typeFilter = btn.getAttribute('data-acc-type') || 'all';
+            document.querySelectorAll('#accFilterBar [data-acc-type]').forEach(function (b) {
+                b.classList.toggle('is-active', b === btn);
+            });
+            applyFilters();
+        });
+    });
+    document.querySelectorAll('#accFilterBar [data-acc-balance]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            balanceFilter = btn.getAttribute('data-acc-balance') || 'all';
+            document.querySelectorAll('#accFilterBar [data-acc-balance]').forEach(function (b) {
+                b.classList.toggle('is-active', b === btn);
+            });
+            applyFilters();
+        });
+    });
+    applyFilters();
+})();
+
+(function initTxnFilters() {
+    var table = document.getElementById('accountTxnTable');
+    if (!table) return;
+    var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+    var searchInput = document.getElementById('txnSearch');
+    var typeSelect = document.getElementById('txnTypeFilter');
+    var dirSelect = document.getElementById('txnDirFilter');
+    var meta = document.getElementById('txnFilterMeta');
+    var emptyEl = document.getElementById('txnEmptyFilter');
+    if (!rows.length) return;
+
+    function applyTxnFilters() {
+        var q = (searchInput ? searchInput.value : '').trim().toLowerCase();
+        var type = typeSelect ? typeSelect.value : 'all';
+        var dir = dirSelect ? dirSelect.value : 'all';
+        var visible = 0;
+        rows.forEach(function (row) {
+            var typeOk = type === 'all' || row.getAttribute('data-txn-type') === type;
+            var dirOk = dir === 'all' || row.getAttribute('data-txn-dir') === dir;
+            var searchOk = !q || (row.getAttribute('data-txn-search') || '').indexOf(q) !== -1;
+            var show = typeOk && dirOk && searchOk;
+            row.classList.toggle('is-hidden', !show);
+            if (show) visible++;
+        });
+        if (emptyEl) emptyEl.style.display = visible === 0 ? 'block' : 'none';
+        if (meta) {
+            meta.textContent = visible === rows.length
+                ? (rows.length + ' txns')
+                : (visible + ' of ' + rows.length);
+        }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', applyTxnFilters);
+    if (typeSelect) typeSelect.addEventListener('change', applyTxnFilters);
+    if (dirSelect) dirSelect.addEventListener('change', applyTxnFilters);
+    applyTxnFilters();
+})();
+
+(function initTxnSelect() {
+    var table = document.getElementById('accountTxnTable');
+    var btn = document.getElementById('txnEditSelectedBtn');
+    if (!table || !btn) return;
+    var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+    if (!rows.length) return;
+    var selectedUrl = '';
+    var selectedLock = 'Select a transaction first';
+
+    function selectRow(row) {
+        rows.forEach(function (r) { r.classList.remove('is-selected'); });
+        row.classList.add('is-selected');
+        var url = row.getAttribute('data-txn-edit-url') || '';
+        var reason = row.getAttribute('data-txn-lock-reason') || 'Cannot edit this transaction';
+        selectedUrl = url;
+        selectedLock = reason || 'Cannot edit this transaction';
+        if (url) {
+            btn.classList.add('is-ready');
+            btn.setAttribute('aria-disabled', 'false');
+            btn.title = 'Edit selected transaction';
+        } else {
+            btn.classList.remove('is-ready');
+            btn.setAttribute('aria-disabled', 'true');
+            btn.title = selectedLock;
+        }
+    }
+
+    rows.forEach(function (row) {
+        row.addEventListener('click', function (e) {
+            if (e.target.closest('a,button,form')) return;
+            selectRow(row);
+        });
+    });
+
+    btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!selectedUrl) {
+            alert(selectedLock || 'Select a transaction first');
+            return;
+        }
+        if (typeof requirePin === 'function') {
+            requirePin(function () { window.location.href = selectedUrl; });
+        } else {
+            window.location.href = selectedUrl;
+        }
+    });
+})();
+
+(function initTransferTableWhenReady() {
     const fromAcc = document.getElementById('fromAcc');
     if (fromAcc) {
         fromAcc.addEventListener('change', updateBalance);
         updateBalance();
     }
 
-    var tt = document.getElementById('transferTable');
-    if (tt && tt.querySelectorAll('tbody tr').length > 5) {
+    function initDt() {
+        var tt = document.getElementById('transferTable');
+        if (!tt || tt.querySelectorAll('tbody tr').length <= 5) return;
+        if (!window.jQuery || !jQuery.fn || !jQuery.fn.DataTable) return;
+        if (jQuery.fn.DataTable.isDataTable(tt)) return;
         var noOrder = [3];
         <?php if (Auth::can('settings', 'edit')): ?>noOrder.push(8);<?php endif; ?>
-        $('#transferTable').DataTable({ pageLength: 25, order: [[0, 'desc']], columnDefs: [{ orderable: false, targets: noOrder }] });
+        jQuery(tt).DataTable({ pageLength: 25, order: [[0, 'desc']], columnDefs: [{ orderable: false, targets: noOrder }] });
     }
-});
+    if (typeof window.iqbalWhenIdle === 'function') window.iqbalWhenIdle(initDt);
+    else if (document.readyState === 'complete') initDt();
+    else window.addEventListener('load', initDt);
+})();
 
 (function() {
     var sel = document.getElementById('fromAccEdit');
@@ -588,6 +1125,12 @@ $(document).ready(() => {
 <?php if (!empty($editingTransfer)): ?>
 setTimeout(function() {
     var p = document.getElementById('editTransferPanel');
+    if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}, 80);
+<?php endif; ?>
+<?php if (!empty($editingAdjustment)): ?>
+setTimeout(function() {
+    var p = document.getElementById('editAdjustmentPanel');
     if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }, 80);
 <?php endif; ?>

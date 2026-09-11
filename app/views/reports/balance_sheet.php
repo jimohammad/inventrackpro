@@ -53,7 +53,7 @@ $cmpEquity     = $cmp($totalEquity, (float) ($compareSnapshot['net_worth'] ?? 0)
 .bs-table tbody tr { border-bottom: 1px solid var(--border-color); }
 .bs-table tbody tr:last-child { border-bottom: none; }
 .bs-table td { padding: 8px 14px; vertical-align: middle; }
-.bs-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; white-space: nowrap; }
+.bs-table td.num { text-align: right;  font-weight: 600; white-space: nowrap; }
 .bs-table td.num.muted { color: var(--text-muted); font-weight: 500; }
 .bs-table td.num.pos { color: #059669; }
 .bs-table td.num.neg { color: #dc2626; }
@@ -97,7 +97,7 @@ $cmpEquity     = $cmp($totalEquity, (float) ($compareSnapshot['net_worth'] ?? 0)
 .bs-trend-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; background: rgba(99,102,241,0.04); }
 .bs-trend-item.is-current { border-color: rgba(99,102,241,0.35); background: rgba(99,102,241,0.08); }
 .bs-trend-month { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
-.bs-trend-val { font-size: 0.95rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: #6366f1; }
+.bs-trend-val { font-size: 0.95rem; font-weight: 800;  color: #6366f1; }
 .bs-snap-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .bs-snap-form input { border: 1px solid var(--border-color); border-radius: 8px; padding: 5px 10px; font-size: 0.8rem; background: var(--bg-main); color: var(--text-main); }
 
@@ -117,9 +117,12 @@ $cmpEquity     = $cmp($totalEquity, (float) ($compareSnapshot['net_worth'] ?? 0)
 
 <div class="bs-report">
     <div class="bs-toolbar no-print">
-        <div>
-            <h1 class="page-title">Balance Sheet</h1>
-            <p class="page-subtitle">Statement of financial position — Assets = Liabilities + Equity</p>
+        <div class="d-flex align-items-start gap-2">
+            <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+            <div>
+                <h1 class="page-title">Balance Sheet</h1>
+                <p class="page-subtitle">Statement of financial position — Assets = Liabilities + Equity</p>
+            </div>
         </div>
         <div class="bs-toolbar-actions">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="bsExpandAll" data-state="collapsed">

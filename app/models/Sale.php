@@ -27,19 +27,31 @@ class Sale extends BaseModel {
 
         $wid = Auth::warehouseId();
         if ($wid) {
-            if ($voidedOnly && Auth::isAdmin()) {
-                // voided-only list: company-wide
-            } elseif ($includeVoided && Auth::isAdmin()) {
-                $where .= " AND (s.status = 'cancelled' OR s.warehouse_id = ?)";
-                $params[] = $wid;
-            } else {
-                $where .= " AND s.warehouse_id = ?";
-                $params[] = $wid;
-            }
+            $where .= " AND s.warehouse_id = ?";
+            $params[] = $wid;
         }
 
         if (!empty($filters['party_id'])) {
             $where .= " AND s.party_id = ?"; $params[] = $filters['party_id'];
+        }
+        if (($filters['item'] ?? '') !== '') {
+            $itemQ = $filters['item'];
+            if (ctype_digit((string) $itemQ)) {
+                $where .= " AND EXISTS (
+                    SELECT 1 FROM sale_items si
+                    WHERE si.sale_id = s.id AND si.item_id = ?
+                )";
+                $params[] = (int) $itemQ;
+            } else {
+                $where .= " AND EXISTS (
+                    SELECT 1 FROM sale_items si
+                    JOIN items i ON i.id = si.item_id
+                    WHERE si.sale_id = s.id AND (i.name LIKE ? OR i.sku LIKE ?)
+                )";
+                $itemLike = '%' . $itemQ . '%';
+                $params[] = $itemLike;
+                $params[] = $itemLike;
+            }
         }
         if (!empty($filters['status']) && !$voidedOnly) {
             $where .= " AND s.status = ?"; $params[] = $filters['status'];
@@ -62,17 +74,21 @@ class Sale extends BaseModel {
 
     private static function salesListFromJoins(): string {
         return 'FROM sales s
-             LEFT JOIN parties p ON p.id = s.party_id
-             LEFT JOIN users u ON u.id = s.created_by
-             LEFT JOIN warehouses w ON w.id = s.warehouse_id';
+             LEFT JOIN parties p ON p.id = s.party_id';
     }
 
     // Get all sales with party name
     // BUG FIX: Changed JOIN to LEFT JOIN on parties. If a party is hard-deleted
     // (BaseModel::delete exists), INNER JOIN silently drops all their sales from listings.
     public function getAll(array $filters = []): array {
-        return $this->getIndexPage($filters)['items'];
+        return $this->getIndexPage($filters, ListPage::MAX_ROWS)['items'];
     }
+
+    /**
+     * Rows painted on the Sales list (newest first).
+     * Filters still find older invoices; this is a DOM cap, not a data cap.
+     */
+    public const INDEX_LIST_LIMIT = 25;
 
     /**
      * Sales list for index — fetches limit+1 rows to detect truncation.
@@ -85,8 +101,8 @@ class Sale extends BaseModel {
         $fetchCap = $limit + 1;
 
         $rows = $this->db->fetchAll(
-            "SELECT s.*, p.name as party_name, p.phone as party_phone,
-                    u.name as created_by_name, w.name as warehouse_name
+            "SELECT s.id, s.invoice_no, s.status, s.date, s.created_at, s.party_id, s.warehouse_id,
+                    s.grand_total, s.paid_amount, p.name as party_name
              " . self::salesListFromJoins() . "
              {$where}
              ORDER BY s.created_at DESC
@@ -95,36 +111,6 @@ class Sale extends BaseModel {
         );
 
         return ListPage::capRows($rows, $limit);
-    }
-
-    /**
-     * Sale IDs for bulk A5/PDF print, chronological. Fetches at most maxInvoices + 1 to detect truncation.
-     *
-     * @return array{ids: array<int,int>, truncated: bool}
-     */
-    public function getIdsForBulkPrint(array $filters, int $maxInvoices = 200): array {
-        $maxInvoices = max(1, min(300, $maxInvoices));
-        $fetchCap    = $maxInvoices + 1;
-        [$where, $params] = $this->buildSalesListWhere($filters);
-
-        $rows = $this->db->fetchAll(
-            "SELECT s.id
-             " . self::salesListFromJoins() . "
-             {$where}
-             ORDER BY s.date ASC, s.id ASC
-             LIMIT " . (int) $fetchCap,
-            $params
-        );
-
-        $truncated = count($rows) > $maxInvoices;
-        if ($truncated) {
-            $rows = array_slice($rows, 0, $maxInvoices);
-        }
-
-        return [
-            'ids'        => array_map('intval', array_column($rows, 'id')),
-            'truncated'  => $truncated,
-        ];
     }
 
     // Get single sale with all details
@@ -145,7 +131,8 @@ class Sale extends BaseModel {
 
         // Get items with IMEI list
         $sale['items'] = $this->db->fetchAll(
-            "SELECT si.*, i.name as item_name, i.sku, i.unit, i.has_imei,
+            "SELECT si.*, i.name as item_name, i.name_ar as item_name_ar, i.sku, i.unit, i.has_imei,
+                    i.sale_price, COALESCE(i.max_sale_qty, 0) AS max_sale_qty,
                     GROUP_CONCAT(ir.imei ORDER BY ir.imei SEPARATOR '||') as imei_list
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
@@ -185,7 +172,7 @@ class Sale extends BaseModel {
         if (!$sale) return false;
 
         $sale['items'] = $this->db->fetchAll(
-            "SELECT si.*, i.name as item_name, i.sku, i.unit, i.has_imei,
+            "SELECT si.*, i.name as item_name, i.name_ar as item_name_ar, i.sku, i.unit, i.has_imei,
                     GROUP_CONCAT(ir.imei ORDER BY ir.imei SEPARATOR '||') as imei_list
              FROM sale_items si
              JOIN items i ON i.id = si.item_id
@@ -198,6 +185,23 @@ class Sale extends BaseModel {
         );
 
         return $sale;
+    }
+
+    /**
+     * Invoice AR from header totals only (returns are party credits, not invoice deductions).
+     *
+     * @return array{balance: float, status: string}
+     */
+    public static function deriveInvoiceAr(float $grandTotal, float $paidAmount): array {
+        $newBalance = max(0.0, round($grandTotal - $paidAmount, 3));
+        if ($newBalance < 0.001) {
+            return ['balance' => 0.0, 'status' => 'paid'];
+        }
+        if ($paidAmount > 0.001) {
+            return ['balance' => $newBalance, 'status' => 'partial'];
+        }
+
+        return ['balance' => $newBalance, 'status' => 'confirmed'];
     }
 
     /**
@@ -217,19 +221,186 @@ class Sale extends BaseModel {
         if (!$saleData) {
             return;
         }
-        $newBalance = max(0, round((float) $saleData['grand_total'] - (float) $saleData['paid_amount'], 3));
-        if ($newBalance < 0.001) {
-            $newStatus  = 'paid';
-            $newBalance = 0;
-        } elseif ((float) $saleData['paid_amount'] > 0.001) {
-            $newStatus = 'partial';
-        } else {
-            $newStatus = 'confirmed';
+        $derived = self::deriveInvoiceAr(
+            (float) $saleData['grand_total'],
+            (float) $saleData['paid_amount']
+        );
+        $this->db->execute(
+            'UPDATE sales SET balance = ?, status = ? WHERE id = ?',
+            [$derived['balance'], $derived['status'], $saleId]
+        );
+    }
+
+    /** Active receipts linked to one sale invoice (ref_type=sale, ref_id). */
+    public function getLinkedPaymentTotal(int $saleId): float {
+        if ($saleId <= 0) {
+            return 0.0;
+        }
+
+        return (float) ($this->db->fetchOne(
+            "SELECT COALESCE(SUM(amount), 0) AS tot FROM payments
+             WHERE ref_type = 'sale' AND ref_id = ? AND status = 'active'",
+            [$saleId]
+        )['tot'] ?? 0);
+    }
+
+    /**
+     * True when receipts exist for this invoice but FIFO left balance on the row.
+     */
+    public function needsAllocationRepair(array $sale): bool {
+        if (in_array(($sale['status'] ?? ''), ['cancelled', 'paid'], true)) {
+            return false;
+        }
+
+        $grand     = (float) ($sale['grand_total'] ?? 0);
+        $paid      = (float) ($sale['paid_amount'] ?? 0);
+        $remaining = max(0.0, round($grand - $paid, 3));
+        if ($remaining < 0.001) {
+            return false;
+        }
+
+        $saleId  = (int) ($sale['id'] ?? 0);
+        $partyId = (int) ($sale['party_id'] ?? 0);
+        $whId    = (int) ($sale['warehouse_id'] ?? 0);
+        if ($saleId <= 0 || $partyId <= 0 || $whId <= 0) {
+            return false;
+        }
+
+        $linked = $this->getLinkedPaymentTotal($saleId);
+        if ($linked >= $remaining - 0.001) {
+            return true;
+        }
+
+        require_once __DIR__ . '/Payment.php';
+        $gap = (new Payment())->saleAllocationGap($partyId, $whId);
+        if ($gap > 0.001) {
+            return true;
+        }
+
+        return $this->findUnlinkedReceiptForSale($sale) !== null;
+    }
+
+    /**
+     * Replay FIFO for the party when linked/unlinked receipts should cover this invoice.
+     */
+    public function repairAllocationIfNeeded(int $saleId): bool {
+        $sale = $this->find($saleId);
+        if (!$sale || !$this->needsAllocationRepair($sale)) {
+            return false;
+        }
+
+        $this->linkUnlinkedReceiptToSaleIfEligible($sale);
+
+        require_once __DIR__ . '/Payment.php';
+        $partyId = (int) $sale['party_id'];
+        $whId    = (int) $sale['warehouse_id'];
+        if ($partyId <= 0 || $whId <= 0) {
+            return false;
+        }
+
+        return (new Payment())->rebuildFifoAllocationForParty($partyId, $whId) !== false;
+    }
+
+    /** Refresh paid/balance/status for one invoice row. */
+    public function refreshInvoicePaymentState(int $saleId): bool {
+        $changed = $this->repairAllocationIfNeeded($saleId);
+        if ($this->syncInvoiceStatusIfStale($saleId)) {
+            $changed = true;
+        }
+
+        return $changed;
+    }
+
+    private function hasOlderUnpaidInvoices(int $partyId, int $whId, int $saleId, string $saleDate): bool {
+        $row = $this->db->fetchOne(
+            "SELECT COUNT(*) AS c FROM sales
+             WHERE party_id = ? AND warehouse_id = ?
+               AND status NOT IN ('cancelled','paid')
+               AND balance > 0.001
+               AND (date < ? OR (date = ? AND id < ?))
+               AND id != ?",
+            [$partyId, $whId, $saleDate, $saleDate, $saleId, $saleId]
+        );
+
+        return (int) ($row['c'] ?? 0) > 0;
+    }
+
+    /** Standalone receipt (no invoice link) that matches this sale's date and remaining due. */
+    private function findUnlinkedReceiptForSale(array $sale): ?array {
+        $partyId   = (int) ($sale['party_id'] ?? 0);
+        $whId      = (int) ($sale['warehouse_id'] ?? 0);
+        $saleId    = (int) ($sale['id'] ?? 0);
+        $saleDate  = (string) ($sale['date'] ?? '');
+        $grand     = (float) ($sale['grand_total'] ?? 0);
+        $paid      = (float) ($sale['paid_amount'] ?? 0);
+        $remaining = max(0.0, round($grand - $paid, 3));
+
+        if ($partyId <= 0 || $whId <= 0 || $saleId <= 0 || $saleDate === '' || $remaining < 0.001) {
+            return null;
+        }
+        if ($this->hasOlderUnpaidInvoices($partyId, $whId, $saleId, $saleDate)) {
+            return null;
+        }
+
+        $row = $this->db->fetchOne(
+            "SELECT id, amount FROM payments
+             WHERE party_id = ? AND payment_type = 'in' AND status = 'active'
+               AND (warehouse_id = ? OR warehouse_id IS NULL)
+               AND ref_type = 'sale' AND COALESCE(ref_id, 0) = 0
+               AND date = ?
+               AND amount >= ?
+             ORDER BY ABS(amount - ?) ASC, id DESC
+             LIMIT 1",
+            [$partyId, $whId, $saleDate, $remaining, $remaining]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    /** Attach a same-day standalone receipt to this invoice so rebuild can prioritize it. */
+    private function linkUnlinkedReceiptToSaleIfEligible(array $sale): void {
+        if ($this->getLinkedPaymentTotal((int) ($sale['id'] ?? 0)) >= 0.001) {
+            return;
+        }
+
+        $match = $this->findUnlinkedReceiptForSale($sale);
+        if (!$match) {
+            return;
+        }
+
+        $this->db->execute(
+            'UPDATE payments SET ref_id = ? WHERE id = ? AND ref_type = ? AND COALESCE(ref_id, 0) = 0',
+            [(int) $sale['id'], (int) $match['id'], 'sale']
+        );
+    }
+
+    /** Fix stored balance/status when they drift from grand_total − paid_amount. */
+    public function syncInvoiceStatusIfStale(int $saleId): bool {
+        if ($saleId <= 0) {
+            return false;
+        }
+        $saleData = $this->db->fetchOne(
+            "SELECT grand_total, paid_amount, balance, status FROM sales WHERE id = ? AND status != 'cancelled'",
+            [$saleId]
+        );
+        if (!$saleData) {
+            return false;
+        }
+        $derived = self::deriveInvoiceAr(
+            (float) $saleData['grand_total'],
+            (float) $saleData['paid_amount']
+        );
+        $statusStale  = (string) ($saleData['status'] ?? '') !== $derived['status'];
+        $balanceStale = abs((float) ($saleData['balance'] ?? 0) - $derived['balance']) > 0.001;
+        if (!$statusStale && !$balanceStale) {
+            return false;
         }
         $this->db->execute(
             'UPDATE sales SET balance = ?, status = ? WHERE id = ?',
-            [$newBalance, $newStatus, $saleId]
+            [$derived['balance'], $derived['status'], $saleId]
         );
+
+        return true;
     }
 
     // Get next invoice number — MUST be called inside a transaction
@@ -318,10 +489,17 @@ class Sale extends BaseModel {
                 $subtotal += $lineTotal;
             }
 
+            if ($totalDisc > $subtotal + 0.001) {
+                throw new Exception('Invoice discount cannot exceed the item subtotal.');
+            }
+
             $grandTotal = $subtotal - $totalDisc;
             // Only accept payment if account_id is provided — prevents fake paid_amount
             $paid       = (!empty($data['account_id']) && (float)($data['paid_amount'] ?? 0) > 0)
                           ? (float) $data['paid_amount'] : 0;
+            if ($paid > $grandTotal + 0.001) {
+                throw new Exception('Payment amount cannot exceed the invoice total. Record any excess as a separate customer credit.');
+            }
             $balance    = $grandTotal - $paid;
 
             if ($balance < 0.001) {
@@ -519,6 +697,28 @@ class Sale extends BaseModel {
     public function addPayment(int $saleId, float $amount, int $accountId, string $method, string $date, string $notes = ''): bool|string {
         if (!$this->find($saleId)) return 'Sale not found.';
         if ($amount <= 0) return 'Payment amount must be greater than zero.';
+        if ($accountId <= 0) return 'Please select a valid account.';
+
+        try {
+            $acc = $this->db->fetchOne(
+                'SELECT id, COALESCE(is_active, 1) AS is_active FROM accounts WHERE id = ?',
+                [$accountId]
+            );
+        } catch (PDOException $e) {
+            if ((int) ($e->errorInfo[1] ?? 0) !== 1054) {
+                throw $e;
+            }
+            $acc = $this->db->fetchOne('SELECT id FROM accounts WHERE id = ?', [$accountId]);
+            if ($acc) {
+                $acc['is_active'] = 1;
+            }
+        }
+        if (!$acc) {
+            return 'Account not found.';
+        }
+        if ((int) ($acc['is_active'] ?? 1) !== 1) {
+            return 'That account is inactive.';
+        }
 
         $this->db->beginTransaction();
         try {
@@ -587,6 +787,12 @@ class Sale extends BaseModel {
             return false; // Cannot cancel a sale that has approved returns
         }
 
+        require_once __DIR__ . '/DeviceDump.php';
+        $dumpedImei = (new DeviceDump())->firstDumpedImeiOnSale($id);
+        if ($dumpedImei) {
+            return false;
+        }
+
         $this->db->beginTransaction();
         try {
             // Lock sale + stock rows before restore (avoids races with concurrent sales)
@@ -614,7 +820,7 @@ class Sale extends BaseModel {
 
             // Reset IMEI status
             $this->db->execute(
-                "UPDATE imei_records SET status='in_stock', sale_id=NULL WHERE sale_id=?",
+                "UPDATE imei_records SET status='in_stock', sale_id=NULL WHERE sale_id=? AND status='sold'",
                 [$id]
             );
 

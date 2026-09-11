@@ -27,6 +27,15 @@ class PurchaseOrderConverter {
         if (!in_array($po['status'], ['paid', 'draft'], true)) {
             throw new Exception("PO {$po['po_no']} cannot be converted (status: {$po['status']}).");
         }
+        $poKwdTotal = round(
+            (float) $po['subtotal_kwd']
+            + (float) ($po['other_charges_kwd'] ?? 0)
+            + (float) ($po['adjustment_kwd'] ?? 0),
+            3
+        );
+        if (($po['currency'] ?? 'KWD') !== 'KWD' && $poKwdTotal <= 0.001) {
+            throw new Exception("PO {$po['po_no']} has no KWD cost yet. Pay the bank TT first.");
+        }
 
         $items = $db->fetchAll(
             "SELECT poi.*, i.name as item_name, i.has_imei
@@ -48,13 +57,15 @@ class PurchaseOrderConverter {
 
         $itemSubtotal = (float) $po['subtotal_kwd'];
         $otherCharges = (float) ($po['other_charges_kwd'] ?? 0);
-        $grandTotal   = round($itemSubtotal + $otherCharges, 3);
+        $adjustment   = (float) ($po['adjustment_kwd'] ?? 0);
+        $grandTotal   = round($itemSubtotal + $otherCharges + $adjustment, 3);
         $paid         = (float) $po['paid_kwd'];
         $balance      = max(0, $grandTotal - $paid);
         $status       = $balance < 0.001 ? 'paid' : 'partial';
 
         $notes = "Converted from PO: {$po['po_no']}. Currency: {$po['currency']} @ rate {$po['exchange_rate']}. "
             . ($otherCharges > 0.001 ? "Other charges: {$otherCharges} KWD. " : '')
+            . (abs($adjustment) > 0.0005 ? "Bank adj: {$adjustment} KWD. " : '')
             . ($po['notes'] ?: '')
             . ($notesSuffix !== '' ? ' ' . $notesSuffix : '');
 
@@ -91,12 +102,23 @@ class PurchaseOrderConverter {
                 $poItemToPurchaseItem[(int) $item['id']] = $purchaseItemId;
             }
 
-            $db->execute(
-                "INSERT INTO stock (item_id, warehouse_id, quantity)
-                 VALUES (?,?,?)
-                 ON DUPLICATE KEY UPDATE quantity = quantity + ?",
-                [$item['item_id'], $po['warehouse_id'], $item['quantity'], $item['quantity']]
+            // Stock qty is independent of IMEI scan — arrivals must appear on Stock List immediately.
+            $qty = (int) $item['quantity'];
+            $stockRow = $db->fetchOne(
+                "SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
+                [(int) $item['item_id'], (int) $po['warehouse_id']]
             );
+            if ($stockRow) {
+                $db->execute(
+                    "UPDATE stock SET quantity = quantity + ? WHERE id = ?",
+                    [$qty, (int) $stockRow['id']]
+                );
+            } else {
+                $db->insert(
+                    "INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?,?,?)",
+                    [(int) $item['item_id'], (int) $po['warehouse_id'], $qty]
+                );
+            }
 
             if (!$skipItemMasterPriceUpdate) {
                 require_once __DIR__ . '/ItemCostService.php';
@@ -182,7 +204,7 @@ class PurchaseOrderConverter {
      */
     public static function reopenConvertedPo(Database $db, int $poId): bool {
         $po = $db->fetchOne(
-            "SELECT id, po_no, status, paid_kwd, subtotal_kwd, other_charges_kwd, converted_to
+            "SELECT id, po_no, status, paid_kwd, subtotal_kwd, other_charges_kwd, adjustment_kwd, converted_to
              FROM purchase_orders WHERE id = ?",
             [$poId]
         );
@@ -199,7 +221,7 @@ class PurchaseOrderConverter {
             self::reactivateCancelledPaymentsForPo($db, $poId, $convertedTo);
         }
 
-        $totalKwd = (float) $po['subtotal_kwd'] + (float) ($po['other_charges_kwd'] ?? 0);
+        $totalKwd = (float) $po['subtotal_kwd'] + (float) ($po['other_charges_kwd'] ?? 0) + (float) ($po['adjustment_kwd'] ?? 0);
         $paidKwd  = (float) ($po['paid_kwd'] ?? 0);
         $newStatus = self::resolvePoStatusAfterReopen($paidKwd, $totalKwd);
 

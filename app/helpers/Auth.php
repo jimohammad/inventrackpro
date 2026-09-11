@@ -12,6 +12,9 @@ class Auth {
     /** Set when check() clears a session because the calendar day changed (APP_TIMEZONE). */
     private static bool $sessionExpiredNewDay = false;
 
+    /** Ensures permissions are reloaded from DB at most once per request. */
+    private static bool $permissionsRefreshedThisRequest = false;
+
     /** Calendar date (Y-m-d) used to invalidate sessions after midnight. */
     private static function sessionDateToday(): string {
         return date('Y-m-d');
@@ -47,7 +50,9 @@ class Auth {
                 'path'     => '/',
                 'secure'   => $isHttps,
                 'httponly' => true,
-                'samesite' => 'Strict'
+                // Lax: Chrome sends the new session cookie on the POST→redirect
+                // after Sign In. Strict often drops it, so Firefox stays in and Chrome does not.
+                'samesite' => 'Lax'
             ]);
             session_start();
         }
@@ -78,28 +83,96 @@ class Auth {
         $_SESSION['logged_in']  = true;
         $_SESSION['session_date'] = self::sessionDateToday();
 
-        // Load permissions into session (select only required columns)
-        $perms = $db->fetchAll(
-            "SELECT module, can_view, can_add, can_edit, can_delete
-             FROM permissions
-             WHERE user_id = ?",
-            [$user['id']]
-        );
-        $permMap = [];
-        foreach ($perms as $p) {
-            $permMap[$p['module']] = [
-                'view'   => (bool) $p['can_view'],
-                'add'    => (bool) $p['can_add'],
-                'edit'   => (bool) $p['can_edit'],
-                'delete' => (bool) $p['can_delete'],
-            ];
-        }
-        $_SESSION['permissions'] = $permMap;
+        self::loadPermissionsIntoSession((int) $user['id']);
+        self::$permissionsRefreshedThisRequest = true;
 
         // Update last login timestamp
         $db->execute("UPDATE users SET last_login = NOW() WHERE id = ?", [$user['id']]);
 
+        // Flush Set-Cookie before the 302. Chrome may follow the redirect before
+        // it stores a cookie that is still in the PHP output buffer.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
         return true;
+    }
+
+    /**
+     * Load (or reload) the user's permission rows into the session.
+     * Called on login and when the 2-minute session cache expires (admin edits apply shortly after).
+     */
+    public static function loadPermissionsIntoSession(int $userId): void {
+        if ($userId <= 0) {
+            $_SESSION['permissions'] = [];
+            $_SESSION['permissions_loaded_at'] = time();
+            return;
+        }
+        try {
+            $db = Database::getInstance();
+            $perms = $db->fetchAll(
+                "SELECT module, can_view, can_add, can_edit, can_delete
+                 FROM permissions
+                 WHERE user_id = ?",
+                [$userId]
+            );
+            $permMap = [];
+            foreach ($perms as $p) {
+                $mod = trim((string) ($p['module'] ?? ''));
+                if ($mod === '') {
+                    continue;
+                }
+                $permMap[$mod] = [
+                    'view'   => (bool) $p['can_view'],
+                    'add'    => (bool) $p['can_add'],
+                    'edit'   => (bool) $p['can_edit'],
+                    'delete' => (bool) $p['can_delete'],
+                ];
+            }
+            $_SESSION['permissions'] = $permMap;
+            $_SESSION['permissions_loaded_at'] = time();
+        } catch (Throwable $e) {
+            error_log('[ERP] permissions load: ' . $e->getMessage());
+            $_SESSION['permissions'] = $_SESSION['permissions'] ?? [];
+            $_SESSION['permissions_loaded_at'] = time();
+        }
+    }
+
+    /** Refresh session permissions from DB at most every 2 minutes (skip for admin). */
+    private static function ensurePermissionsFresh(): void {
+        if (self::$permissionsRefreshedThisRequest) {
+            return;
+        }
+        self::$permissionsRefreshedThisRequest = true;
+        if (self::isAdmin()) {
+            return;
+        }
+        $loadedAt = (int) ($_SESSION['permissions_loaded_at'] ?? 0);
+        if ($loadedAt > 0
+            && (time() - $loadedAt) < 120
+            && isset($_SESSION['permissions'])
+            && is_array($_SESSION['permissions'])
+        ) {
+            return;
+        }
+        $uid = self::id();
+        if ($uid) {
+            self::loadPermissionsIntoSession((int) $uid);
+        }
+    }
+
+    /** True if master Reports or any individual rpt_* view permission is granted. */
+    public static function hasAnyReportAccess(): bool {
+        if (self::can('reports', 'view')) {
+            return true;
+        }
+        $perms = $_SESSION['permissions'] ?? [];
+        foreach ($perms as $mod => $actions) {
+            if (str_starts_with((string) $mod, 'rpt_') && !empty($actions['view'])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Logout
@@ -115,10 +188,15 @@ class Auth {
         if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
             return false;
         }
-        if (!self::isSessionDateCurrent()) {
-            self::$sessionExpiredNewDay = true;
-            self::logout();
-            return false;
+        try {
+            if (!self::isSessionDateCurrent()) {
+                self::$sessionExpiredNewDay = true;
+                self::logout();
+                return false;
+            }
+            self::ensurePermissionsFresh();
+        } catch (Throwable $e) {
+            error_log('[ERP] Auth::check: ' . $e->getMessage());
         }
         return true;
     }
@@ -128,8 +206,8 @@ class Auth {
      * Controllers extend BaseController, which also checks this before Auth::required().
      */
     public static function isPublicPage(string $page): bool {
-        $page = preg_replace('/[^a-z0-9_]/', '', strtolower($page));
-        return in_array($page, ['login', 'logout', 'fieldstatement', 'servicetrack', 'imeitrack'], true);
+        $page = preg_replace('/[^a-z0-9_]/', '', strtolower($page)) ?? '';
+        return in_array($page, ['login', 'logout', 'fieldstatement', 'servicetrack', 'imeitrack', 'appshub', 'appsorder', 'verify', 'podocsverify', 'paymentverify'], true);
     }
 
     // Redirect to login if not authenticated
@@ -183,12 +261,51 @@ class Auth {
         return self::role() === 'admin';
     }
 
+    /** Shop-floor roles (salesman/cashier and view-only) — never browse suppliers. */
+    public static function isSalesFloor(): bool {
+        return in_array(self::role(), ['cashier', 'viewer'], true);
+    }
+
     // Check specific permission
     public static function can(string $module, string $action = 'view'): bool {
         if (self::isAdmin()) return true; // admin can do everything
 
+        // Supplier directory is not for salesman/cashier even if a checkbox was left on.
+        if (self::isSalesFloor() && in_array($module, ['suppliers', 'supplier_contacts', 'rpt_supplier_stmt'], true)) {
+            return false;
+        }
+
         $perms = $_SESSION['permissions'] ?? [];
         return isset($perms[$module][$action]) && $perms[$module][$action] === true;
+    }
+
+    /**
+     * Party autocomplete type. Salesman may only search customers (not suppliers / freight).
+     */
+    public static function sanitizePartySearchType(string $type): string {
+        if (in_array($type, ['supplier', 'freight_forwarder'], true) && !self::can('suppliers', 'view')) {
+            return 'customer';
+        }
+        if ($type === 'all' && !self::can('suppliers', 'view')) {
+            return 'customer';
+        }
+        if ($type === 'purchase' && !self::can('purchases', 'view')) {
+            return 'customer';
+        }
+        if (in_array($type, ['payment_out', 'payment_out'], true) && !self::can('payments_out', 'view')) {
+            return 'customer';
+        }
+        return $type;
+    }
+
+    /** True if the user has the action on any of the given modules. */
+    public static function canAny(array $modules, string $action = 'view'): bool {
+        foreach ($modules as $module) {
+            if (self::can((string) $module, $action)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Deny access if no permission (show 403 page)
@@ -198,6 +315,15 @@ class Auth {
             include __DIR__ . '/../../app/views/errors/403.php';
             exit;
         }
+    }
+
+    /** Deny access unless the user has the action on at least one module. */
+    public static function authorizeAny(array $modules, string $action = 'view'): void {
+        if (self::canAny($modules, $action)) {
+            return;
+        }
+        $first = (string) ($modules[0] ?? 'dashboard');
+        self::authorize($first, $action);
     }
 
     // Hash a password
@@ -263,8 +389,37 @@ class Auth {
         );
     }
 
+    /**
+     * Put the operational branch in session (Main id=1 when present).
+     * Used after login and when the switcher is off so the picker is never required.
+     */
+    public static function autoSelectOperationalWarehouse(): bool {
+        if (self::warehouseId()) {
+            return true;
+        }
+        try {
+            $db = Database::getInstance();
+            $wh = $db->fetchOne(
+                'SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY (id = 1) DESC, id ASC LIMIT 1'
+            );
+            if ($wh) {
+                self::setWarehouse((int) $wh['id'], (string) $wh['name']);
+                return true;
+            }
+        } catch (Throwable $e) {
+            error_log('[ERP] warehouse auto-select: ' . $e->getMessage());
+        }
+        self::setWarehouse(1, 'Main Branch');
+        return true;
+    }
+
     // Redirect to warehouse selector if no warehouse chosen
     public static function requireWarehouse() {
+        if (empty($_SESSION['warehouse_id'])) {
+            if (!(defined('WAREHOUSE_UI_SWITCHER') && WAREHOUSE_UI_SWITCHER)) {
+                self::autoSelectOperationalWarehouse();
+            }
+        }
         if (empty($_SESSION['warehouse_id'])) {
             header('Location: ' . APP_URL . '/?page=warehouse');
             exit;
@@ -286,11 +441,16 @@ class Auth {
             return;
         }
 
-        $db = Database::getInstance();
-        $wh = $db->fetchOne(
-            'SELECT id, name, is_active FROM warehouses WHERE id = ?',
-            [$id]
-        );
+        try {
+            $db = Database::getInstance();
+            $wh = $db->fetchOne(
+                'SELECT id, name, is_active FROM warehouses WHERE id = ?',
+                [$id]
+            );
+        } catch (Throwable $e) {
+            error_log('[ERP] warehouse verify: ' . $e->getMessage());
+            return;
+        }
         if (!$wh || !(int) ($wh['is_active'] ?? 0)) {
             self::clearWarehouse();
             header('Location: ' . APP_URL . '/?page=warehouse');

@@ -411,15 +411,6 @@ body {
     </div>
 
     <div class="section">
-        <div class="section-label">Service</div>
-        <div class="row"><span class="lbl">Service #</span><span class="val"><?= htmlspecialchars((string) $record['service_no']) ?></span></div>
-        <div class="row"><span class="lbl">Received</span><span class="val"><?= date('d M Y', strtotime((string) $receivedTs)) ?></span></div>
-        <?php if (!empty($record['warehouse_name'])): ?>
-        <div class="row"><span class="lbl">Location</span><span class="val"><?= htmlspecialchars((string) $record['warehouse_name']) ?></span></div>
-        <?php endif; ?>
-    </div>
-
-    <div class="section">
         <div class="section-label">Customer</div>
         <div class="row"><span class="lbl">Name</span><span class="val"><?= htmlspecialchars($customerName ?: '—') ?></span></div>
         <?php if (!empty($record['customer_phone'])): ?>
@@ -476,6 +467,15 @@ body {
         <?php endif; ?>
     </div>
     <?php endif; ?>
+
+    <div class="section">
+        <div class="section-label">Service</div>
+        <div class="row"><span class="lbl">Service #</span><span class="val"><?= htmlspecialchars((string) $record['service_no']) ?></span></div>
+        <div class="row"><span class="lbl">Received</span><span class="val"><?= date('d M Y', strtotime((string) $receivedTs)) ?></span></div>
+        <?php if (!empty($record['warehouse_name'])): ?>
+        <div class="row"><span class="lbl">Location</span><span class="val"><?= htmlspecialchars((string) $record['warehouse_name']) ?></span></div>
+        <?php endif; ?>
+    </div>
 
     <div class="track-box">
         <div class="track-title">Track repair status</div>

@@ -1,6 +1,6 @@
 <style>
 .os-wrap{display:flex;flex-direction:column;gap:0;}
-.os-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);border-radius:12px 12px 0 0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
+.os-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#1e3a5f;border-radius:0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
 .os-topbar .os-title{font-size:1.05rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;}
 .os-meta-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
 .items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:hidden;}
@@ -103,7 +103,7 @@ table.os-tbl tfoot tr{background:#f8f9ff;}
                 <?php foreach ($existing as $row): ?>
                 <tr style="background:#fff;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'">
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-weight:600;color:#1e293b;"><?= htmlspecialchars($row['item_name']) ?></td>
-                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8;"><?= htmlspecialchars($row['sku'] ?? '—') ?></td>
+                    <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;font-size:0.75rem;color:#94a3b8;"><?= htmlspecialchars($row['sku'] ?? '—') ?></td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:center;font-weight:700;color:#4338ca;"><?= $row['quantity'] ?></td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;color:#475569;"><?= number_format($row['cost_price'], DECIMAL_PLACES) ?></td>
                     <td style="padding:9px 14px;border-bottom:1px solid #cbd5e1;text-align:right;font-weight:700;color:#6366f1;"><?= number_format($row['total_value'], DECIMAL_PLACES) ?> <?= APP_CURRENCY ?></td>
@@ -289,7 +289,7 @@ function addRow(item) {
             ${item.name}
             <input type="hidden" name="items[${rid}][item_id]" value="${rid}">
         </td>
-        <td style="padding:5px 6px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8;">${item.sku || '—'}</td>
+        <td style="padding:5px 6px;text-align:center;font-size:0.75rem;color:#94a3b8;">${item.sku || '—'}</td>
         <td style="padding:5px 6px;text-align:center;color:#94a3b8;">${item.current_stock}</td>
         <td style="padding:5px 6px;text-align:center;">
             <input type="number" name="items[${rid}][quantity]" id="qty_${rid}"

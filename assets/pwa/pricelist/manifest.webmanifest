@@ -2,7 +2,7 @@
   "id": "/pricelist",
   "name": "Iqbal Pricelist",
   "short_name": "Pricelist",
-  "description": "Iqbal Electronics Co. WLL — public product pricelist",
+  "description": "Iqbal Electronics Co. LLC — public product pricelist",
   "start_url": "/pricelist?utm_source=pwa",
   "scope": "/pricelist",
   "display": "standalone",

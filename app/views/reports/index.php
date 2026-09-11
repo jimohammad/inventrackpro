@@ -134,6 +134,7 @@ $sectionColors = [
     'Payments & Accounts'  => '#3b82f6',
     'Purchases & Suppliers'=> '#f59e0b',
     'Inventory'            => '#10b981',
+    'Official documents'   => '#1e3a5f',
 ];
 
 $categories = [
@@ -149,6 +150,13 @@ $categories = [
         ['page' => 'reports', 'action' => 'customerPurchases', 'perm' => 'rpt_customer_purchases', 'icon' => 'bi-bag-check-fill',     'color' => '#a855f7', 'bg' => 'rgba(168,85,247,0.1)',  'title' => 'Customer Purchases',    'desc' => 'What a customer bought, by date'],
         ['page' => 'reports', 'action' => 'salesReturns',  'perm' => 'rpt_sales_returns', 'icon' => 'bi-arrow-return-left', 'color' => '#ef4444', 'bg' => 'rgba(239,68,68,0.1)',   'title' => 'Sales Returns',         'desc' => 'Returned sales & item details'],
         ['page' => 'reports', 'action' => 'customerImei',  'perm' => 'rpt_customer_imei', 'icon' => 'bi-phone',             'color' => '#0891b2', 'bg' => 'rgba(8,145,178,0.1)',   'title' => 'Customer IMEI',         'desc' => 'IMEIs sold with invoice & date'],
+        ['page' => 'reports', 'action' => 'returnImei',    'perm' => 'rpt_return_imei',   'icon' => 'bi-phone-flip',        'color' => '#e11d48', 'bg' => 'rgba(225,29,72,0.1)',  'title' => 'Return IMEI',           'desc' => 'IMEIs on return invoices per party'],
+    ],
+    'Official documents' => [
+        ['page' => 'reports', 'action' => 'bankKyc',           'perm' => 'rpt_bank_kyc', 'icon' => 'bi-bank2',          'color' => '#1e3a5f', 'bg' => 'rgba(30,58,95,0.1)',   'title' => 'Sales with IMEI',     'desc' => 'A4 PDF of sales invoices with IMEI for bank'],
+        ['page' => 'reports', 'action' => 'bankKycReceipts',   'perm' => 'rpt_bank_kyc', 'icon' => 'bi-cash-coin',       'color' => '#0f766e', 'bg' => 'rgba(15,118,110,0.1)', 'title' => 'Payments Received',   'desc' => 'A4 PDF of incoming payments for bank KYC'],
+        ['page' => 'reports', 'action' => 'manpowerInvoices',  'perm' => 'rpt_bank_kyc', 'icon' => 'bi-file-earmark-text','color' => '#9a3412', 'bg' => 'rgba(154,52,18,0.1)',  'title' => 'Manpower Invoices',   'desc' => 'A4 PDF of formal invoice copies for 3 months'],
+        ['page' => 'reports', 'action' => 'bankPoDocs',        'perm' => 'rpt_bank_kyc', 'icon' => 'bi-paperclip',       'color' => '#1d4ed8', 'bg' => 'rgba(29,78,216,0.1)',  'title' => 'PO invoices & TT',    'desc' => 'Supplier invoices and transfer copies uploaded in a date range'],
     ],
     'Payments & Accounts' => [
         ['page' => 'reports', 'action' => 'payments',         'perm' => 'rpt_payments',      'icon' => 'bi-cash-stack',   'color' => '#3b82f6', 'bg' => 'rgba(59,130,246,0.1)',  'title' => 'Payments Report',       'desc' => 'Collections by method & account'],
@@ -171,8 +179,9 @@ $animDelay = 0;
 ?>
 
 <div class="rpt-hub">
-    <div class="mb-4">
-        <h1 class="page-title">Reports</h1>
+    <div class="d-flex align-items-center gap-2 mb-4">
+        <a href="?page=dashboard" class="btn btn-sm btn-outline-secondary" title="Back to Dashboard"><i class="bi bi-arrow-left"></i></a>
+        <h1 class="page-title mb-0">Reports</h1>
     </div>
 
     <?php foreach ($categories as $catName => $reports): ?>

@@ -1,11 +1,10 @@
 <style>
 /* ══ EXPENSE PAGE ══ */
 .exp-page-top{margin-bottom:22px;}
-.exp-page-title h1{font-size:1.4rem;font-weight:800;color:var(--text-main);margin:0;}
 .exp-page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
 .exp-add-btn{
     display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-    padding:7px 14px;border-radius:9px;font-size:0.82rem;font-weight:700;
+    padding:8px 16px;border-radius:9px;font-size:0.88rem;font-weight:700;
     background:rgba(139,92,246,0.10);color:#7c3aed;border:1px solid rgba(139,92,246,0.28);
     transition:background 0.15s,border-color 0.15s,transform 0.15s;
 }
@@ -24,45 +23,53 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 .exp-metric-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:6px;}
 .exp-metric-value{font-size:1.25rem;font-weight:800;color:var(--text-main);line-height:1.15;}
 .exp-metric-hint{font-size:0.72rem;color:var(--text-muted);margin-top:8px;}
-.exp-metric-add{
-    border:none;cursor:pointer;width:100%;
-    background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border:1px solid transparent;
-    box-shadow:0 4px 16px rgba(139,92,246,0.35);align-items:center;text-align:center;
-}
-.exp-metric-add .exp-metric-label{color:rgba(255,255,255,0.85);}
-.exp-metric-add .exp-metric-value{color:#fff;font-size:1.05rem;display:inline-flex;align-items:center;gap:8px;}
-.exp-metric-add:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(139,92,246,0.45);color:#fff;}
-.exp-metric-add:focus{outline:2px solid #a78bfa;outline-offset:2px;}
 .exp-hero-card-accent::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;}
 .exp-card-this::before{background:linear-gradient(90deg,#6366f1,#818cf8);}
 .exp-card-last::before{background:linear-gradient(90deg,#f59e0b,#fbbf24);}
 
-/* Stats */
-.exp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px;}
-.exp-stat{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;transition:transform 0.15s;}
-.exp-stat:hover{transform:translateY(-2px);}
-.exp-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
-.exp-stat.total::before{background:linear-gradient(90deg,#8b5cf6,#a78bfa);}
-.exp-stat.cat::before{background:linear-gradient(90deg,#f59e0b,#fbbf24);}
-.exp-stat-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;margin-bottom:12px;}
-.exp-stat.total .exp-stat-icon{background:rgba(139,92,246,0.12);color:#8b5cf6;}
-.exp-stat.cat .exp-stat-icon{background:rgba(245,158,11,0.12);color:#f59e0b;}
-.exp-stat-value{font-size:1.3rem;font-weight:800;color:var(--text-main);line-height:1;}
-.exp-stat-label{font-size:0.75rem;color:var(--text-muted);margin-top:4px;font-weight:500;}
-.exp-stat-sub{font-size:0.72rem;color:var(--text-muted);margin-top:6px;}
-
-/* Add Form Panel */
-.exp-form-panel{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;margin-bottom:24px;overflow:hidden;}
-.exp-form-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(251,113,133,0.05));border-bottom:1px solid var(--border-color);}
+/* Add Expense modal (same overlay pattern as Accounts → Transfer Funds) */
+.exp-modal-backdrop{
+    position:fixed;inset:0;z-index:1050;
+    background:rgba(15,23,42,0.45);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;
+    padding:16px;
+}
+.exp-modal-backdrop.is-open{display:flex;}
+.exp-modal{
+    width:100%;max-width:880px;max-height:min(92vh,900px);
+    display:flex;flex-direction:column;
+    overflow:hidden;
+    background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,0.28);
+    animation:expModalIn 0.18s ease-out;
+}
+.exp-modal:has(.exp-acc-picker.is-open){overflow:visible;}
+@keyframes expModalIn{
+    from{opacity:0;transform:translateY(10px) scale(0.98);}
+    to{opacity:1;transform:translateY(0) scale(1);}
+}
+body.exp-modal-open{overflow:hidden;}
+@media (max-width:640px){
+    .exp-modal{max-height:96vh;border-radius:14px;}
+    .exp-form-header,.exp-form-actions{border-radius:0;}
+    .exp-form-body{padding:14px 12px 6px;}
+    .exp-form-actions{padding:12px;}
+    .exp-row-cell-amt,.exp-rows-table thead th.col-amt{width:140px;}
+}
+.exp-form-header{
+    display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+    padding:14px 20px;
+    background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(251,113,133,0.05));
+    border-bottom:1px solid var(--border-color);
+    border-radius:16px 16px 0 0;
+}
 .exp-form-header span{font-weight:700;font-size:0.9rem;color:var(--text-main);display:flex;align-items:center;gap:8px;}
 .exp-form-header span i{color:#8b5cf6;}
 .exp-form-close{background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;line-height:1;padding:0;transition:color 0.15s;}
 .exp-form-close:hover{color:#8b5cf6;}
-.exp-form-body{padding:20px;}
-.exp-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
-.exp-field label{display:block;font-size:0.77rem;font-weight:600;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.4px;}
-.exp-field input,.exp-field select{width:100%;padding:9px 12px;border:2px solid var(--border-color);border-radius:9px;font-size:0.85rem;background:var(--bg-main);color:var(--text-main);outline:none;transition:border-color 0.15s;}
-.exp-field input:focus,.exp-field select:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,0.1);}
+.exp-modal form{display:flex;flex-direction:column;min-height:0;flex:1;}
+.exp-form-body{padding:20px 20px 8px;overflow-y:auto;flex:1;min-height:0;}
+.exp-modal:has(.exp-acc-picker.is-open) .exp-form-body{overflow:visible;}
 
 /* Meta fields: date + account */
 .exp-meta-row{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
@@ -73,14 +80,21 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 .exp-meta-field:hover{transform:translateY(-1px);}
 .exp-meta-field:focus-within{box-shadow:0 6px 20px rgba(15,23,42,0.08);}
 .exp-meta-date{
-    flex:0 1 220px;min-width:190px;
+    flex:1.2 1 0;min-width:280px;
     background:linear-gradient(135deg,#fafaff,#f5f3ff);border-color:#ddd6fe;
 }
 .exp-meta-date:focus-within{border-color:#8b5cf6;box-shadow:0 6px 20px rgba(139,92,246,0.14);}
+.exp-acc-picker{
+    position:relative;
+    flex:1 1 0;min-width:220px;
+    z-index:5;
+}
+.exp-acc-picker.is-open{z-index:40;}
+.exp-acc-picker .exp-meta-account{width:100%;position:relative;}
 .exp-meta-account{
-    flex:1 1 280px;min-width:240px;
     background:linear-gradient(135deg,#f0fdf9,#ecfdf5);border-color:#a7f3d0;
 }
+.exp-meta-account:hover{transform:none;}
 .exp-meta-account:focus-within{border-color:#10b981;box-shadow:0 6px 20px rgba(16,185,129,0.14);}
 .exp-meta-icon{
     display:flex;align-items:center;justify-content:center;width:46px;flex-shrink:0;
@@ -102,18 +116,39 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 .exp-meta-req{font-size:0.72rem;line-height:1;}
 .exp-meta-date .exp-meta-req{color:#a78bfa;}
 .exp-meta-account .exp-meta-req{color:#34d399;}
-.exp-meta-content input,.exp-meta-content select{
+.exp-meta-content input{
     width:100%;border:none;background:transparent;padding:0;
-    font-size:0.92rem;font-weight:700;color:var(--text-main);outline:none;
+    font-family:inherit;font-size:0.85rem;font-weight:600;color:var(--text-main);outline:none;
     cursor:pointer;line-height:1.3;
 }
-.exp-meta-content select{
-    appearance:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath fill='%2364748b' d='M4.5 6L8 9.5 11.5 6z'/%3E%3C/svg%3E");
-    background-repeat:no-repeat;background-position:right 2px center;padding-right:18px;
+.exp-meta-datetime{display:flex;align-items:center;gap:10px;}
+.exp-meta-datetime input[type="date"]{flex:1.15;min-width:0;}
+.exp-meta-datetime input[type="time"]{flex:0.85;min-width:0;}
+.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator,
+.exp-meta-content input[type="time"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.55;}
+.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.exp-meta-content input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:0.85;}
+.exp-acc-search{padding-right:20px !important;cursor:text;}
+.exp-acc-caret{
+    position:absolute;right:12px;top:50%;transform:translateY(-50%);
+    color:#64748b;font-size:0.72rem;pointer-events:none;transition:transform 0.15s;
 }
-.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.55;}
-.exp-meta-content input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:0.85;}
+.exp-acc-picker.is-open .exp-acc-caret{transform:translateY(-50%) rotate(180deg);}
+.exp-acc-drop{
+    display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;
+    background:#fff;border:1.5px solid #a7f3d0;border-radius:12px;
+    box-shadow:0 12px 28px rgba(15,23,42,0.12);max-height:220px;overflow-y:auto;
+}
+.exp-acc-picker.is-open .exp-acc-drop{display:block;}
+.exp-acc-opt{
+    display:block;width:100%;text-align:left;border:none;background:#fff;color:#0f172a;
+    padding:9px 12px;font-size:0.84rem;font-weight:650;cursor:pointer;
+    border-bottom:1px solid #f1f5f9;
+}
+.exp-acc-opt:last-child{border-bottom:none;}
+.exp-acc-opt:hover,.exp-acc-opt.is-active{background:#ecfdf5;}
+.exp-acc-opt.is-selected{color:#047857;font-weight:800;}
+.exp-acc-empty{padding:10px 12px;font-size:0.8rem;font-weight:600;color:#b45309;}
 
 /* Expense line items */
 .exp-lines-card{
@@ -182,7 +217,11 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 }
 .exp-form-actions{
     display:flex;align-items:center;justify-content:space-between;gap:12px;
-    margin-top:16px;flex-wrap:wrap;
+    flex-wrap:wrap;flex-shrink:0;
+    margin:0;padding:14px 20px 18px;
+    border-top:1px solid var(--border-color);
+    background:var(--bg-card);
+    border-radius:0 0 16px 16px;
 }
 .exp-form-actions-right{display:flex;gap:10px;flex-wrap:wrap;}
 .btn-exp-add-row{
@@ -193,7 +232,6 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 }
 .btn-exp-add-row:hover{background:rgba(139,92,246,0.08);border-color:#8b5cf6;border-style:solid;}
 
-.exp-save-row{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);}
 .btn-exp-save{
     padding:9px 24px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;color:#fff;
     border-radius:10px;font-weight:700;font-size:0.88rem;cursor:pointer;
@@ -207,43 +245,54 @@ a.exp-hero-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(15,2
 }
 .btn-exp-cancel:hover{border-color:#c4b5fd;color:#7c3aed;background:#fafaff;}
 
-/* Filters */
-.exp-filters{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:14px 18px;margin-bottom:18px;}
-.exp-filters form{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.exp-filters input,.exp-filters select{padding:7px 12px;border:1.5px solid var(--border-color);border-radius:8px;font-size:0.82rem;background:var(--bg-main);color:var(--text-main);outline:none;height:36px;}
-.exp-filters input:focus,.exp-filters select:focus{border-color:#8b5cf6;}
-.btn-filter{padding:7px 16px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;color:#fff;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;height:36px;}
-.btn-clear{padding:7px 12px;background:var(--bg-main);border:1.5px solid var(--border-color);color:var(--text-muted);border-radius:8px;font-size:0.82rem;cursor:pointer;height:36px;text-decoration:none;display:inline-flex;align-items:center;}
-.btn-clear:hover{border-color:#8b5cf6;color:#8b5cf6;}
-
-/* Table */
-.exp-table-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;overflow:hidden;}
-.exp-table-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border-color);}
-.exp-table-head span{font-weight:700;font-size:0.875rem;color:var(--text-main);display:flex;align-items:center;gap:8px;}
-.exp-table-head span i{color:#8b5cf6;}
-.exp-count{font-size:0.75rem;background:rgba(139,92,246,0.1);color:#8b5cf6;padding:3px 10px;border-radius:20px;font-weight:700;}
-table.exp-tbl{width:100%;border-collapse:collapse;font-size:0.82rem;}
-table.exp-tbl th{padding:8px 20px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);background:transparent;border-bottom:2px solid var(--border-color);white-space:nowrap;}
-table.exp-tbl td{padding:7px 20px;border-bottom:1px solid var(--border-color);vertical-align:middle;color:var(--text-main);}
-table.exp-tbl tbody tr:last-child td{border-bottom:none;}
-table.exp-tbl tbody tr{transition:background 0.1s;}
-table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
-.exp-no{font-weight:700;color:#8b5cf6;font-family:monospace;font-size:0.82rem;}
-.exp-date{font-size:0.82rem;color:var(--text-muted);}
-.exp-cat-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);}
+/* Table — same type scale as Sales / Payments / Purchases */
+.card:has(#expensesTable) .table-responsive {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+#expensesTable {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.83rem;
+}
+#expensesTable .exp-no {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #6366f1;
+}
+#expensesTable .exp-account {
+    font-weight: 600;
+    color: #1e293b;
+}
+#expensesTable .exp-amount {
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
+}
+#expensesTable .exp-date {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #e0f2fe;
+    color: #0369a1;
+}
+#expensesTable tr.exp-row-today .exp-date {
+    background: #dcfce7;
+    color: #166534;
+}
+.exp-cat-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);}
 .exp-desc{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.exp-amount{font-weight:800;color:#8b5cf6;font-size:0.9rem;text-align:left;white-space:nowrap;}
 .btn-del{width:26px;height:26px;border-radius:6px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);color:#8b5cf6;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.15s;text-decoration:none;font-size:0.78rem;}
 .btn-del:hover{background:#8b5cf6;color:#fff;border-color:#8b5cf6;}
-.exp-empty{text-align:center;padding:60px 20px;color:var(--text-muted);}
-.exp-empty i{font-size:2.5rem;opacity:0.3;display:block;margin-bottom:10px;}
 </style>
 
 <!-- Title + month cards + add (same row height) -->
 <div class="exp-page-top">
     <div class="exp-page-head">
-        <div class="exp-page-title">
-            <h1><i class="bi bi-receipt me-2" style="color:#8b5cf6;"></i>Expenses</h1>
+        <div>
+            <h1 class="page-title mb-0"><i class="bi bi-receipt me-2" style="color:#8b5cf6;"></i>Expenses</h1>
         </div>
         <button type="button" class="exp-add-btn" id="expBtnOpenAddForm">
             <i class="bi bi-plus-lg"></i> Add expense
@@ -266,36 +315,96 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 </div>
 
 
-<!-- Add Expense Form Panel -->
-<div class="exp-form-panel" id="addExpenseForm" style="display:<?= isset($_GET['new']) ? 'block' : 'none' ?>;">
-    <div class="exp-form-header">
-        <span><i class="bi bi-plus-circle-fill"></i> Add Expenses</span>
-        <button type="button" class="exp-form-close" id="expFormCloseBtn">×</button>
-    </div>
-    <div class="exp-form-body">
+<!-- Add Expense modal -->
+<div class="exp-modal-backdrop<?= isset($_GET['new']) ? ' is-open' : '' ?>" id="addExpenseForm"
+     role="dialog" aria-modal="true" aria-labelledby="expModalTitle" aria-hidden="<?= isset($_GET['new']) ? 'false' : 'true' ?>">
+    <div class="exp-modal" role="document">
+        <div class="exp-form-header">
+            <span id="expModalTitle"><i class="bi bi-plus-circle-fill"></i> Add Expenses</span>
+            <button type="button" class="exp-form-close" id="expFormCloseBtn" aria-label="Close">×</button>
+        </div>
         <form method="POST" action="?page=expenses&action=store">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="expense_form_nonce" value="<?= htmlspecialchars($expenseFormNonce ?? '') ?>">
+            <div class="exp-form-body">
 
             <!-- Date & Account (shared for all rows) -->
             <div class="exp-meta-row">
                 <div class="exp-meta-field exp-meta-date">
                     <div class="exp-meta-icon" aria-hidden="true"><i class="bi bi-calendar3"></i></div>
                     <div class="exp-meta-content">
-                        <label for="expFormDate">Expense Date <span class="exp-meta-req">*</span></label>
-                        <input type="date" id="expFormDate" name="date" value="<?= date('Y-m-d') ?>" required>
+                        <label for="expFormDate">Date &amp; Time <span class="exp-meta-req">*</span></label>
+                        <div class="exp-meta-datetime">
+                            <input type="date" id="expFormDate" name="date" value="<?= date('Y-m-d') ?>" required>
+                            <input type="time" id="expFormTime" name="time" value="<?= date('H:i') ?>" required>
+                        </div>
                     </div>
                 </div>
-                <div class="exp-meta-field exp-meta-account">
-                    <div class="exp-meta-icon" aria-hidden="true"><i class="bi bi-wallet2"></i></div>
-                    <div class="exp-meta-content">
-                        <label for="expFormAccount">Paid From <span class="exp-meta-req">*</span></label>
-                        <select id="expFormAccount" name="account_id" required>
-                            <?php foreach ($accounts as $acc): ?>
-                            <option value="<?= $acc['id'] ?>"><?= htmlspecialchars($acc['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                <?php
+                    $expAccountChoices = [];
+                    foreach ($accounts as $accChoice) {
+                        if (!isset($accChoice['is_active']) || (int) $accChoice['is_active'] === 1) {
+                            $expAccountChoices[] = $accChoice;
+                        }
+                    }
+                    if (empty($expAccountChoices)) {
+                        $expAccountChoices = $accounts;
+                    }
+                    $expDefaultAccountId = 0;
+                    $expDefaultAccountName = '';
+                    foreach ($expAccountChoices as $accDefault) {
+                        $accName = trim((string) ($accDefault['name'] ?? ''));
+                        if (!empty($accDefault['is_default'])) {
+                            $expDefaultAccountId = (int) ($accDefault['id'] ?? 0);
+                            $expDefaultAccountName = $accName;
+                            break;
+                        }
+                        if ($expDefaultAccountId <= 0 && strcasecmp($accName, 'Main Cash') === 0) {
+                            $expDefaultAccountId = (int) ($accDefault['id'] ?? 0);
+                            $expDefaultAccountName = $accName;
+                        }
+                    }
+                    if ($expDefaultAccountId <= 0 && !empty($expAccountChoices[0]['id'])) {
+                        $expDefaultAccountId = (int) $expAccountChoices[0]['id'];
+                        $expDefaultAccountName = trim((string) ($expAccountChoices[0]['name'] ?? ''));
+                    } elseif ($expDefaultAccountName === '') {
+                        foreach ($expAccountChoices as $accNamed) {
+                            if ((int) ($accNamed['id'] ?? 0) === $expDefaultAccountId) {
+                                $expDefaultAccountName = trim((string) ($accNamed['name'] ?? ''));
+                                break;
+                            }
+                        }
+                    }
+                    $expAccountsJson = [];
+                    foreach ($expAccountChoices as $accJson) {
+                        $expAccountsJson[] = [
+                            'id'   => (int) ($accJson['id'] ?? 0),
+                            'name' => (string) ($accJson['name'] ?? ''),
+                        ];
+                    }
+                ?>
+                <div class="exp-acc-picker" id="expAccPicker">
+                    <div class="exp-meta-field exp-meta-account">
+                        <div class="exp-meta-icon" aria-hidden="true"><i class="bi bi-wallet2"></i></div>
+                        <div class="exp-meta-content">
+                            <label for="expAccSearch">Paid From <span class="exp-meta-req">*</span></label>
+                            <?php if (empty($expAccountChoices)): ?>
+                            <div class="exp-acc-empty">No accounts available. Add one in Accounts first.</div>
+                            <input type="hidden" id="expFormAccount" name="account_id" value="">
+                            <?php else: ?>
+                            <input type="text" id="expAccSearch" class="exp-acc-search"
+                                   value="<?= htmlspecialchars($expDefaultAccountName) ?>"
+                                   placeholder="Type to find account…"
+                                   autocomplete="off" autocorrect="off" spellcheck="false"
+                                   role="combobox" aria-expanded="false" aria-controls="expAccDrop" aria-autocomplete="list">
+                            <input type="hidden" id="expFormAccount" name="account_id" value="<?= $expDefaultAccountId ?>">
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!empty($expAccountChoices)): ?>
+                        <i class="bi bi-chevron-down exp-acc-caret" aria-hidden="true"></i>
+                        <?php endif; ?>
                     </div>
+                    <div class="exp-acc-drop" id="expAccDrop" role="listbox" aria-label="Accounts"></div>
                 </div>
             </div>
 
@@ -320,6 +429,7 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
                     <span class="exp-rows-total-label">Grand Total</span>
                     <span class="exp-rows-total-value" id="expGrandTotal">0.000</span>
                 </div>
+            </div>
             </div>
 
             <div class="exp-form-actions">
@@ -377,7 +487,7 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
             <label style="display:block;font-size:0.72rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;">
                 <i class="bi bi-calendar3 me-1"></i>To
             </label>
-            <input type="date" name="to_date" value="<?= htmlspecialchars((string) ($filters['to_date'] ?: date('Y-m-d'))) ?>"
+            <input type="date" name="to_date" value="<?= htmlspecialchars((string) ($filters['to_date'] ?? '')) ?>"
                    style="width:100%;padding:8px 14px;border:1.5px solid #c7d2fe;border-radius:10px;font-size:0.85rem;background:#fff;color:#1e293b;outline:none;transition:border-color 0.15s;"
                    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
         </div>
@@ -399,49 +509,54 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
 </form>
 
 <!-- Table -->
-<div class="exp-table-card">
-    <div class="exp-table-head">
-        <span><i class="bi bi-list-ul"></i> Expense Records</span>
-        <span class="exp-count"><?= count($expenses) ?> records</span>
-    </div>
-    <div style="overflow-x:auto;">
-        <table class="exp-tbl" id="expensesTable">
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table mb-0" id="expensesTable">
             <thead>
                 <tr>
-                    <th>Expense No</th>
-                    <th>Date</th>
-                    <th>Category</th>
-                    <th>Account</th>
-                    <th>Description</th>
-                    <th style="text-align:right;">Amount</th>
-                    <th style="width:80px;text-align:center;">Action</th>
+                    <th class="th-blue">Expense No</th>
+                    <th class="th-blue">Date</th>
+                    <th class="th-blue">Category</th>
+                    <th class="th-blue">Account</th>
+                    <th class="th-blue">Description</th>
+                    <th class="th-blue">Amount</th>
+                    <th class="th-blue">Action</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($expenses)): ?>
-                <tr><td colspan="7">
-                    <div class="exp-empty">
-                        <i class="bi bi-receipt"></i>
-                        No expenses found
-                    </div>
-                </td></tr>
-                <?php else: ?>
-                <?php foreach ($expenses as $e): ?>
                 <tr>
+                    <td colspan="7" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                        No expenses found
+                    </td>
+                </tr>
+                <?php else: ?>
+                <?php
+                    $todayYmd = date('Y-m-d');
+                    foreach ($expenses as $e):
+                        $expDay     = substr(trim((string) ($e['date'] ?? '')), 0, 10);
+                        $expTimeSrc = (string) ($e['created_at'] ?? $e['date'] ?? '');
+                        $isToday    = $expDay === $todayYmd;
+                ?>
+                <tr<?= $isToday ? ' class="exp-row-today"' : '' ?>>
                     <td><span class="exp-no"><?= htmlspecialchars($e['expense_no']) ?></span></td>
-                    <td><span class="exp-date"><?= date('d M Y', strtotime($e['date'])) ?></span></td>
+                    <td>
+                        <span class="exp-date"><?= date('m/d/Y', strtotime((string) ($e['date'] ?? 'now'))) ?>, <?= date('h:i A', strtotime($expTimeSrc ?: 'now')) ?></span>
+                    </td>
                     <td>
                         <?php if (!empty($e['category_name'])): ?>
                         <span class="exp-cat-badge"><i class="bi bi-tag me-1"></i><?= htmlspecialchars($e['category_name']) ?></span>
                         <?php else: ?>
-                        <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+                        <span class="text-muted">—</span>
                         <?php endif; ?>
                     </td>
-                    <td style="color:var(--text-muted);font-size:0.82rem;"><?= htmlspecialchars($e['account_name'] ?? '—') ?></td>
+                    <td class="exp-account"><?= htmlspecialchars($e['account_name'] ?? '—') ?></td>
                     <td><span class="exp-desc" title="<?= htmlspecialchars($e['description'] ?? '') ?>"><?= htmlspecialchars($e['description'] ?? '—') ?></span></td>
-                    <td style="text-align:left;"><span class="exp-amount"><?= APP_CURRENCY ?> <?= number_format($e['amount'], DECIMAL_PLACES) ?></span></td>
-                    <td style="text-align:center;">
-                        <div class="d-flex gap-1 justify-content-center">
+                    <td><span class="exp-amount"><?= APP_CURRENCY ?> <?= number_format($e['amount'], DECIMAL_PLACES) ?></span></td>
+                    <td>
+                        <div class="d-flex gap-1">
                         <a href="?page=expenses&action=edit&id=<?= $e['id'] ?>" class="btn-del pin-protect" title="Edit" style="color:#d97706;background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.2);">
                             <i class="bi bi-pencil"></i>
                         </a>
@@ -462,12 +577,14 @@ table.exp-tbl tbody tr:hover{background:rgba(139,92,246,0.03);}
                 <?php endif; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 
 <script>
 var expRowCount = 0;
 var categories = <?= json_encode($categories, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+var expAccounts = <?= json_encode($expAccountsJson ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
 
 function escHtml(s) {
     return String(s).replace(/[&<>"']/g, function(ch) {
@@ -539,30 +656,171 @@ function calcExpTotal() {
     document.getElementById('expGrandTotal').textContent = total.toFixed(3);
 }
 
-function toggleExpForm() {
-    const panel = document.getElementById('addExpenseForm');
-    const isHidden = panel.style.display === 'none';
-    panel.style.display = isHidden ? 'block' : 'none';
-    if (isHidden) {
-        if (document.querySelectorAll('#expRowsBody tr').length === 0) {
-            addExpRow(); // Start with one row
-        } else {
-            requestAnimationFrame(function() {
-                focusLastAmountField();
-            });
-        }
-        setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+function stampExpFormNow() {
+    var dateInput = document.getElementById('expFormDate');
+    var timeInput = document.getElementById('expFormTime');
+    if (!dateInput || !timeInput) return;
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth() + 1).padStart(2, '0');
+    var d = String(now.getDate()).padStart(2, '0');
+    var hh = String(now.getHours()).padStart(2, '0');
+    var mm = String(now.getMinutes()).padStart(2, '0');
+    if (!dateInput.value) dateInput.value = y + '-' + m + '-' + d;
+    timeInput.value = hh + ':' + mm;
+}
+
+function openExpForm() {
+    var panel = document.getElementById('addExpenseForm');
+    if (!panel) return;
+    panel.classList.add('is-open');
+    panel.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('exp-modal-open');
+    stampExpFormNow();
+    if (document.querySelectorAll('#expRowsBody tr').length === 0) {
+        addExpRow();
+    } else {
+        requestAnimationFrame(function() {
+            focusLastAmountField();
+        });
     }
 }
 
+function closeExpForm() {
+    var panel = document.getElementById('addExpenseForm');
+    if (!panel) return;
+    panel.classList.remove('is-open');
+    panel.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('exp-modal-open');
+    var picker = document.getElementById('expAccPicker');
+    if (picker) picker.classList.remove('is-open');
+}
+
 document.getElementById('expBtnOpenAddForm')?.addEventListener('click', function() {
-    toggleExpForm();
+    openExpForm();
 });
-document.getElementById('expFormCloseBtn')?.addEventListener('click', toggleExpForm);
-document.getElementById('expCancelBtn')?.addEventListener('click', toggleExpForm);
+document.getElementById('expFormCloseBtn')?.addEventListener('click', closeExpForm);
+document.getElementById('expCancelBtn')?.addEventListener('click', closeExpForm);
 document.getElementById('expAddRowBtn')?.addEventListener('click', function() {
     addExpRow();
 });
+document.addEventListener('keydown', function(e) {
+    var panel = document.getElementById('addExpenseForm');
+    if (e.key === 'Escape' && panel && panel.classList.contains('is-open')) {
+        var picker = document.getElementById('expAccPicker');
+        if (picker && picker.classList.contains('is-open')) return;
+        closeExpForm();
+    }
+});
+
+(function initExpAccountPicker() {
+    var picker = document.getElementById('expAccPicker');
+    var search = document.getElementById('expAccSearch');
+    var hidden = document.getElementById('expFormAccount');
+    var drop = document.getElementById('expAccDrop');
+    if (!picker || !search || !hidden || !drop || !expAccounts.length) return;
+
+    var visible = [];
+    var activeIdx = -1;
+
+    function selectedName() {
+        var id = String(hidden.value);
+        for (var i = 0; i < expAccounts.length; i++) {
+            if (String(expAccounts[i].id) === id) return String(expAccounts[i].name || '');
+        }
+        return '';
+    }
+
+    function closeDrop() {
+        picker.classList.remove('is-open');
+        search.setAttribute('aria-expanded', 'false');
+        activeIdx = -1;
+        search.value = selectedName();
+    }
+
+    function highlight(idx) {
+        var opts = drop.querySelectorAll('.exp-acc-opt');
+        opts.forEach(function(el) { el.classList.remove('is-active'); });
+        if (idx < 0 || idx >= opts.length) return;
+        opts[idx].classList.add('is-active');
+        opts[idx].scrollIntoView({ block: 'nearest' });
+        activeIdx = idx;
+    }
+
+    function render(query) {
+        var q = String(query || '').toLowerCase().trim();
+        visible = [];
+        var html = '';
+        var selectedId = String(hidden.value);
+        for (var i = 0; i < expAccounts.length; i++) {
+            var name = String(expAccounts[i].name || '');
+            if (q && name.toLowerCase().indexOf(q) === -1) continue;
+            visible.push(expAccounts[i]);
+            var on = String(expAccounts[i].id) === selectedId;
+            html += '<button type="button" class="exp-acc-opt' + (on ? ' is-selected' : '') + '"'
+                + ' role="option" data-id="' + escHtml(expAccounts[i].id) + '"'
+                + ' data-name="' + escHtml(name) + '">' + escHtml(name) + '</button>';
+        }
+        drop.innerHTML = html || '<div class="exp-acc-empty">No matching account</div>';
+        activeIdx = -1;
+    }
+
+    function openDrop(query) {
+        render(query);
+        picker.classList.add('is-open');
+        search.setAttribute('aria-expanded', 'true');
+    }
+
+    function pick(id, name) {
+        hidden.value = id;
+        search.value = name;
+        closeDrop();
+    }
+
+    search.addEventListener('focus', function() {
+        search.select();
+        openDrop('');
+    });
+    search.addEventListener('input', function() {
+        openDrop(search.value);
+    });
+    search.addEventListener('keydown', function(e) {
+        var open = picker.classList.contains('is-open');
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeDrop();
+            search.blur();
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!open) openDrop(search.value);
+            highlight(Math.min(activeIdx + 1, Math.max(visible.length - 1, 0)));
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!open) return;
+            highlight(Math.max(activeIdx - 1, 0));
+            return;
+        }
+        if (e.key === 'Enter') {
+            if (!open) return;
+            e.preventDefault();
+            var choice = visible[activeIdx >= 0 ? activeIdx : 0];
+            if (choice) pick(choice.id, choice.name);
+        }
+    });
+    drop.addEventListener('mousedown', function(e) {
+        var opt = e.target.closest('.exp-acc-opt');
+        if (!opt) return;
+        e.preventDefault();
+        pick(opt.getAttribute('data-id'), opt.getAttribute('data-name'));
+    });
+    document.addEventListener('mousedown', function(e) {
+        if (!picker.contains(e.target)) closeDrop();
+    });
+})();
 
 // Delegated handlers for dynamically added rows (no inline handlers)
 var expRowsBody = document.getElementById('expRowsBody');
@@ -585,18 +843,19 @@ expRowsBody?.addEventListener('click', function(e) {
     if (btn) removeExpRow(btn.getAttribute('data-row'));
 });
 
-<?php if (isset($_GET['new'])): ?>
-document.addEventListener('DOMContentLoaded', () => {
-    addExpRow();
-    setTimeout(() => document.getElementById('addExpenseForm')?.scrollIntoView({ behavior: 'smooth' }), 100);
-});
-<?php endif; ?>
-
-$(document).ready(() => {
-    $('#expensesTable').DataTable({
-        pageLength: 25,
-        order: [[1, 'desc']],
-        columnDefs: [{ orderable: false, targets: 6 }]
-    });
-});
+(function initExpModalDeepLink() {
+    var panel = document.getElementById('addExpenseForm');
+    if (!panel) return;
+    var shouldOpen = panel.classList.contains('is-open');
+    try {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('new') === '1') shouldOpen = true;
+        if (params.get('new') === '1' && window.history && window.history.replaceState) {
+            params.delete('new');
+            var clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+            window.history.replaceState({}, '', clean);
+        }
+    } catch (err) { /* ignore */ }
+    if (shouldOpen) openExpForm();
+})();
 </script>

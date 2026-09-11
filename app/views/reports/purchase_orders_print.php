@@ -179,7 +179,8 @@ $statusLabels = [
         $poId         = (int) $o['id'];
         $items        = $itemsByPo[$poId] ?? [];
         $otherCharges = (float) ($o['other_charges_kwd'] ?? 0);
-        $kwdTotal     = (float) $o['subtotal_kwd'] + $otherCharges;
+        $adjustment   = (float) ($o['adjustment_kwd'] ?? 0);
+        $kwdTotal     = (float) $o['subtotal_kwd'] + $otherCharges + $adjustment;
         $cur          = (string) ($o['currency'] ?? 'KWD');
     ?>
     <div class="po-block">
@@ -249,6 +250,12 @@ $statusLabels = [
                 <tr>
                     <td colspan="6">Other Charges</td>
                     <td class="num kwd"><?= number_format($otherCharges, DECIMAL_PLACES) ?> KWD</td>
+                </tr>
+                <?php endif; ?>
+                <?php if (abs($adjustment) > 0.0005): ?>
+                <tr>
+                    <td colspan="6">Bank Adjustment</td>
+                    <td class="num kwd"><?= ($adjustment > 0 ? '+' : '') . number_format($adjustment, DECIMAL_PLACES) ?> KWD</td>
                 </tr>
                 <?php endif; ?>
                 <tr>

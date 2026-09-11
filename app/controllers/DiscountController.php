@@ -6,24 +6,22 @@ require_once __DIR__ . '/../models/Party.php';
 class DiscountController extends BaseController {
 
     public function index(): void {
-        Auth::authorize('settings', 'view');
+        Auth::authorizeAny(['discounts', 'settings'], 'view');
         $db = Database::getInstance();
 
         $discounts = $db->fetchAll(
-            "SELECT d.*, p.name as party_name, i.name as item_name, u.name as created_by_name
+            "SELECT d.*, p.name as party_name, i.name as item_name, s.invoice_no as sale_invoice_no,
+                    u.name as created_by_name
              FROM customer_discounts d
              JOIN parties p ON p.id = d.party_id
              LEFT JOIN items i ON i.id = d.item_id
+             LEFT JOIN sales s ON s.id = d.sale_id
              LEFT JOIN users u ON u.id = d.created_by
              ORDER BY d.id DESC LIMIT 100"
         );
 
         $parties = $db->fetchAll(
             "SELECT id, name, phone FROM parties WHERE is_active = 1 AND (type = 'customer' OR type = 'both') ORDER BY name"
-        );
-
-        $items = $db->fetchAll(
-            "SELECT id, name FROM items WHERE is_active = 1 ORDER BY name"
         );
 
         $discountFormNonce = bin2hex(random_bytes(16));
@@ -38,8 +36,43 @@ class DiscountController extends BaseController {
         include __DIR__ . '/../views/layout.php';
     }
 
+    /** JSON: recent invoices for a customer (branch-scoped). */
+    public function customerInvoices(): void {
+        Auth::authorizeAny(['discounts', 'settings'], 'view');
+        $partyId = $this->inputInt('party_id', 0, 'get');
+        if ($partyId <= 0) {
+            $this->json(['ok' => true, 'invoices' => []]);
+            return;
+        }
+
+        $db = Database::getInstance();
+        $whId = (int) Auth::warehouseId();
+        $rows = $db->fetchAll(
+            "SELECT id, invoice_no, date, grand_total, balance, status
+             FROM sales
+             WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled'
+               AND date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+             ORDER BY id DESC
+             LIMIT 80",
+            [$partyId, $whId]
+        );
+
+        $invoices = [];
+        foreach ($rows as $r) {
+            $invoices[] = [
+                'id'          => (int) $r['id'],
+                'invoice_no'  => (string) $r['invoice_no'],
+                'date'        => date('d M Y', strtotime($r['date'])),
+                'grand_total' => (float) $r['grand_total'],
+                'balance'     => (float) $r['balance'],
+                'status'      => (string) $r['status'],
+            ];
+        }
+        $this->json(['ok' => true, 'invoices' => $invoices]);
+    }
+
     public function store(): void {
-        Auth::authorize('settings', 'add');
+        Auth::authorizeAny(['discounts', 'settings'], 'add');
         if (!$this->isPost()) { $this->redirect('?page=discounts'); }
 
         $nonce = $_POST['discount_form_nonce'] ?? '';
@@ -50,9 +83,8 @@ class DiscountController extends BaseController {
         unset($_SESSION['discount_form_nonce']);
 
         $partyId = $this->inputInt('party_id');
-        $itemId  = $this->inputInt('item_id') ?: null;
+        $saleId  = $this->inputInt('sale_id') ?: null;
         $amount  = $this->inputFloat('amount');
-        $reason  = $this->input('reason');
         $date    = $this->input('date') ?: date('Y-m-d');
 
         if (!$partyId || $amount <= 0) {
@@ -72,7 +104,20 @@ class DiscountController extends BaseController {
             return;
         }
 
+        $invoiceLabel = '';
+        if ($saleId) {
+            $sale = $this->resolveCustomerSale($db, $saleId, $partyId);
+            if (!$sale) {
+                $this->flash('error', 'Invalid invoice for this customer.');
+                $this->redirect('?page=discounts');
+                return;
+            }
+            $invoiceLabel = (string) $sale['invoice_no'];
+        }
+
         $discountNo = '';
+        $discountId = 0;
+        $savedOk = false;
         $db->beginTransaction();
         try {
             // Sequence read locked inside the transaction — same pattern as payment_no below —
@@ -81,10 +126,10 @@ class DiscountController extends BaseController {
             $num  = $last ? (int) substr($last['discount_no'], 5) : 0;
             $discountNo = 'DISC-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
 
-            $db->insert(
-                "INSERT INTO customer_discounts (discount_no, party_id, item_id, amount, reason, date, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [$discountNo, $partyId, $itemId, $amount, $reason, $date, Auth::id()]
+            $discountId = (int) $db->insert(
+                "INSERT INTO customer_discounts (discount_no, party_id, item_id, sale_id, amount, reason, date, created_by)
+                 VALUES (?, ?, NULL, ?, ?, NULL, ?, ?)",
+                [$discountNo, $partyId, $saleId, $amount, $date, Auth::id()]
             );
 
             // Create payment record with ref_type='discount' — reduces customer balance
@@ -97,10 +142,11 @@ class DiscountController extends BaseController {
             $acc = $db->fetchOne("SELECT id FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC LIMIT 1");
             $accId = $acc['id'] ?? 1;
 
+            $payNote = 'Discount ' . $discountNo . ($invoiceLabel !== '' ? ' — Inv ' . $invoiceLabel : '');
             $paymentId = $db->insert(
                 "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, warehouse_id, created_by)
                  VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?, ?)",
-                [$payNo, $partyId, $accId, $amount, $date, 'Discount ' . $discountNo . ($reason ? ' — ' . $reason : ''), Auth::warehouseId(), Auth::id()]
+                [$payNo, $partyId, $accId, $amount, $date, $payNote, Auth::warehouseId(), Auth::id()]
             );
 
             // Store the exact payment id for safe future updates/deletes (requires migration adding customer_discounts.payment_id)
@@ -112,6 +158,7 @@ class DiscountController extends BaseController {
             }
 
             $db->commit();
+            $savedOk = true;
             self::clearDashboardCache(Auth::warehouseId());
             $this->flash('success', "Discount {$discountNo} — " . APP_CURRENCY . " " . number_format($amount, DECIMAL_PLACES) . " applied.");
         } catch (\Exception $e) {
@@ -120,11 +167,16 @@ class DiscountController extends BaseController {
             $this->flash('error', 'Failed to save discount. Please try again or check server logs.');
         }
 
+        if ($savedOk && $discountId > 0 && $this->input('print_after_save') === '1') {
+            $this->redirect('?page=discounts&action=print&id=' . $discountId);
+            return;
+        }
+
         $this->redirect('?page=discounts');
     }
 
     public function delete(): void {
-        Auth::authorize('settings', 'delete');
+        Auth::authorizeAny(['discounts', 'settings'], 'delete');
         if (!$this->isPost()) { $this->redirect('?page=discounts'); }
 
         $id = $this->inputInt('id');
@@ -201,15 +253,15 @@ class DiscountController extends BaseController {
     }
 
     public function edit(): void {
-        Auth::authorize('settings', 'edit');
+        Auth::authorizeAny(['discounts', 'settings'], 'edit');
         $id = $this->inputInt('id', 0, 'get');
         $db = Database::getInstance();
 
         $discount = $db->fetchOne(
-            "SELECT d.*, p.name as party_name, i.name as item_name
+            "SELECT d.*, p.name as party_name, s.invoice_no as sale_invoice_no
              FROM customer_discounts d
              JOIN parties p ON p.id = d.party_id
-             LEFT JOIN items i ON i.id = d.item_id
+             LEFT JOIN sales s ON s.id = d.sale_id
              WHERE d.id = ?", [$id]
         );
         if (!$discount) {
@@ -220,7 +272,19 @@ class DiscountController extends BaseController {
         $parties = $db->fetchAll(
             "SELECT id, name FROM parties WHERE is_active = 1 AND (type = 'customer' OR type = 'both') ORDER BY name"
         );
-        $items = $db->fetchAll("SELECT id, name FROM items WHERE is_active = 1 ORDER BY name");
+
+        $invoices = $db->fetchAll(
+            "SELECT id, invoice_no, date, grand_total, balance
+             FROM sales
+             WHERE party_id = ? AND warehouse_id = ? AND status != 'cancelled'
+               AND (
+                 date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                 OR id = ?
+               )
+             ORDER BY id DESC
+             LIMIT 80",
+            [(int) $discount['party_id'], (int) Auth::warehouseId(), (int) ($discount['sale_id'] ?? 0)]
+        );
 
         $pageTitle = 'Edit Discount';
         $page      = 'discounts';
@@ -232,14 +296,13 @@ class DiscountController extends BaseController {
     }
 
     public function update(): void {
-        Auth::authorize('settings', 'edit');
+        Auth::authorizeAny(['discounts', 'settings'], 'edit');
         if (!$this->isPost()) { $this->redirect('?page=discounts'); }
 
         $id      = $this->inputInt('id');
         $partyId = $this->inputInt('party_id');
-        $itemId  = $this->inputInt('item_id') ?: null;
+        $saleId  = $this->inputInt('sale_id') ?: null;
         $amount  = $this->inputFloat('amount');
-        $reason  = $this->input('reason');
         $date    = $this->input('date') ?: date('Y-m-d');
 
         if (!$partyId || $amount <= 0) {
@@ -259,6 +322,17 @@ class DiscountController extends BaseController {
             return;
         }
 
+        $invoiceLabel = '';
+        if ($saleId) {
+            $sale = $this->resolveCustomerSale($db, $saleId, $partyId);
+            if (!$sale) {
+                $this->flash('error', 'Invalid invoice for this customer.');
+                $this->redirect('?page=discounts&action=edit&id=' . $id);
+                return;
+            }
+            $invoiceLabel = (string) $sale['invoice_no'];
+        }
+
         $disc = $db->fetchOne("SELECT * FROM customer_discounts WHERE id = ?", [$id]);
         if (!$disc) {
             $this->flash('error', 'Discount not found.');
@@ -268,14 +342,12 @@ class DiscountController extends BaseController {
 
         $db->beginTransaction();
         try {
-            // Update discount record
             $db->execute(
-                "UPDATE customer_discounts SET party_id=?, item_id=?, amount=?, reason=?, date=? WHERE id=?",
-                [$partyId, $itemId, $amount, $reason, $date, $id]
+                "UPDATE customer_discounts SET party_id=?, item_id=NULL, sale_id=?, amount=?, reason=NULL, date=? WHERE id=?",
+                [$partyId, $saleId, $amount, $date, $id]
             );
 
-            // Update associated payment
-            $note = 'Discount ' . $disc['discount_no'] . ($reason ? ' — ' . $reason : '');
+            $note = 'Discount ' . $disc['discount_no'] . ($invoiceLabel !== '' ? ' — Inv ' . $invoiceLabel : '');
             $payId = (int)($disc['payment_id'] ?? 0);
             if ($payId > 0) {
                 // Lock and verify the linked payment (branch-scoped) before updating,
@@ -320,15 +392,16 @@ class DiscountController extends BaseController {
     }
 
     public function print(): void {
-        Auth::authorize('settings', 'view');
+        Auth::authorizeAny(['discounts', 'settings'], 'view');
         $id = $this->inputInt('id', 0, 'get');
         $db = Database::getInstance();
 
         $discount = $db->fetchOne(
-            "SELECT d.*, p.name as party_name, p.phone as party_phone, i.name as item_name, u.name as created_by_name
+            "SELECT d.*, p.name as party_name, p.phone as party_phone,
+                    s.invoice_no as sale_invoice_no, u.name as created_by_name
              FROM customer_discounts d
              JOIN parties p ON p.id = d.party_id
-             LEFT JOIN items i ON i.id = d.item_id
+             LEFT JOIN sales s ON s.id = d.sale_id
              LEFT JOIN users u ON u.id = d.created_by
              WHERE d.id = ?", [$id]
         );
@@ -342,10 +415,19 @@ class DiscountController extends BaseController {
         $partyModel       = new Party();
         $remainingBalance = max(0, $partyModel->currentNetBalance((int) $discount['party_id']));
 
-        $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
-        $companyName = $company['value'] ?? 'Iqbal Sons';
+        $companyName = self::getSettings()['company_name'] ?? PDF_COMPANY_NAME;
 
         include __DIR__ . '/../views/settings/discount_print.php';
         exit;
+    }
+
+    /** @return array<string,mixed>|null */
+    private function resolveCustomerSale(Database $db, int $saleId, int $partyId): ?array {
+        $sale = $db->fetchOne(
+            "SELECT id, invoice_no FROM sales
+             WHERE id = ? AND party_id = ? AND warehouse_id = ? AND status != 'cancelled'",
+            [$saleId, $partyId, Auth::warehouseId()]
+        );
+        return $sale ?: null;
     }
 }

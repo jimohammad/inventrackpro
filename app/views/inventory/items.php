@@ -49,7 +49,12 @@
                 <?php foreach ($items as $idx => $it): ?>
                 <tr data-stock="<?= (int)($it['total_stock'] ?? 0) ?>">
                     <td style="text-align:center;color:var(--text-muted);font-size:0.8rem;"><?= $idx + 1 ?></td>
-                    <td class="fw-semibold"><?= htmlspecialchars($it['name']) ?></td>
+                    <td class="fw-semibold">
+                        <?= htmlspecialchars($it['name']) ?>
+                        <?php if (!empty($it['sku'])): ?>
+                        <div style="font-size:0.72rem;color:var(--text-muted);font-weight:400;"><?= htmlspecialchars((string) $it['sku']) ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($it['category_name'] ?? '—') ?></td>
                     <td class="text-end"><?= APP_CURRENCY ?> <?= number_format($it['purchase_price'], DECIMAL_PLACES) ?></td>
                     <td class="text-end"><?= APP_CURRENCY ?> <?= number_format($it['sale_price'], DECIMAL_PLACES) ?></td>
@@ -66,9 +71,22 @@
                         <?php endif; ?>
                     </td>
                     <td>
-                        <?php if (Auth::can('inventory','edit')): ?>
-                        <a href="?page=items&action=edit&id=<?= $it['id'] ?>" class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;"><i class="bi bi-pencil"></i></a>
-                        <?php endif; ?>
+                        <div class="d-flex gap-1">
+                            <?php if (Auth::can('inventory','edit')): ?>
+                            <a href="?page=items&action=edit&id=<?= $it['id'] ?>" class="btn btn-sm" style="background:rgba(99,102,241,0.15);color:var(--primary);border:none;" title="Edit"><i class="bi bi-pencil"></i></a>
+                            <?php endif; ?>
+                            <?php if (Auth::isAdmin() && Auth::can('inventory', 'delete')): ?>
+                            <form method="POST" action="?page=items&action=delete" style="display:inline;">
+                                <?= Auth::csrfField() ?>
+                                <input type="hidden" name="id" value="<?= (int) $it['id'] ?>">
+                                <button type="submit" class="btn btn-sm pin-protect"
+                                        data-confirm="Permanently delete this item? Only unused items (no sales/purchases/IMEI/stock) can be deleted. Admin PIN required."
+                                        style="background:rgba(239,68,68,0.15);color:var(--danger);border:none;" title="Delete (Admin PIN)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>

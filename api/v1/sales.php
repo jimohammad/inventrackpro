@@ -9,7 +9,30 @@
 
 $db = Database::getInstance();
 require_once __DIR__ . '/../../app/models/IMEI.php';
+require_once __DIR__ . '/../../app/models/Party.php';
 require_once __DIR__ . '/../../app/services/SaleValidator.php';
+
+/**
+ * Create api_idempotency outside any sale transaction (MySQL DDL commits implicitly).
+ */
+function apiEnsureIdempotencyTable(Database $db): void {
+    static $done = false;
+    if ($done || $db->inTransaction()) {
+        return;
+    }
+    $done = true;
+    $db->execute(
+        "CREATE TABLE IF NOT EXISTS api_idempotency (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            api_key_id INT NOT NULL,
+            endpoint VARCHAR(50) NOT NULL,
+            idem_key VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_key (api_key_id, endpoint, idem_key),
+            INDEX idx_created (created_at)
+        )"
+    );
+}
 
 switch ($method) {
     case 'GET':
@@ -108,7 +131,10 @@ switch ($method) {
         if (empty($data['items']))       apiError(422, 'items array is required.');
 
         $allowedWhIds = apiAllowedWarehouseIds();
-        if (!empty($allowedWhIds) && !in_array((int) $data['warehouse_id'], $allowedWhIds, true)) {
+        if (empty($allowedWhIds)) {
+            apiError(403, 'API key is not scoped to any warehouse.');
+        }
+        if (!in_array((int) $data['warehouse_id'], $allowedWhIds, true)) {
             apiError(403, 'No permission for this warehouse.');
         }
 
@@ -119,28 +145,41 @@ switch ($method) {
         }
 
         // Validate party and warehouse exist
-        if (!$db->fetchOne("SELECT id FROM parties WHERE id = ? AND is_active = 1", [$data['party_id']])) {
-            apiError(422, 'Invalid party_id — party not found or inactive.');
+        $partyModel = new Party();
+        $partyModel->ensureCustomerKindSchema();
+        $party = $db->fetchOne("SELECT id, type, customer_kind FROM parties WHERE id = ? AND is_active = 1", [$data['party_id']]);
+        if (!$party || !in_array((string) ($party['type'] ?? ''), ['customer', 'both'], true)) {
+            apiError(422, 'Invalid party_id — active customer not found.');
         }
+        $customerKind = Party::normalizeCustomerKind($party['customer_kind'] ?? null, (string) ($party['type'] ?? 'customer'));
         if (!$db->fetchOne("SELECT id FROM warehouses WHERE id = ? AND is_active = 1", [$data['warehouse_id']])) {
             apiError(422, 'Invalid warehouse_id — warehouse not found or inactive.');
         }
 
         $imeiModel = new IMEI();
+        $headerDisc = 0.0;
         try {
             // API enforces price floor by default (reject below catalog) unless key explicitly allows override.
-            $allowBelowCatalog = !empty($keyPermissions['sales_price_override']);
+            // Retail floor (list + 0.500 under 40 KWD, + 1.000 at 40+) is always enforced.
+            $allowBelowCatalog = !empty($keyPermissions['sales_price_override']) && !Party::isRetailCustomer($customerKind);
             $floorMode = $allowBelowCatalog ? 'none' : 'reject';
-            $norm = SaleValidator::normalizeItems($db, $imeiModel, (array) $data['items'], (int) $data['warehouse_id'], $floorMode);
+            $norm = SaleValidator::normalizeItems($db, $imeiModel, (array) $data['items'], (int) $data['warehouse_id'], $floorMode, 0.001, false, $customerKind);
             $items = $norm['items'];
 
-            // Credit limit check if set
-            $headerDisc = (float) ($data['discount'] ?? 0);
+            $headerDisc = SaleValidator::normalizeHeaderDiscount(
+                (float) ($data['discount'] ?? 0),
+                (float) $norm['subtotal'],
+                (float) ($norm['catalog_floor'] ?? 0),
+                $floorMode
+            );
             $newInvoiceTotal = (float) $norm['subtotal'] - $headerDisc;
             SaleValidator::enforceCreditLimit($db, (int) $data['party_id'], $newInvoiceTotal);
         } catch (Exception $e) {
             apiError(422, $e->getMessage());
         }
+
+        // DDL implicitly commits — never CREATE TABLE inside the sale transaction.
+        apiEnsureIdempotencyTable($db);
 
         $db->beginTransaction();
         try {
@@ -148,27 +187,22 @@ switch ($method) {
             if ($createdBy !== null) {
                 $createdBy = (int) $createdBy;
             }
-            // Idempotency record (best-effort table create, then unique insert)
-            $db->execute("CREATE TABLE IF NOT EXISTS api_idempotency (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                api_key_id INT NOT NULL,
-                endpoint VARCHAR(50) NOT NULL,
-                idem_key VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uniq_key (api_key_id, endpoint, idem_key),
-                INDEX idx_created (created_at)
-            )");
 
-            $keyData = $db->fetchOne("SELECT id FROM api_keys WHERE api_key = ? AND is_active = 1", [($_SERVER['HTTP_X_API_KEY'] ?? '')]);
             $apiKeyId = (int) ($keyData['id'] ?? 0);
             if ($apiKeyId > 0) {
-                $try = $db->execute(
-                    "INSERT INTO api_idempotency (api_key_id, endpoint, idem_key) VALUES (?,?,?)",
-                    [$apiKeyId, 'sales', $idemKey]
-                );
-                if ($try === 0) {
-                    $db->rollback();
-                    apiError(409, 'Duplicate request (idempotency_key already used).');
+                try {
+                    $db->execute(
+                        "INSERT INTO api_idempotency (api_key_id, endpoint, idem_key) VALUES (?,?,?)",
+                        [$apiKeyId, 'sales', $idemKey]
+                    );
+                } catch (PDOException $e) {
+                    $dup = (int) ($e->errorInfo[1] ?? 0) === 1062
+                        || str_contains($e->getMessage(), 'Duplicate');
+                    if ($dup) {
+                        $db->rollback();
+                        apiError(409, 'Duplicate request (idempotency_key already used).');
+                    }
+                    throw $e;
                 }
             }
 
@@ -178,7 +212,7 @@ switch ($method) {
             $lastNum   = $lastSale ? (int) substr($lastSale['invoice_no'], strlen(SALE_PREFIX)) : 0;
             $invoiceNo = SALE_PREFIX . str_pad($lastNum + 1, 6, '0', STR_PAD_LEFT);
 
-            $discount = (float) ($data['discount'] ?? 0);
+            $discount = $headerDisc;
 
             $subtotal = (float) ($norm['subtotal'] ?? 0);
 
@@ -186,6 +220,9 @@ switch ($method) {
             // Only accept payment if account_id is provided — prevents orphan paid_amount
             $paid       = (!empty($data['account_id']) && (float)($data['paid_amount'] ?? 0) > 0)
                           ? (float) $data['paid_amount'] : 0;
+            if ($paid > $grandTotal + 0.001) {
+                throw new Exception('Payment amount cannot exceed the invoice total. Record any excess as a separate customer credit.');
+            }
             $balance    = $grandTotal - $paid;
 
             // BUG FIX: Clamp negative balance to 0. Previously overpayment stored
@@ -221,7 +258,7 @@ switch ($method) {
 
             // Insert items + update stock
             foreach ($items as $item) {
-                $itemTotal = (float)$item['unit_price'] * (int)$item['quantity'];
+                $itemTotal = ((float) $item['unit_price'] * (int) $item['quantity']) - (float) ($item['discount'] ?? 0);
                 $saleItemId = $db->insert(
                     "INSERT INTO sale_items (sale_id, item_id, quantity, unit_price, discount, total)
                      VALUES (?,?,?,?,?,?)",

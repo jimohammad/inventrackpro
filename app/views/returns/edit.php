@@ -361,8 +361,10 @@
                             <td class="text-end">
                                 <input type="number" name="items[<?= $item['id'] ?>][unit_price]"
                                        value="<?= number_format((float)$item['unit_price'], DECIMAL_PLACES, '.', '') ?>"
-                                       step="0.001" min="0"
-                                       class="re-cell-input price edit-price" data-row="<?= $item['id'] ?>">
+                                       step="0.001" min="0" readonly
+                                       title="Original sold price (locked)"
+                                       class="re-cell-input price edit-price" data-row="<?= $item['id'] ?>"
+                                       style="background:#f8fafc;">
                             </td>
                             <td class="text-end re-row-total row-total" id="rowTotal_<?= $item['id'] ?>"><?= retMoney($item['total']) ?></td>
                             <td class="text-center">
@@ -405,6 +407,7 @@ foreach ($editReturn['items'] as $item) {
 var currency       = '<?= APP_CURRENCY ?>';
 var warehouseId    = <?= (int)$editReturn['warehouse_id'] ?>;
 var returnPartyId  = <?= (int)($editReturn['party_id'] ?? 0) ?>;
+var returnRefId    = <?= (int)($editReturn['ref_id'] ?? 0) ?>;
 var newRowCount    = 0;
 var searchTimers   = {};
 var retImeiData    = <?= json_encode($initImeiData, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
@@ -497,7 +500,8 @@ function addNewItemRow(prefill) {
         '</td>' +
         '<td class="text-end">' +
             '<input type="number" name="new_items[' + n + '][unit_price]" id="newPrice_' + n + '"' +
-                ' value="' + (prefill ? prefill.price : '') + '" step="0.001" min="0" class="re-cell-input price new-price">' +
+                ' value="' + (prefill ? prefill.price : '') + '" step="0.001" min="0" readonly' +
+                ' title="Original sold price (locked)" class="re-cell-input price new-price" style="background:#f8fafc;">' +
         '</td>' +
         '<td class="text-end re-row-total new-total" id="newTotal_' + n + '">—</td>' +
         '<td class="text-center">' +
@@ -533,11 +537,10 @@ function searchNewItem(n, q) {
                 if (!items.length) { drop.style.display = 'none'; return; }
                 drop.innerHTML = items.map(it =>
                     '<div class="re-autocomplete-item" data-n="' + n + '" data-id="' + it.id + '"' +
-                    ' data-name="' + it.name.replace(/"/g, '&quot;') + '"' +
-                    ' data-price="' + parseFloat(it.sale_price || 0).toFixed(3) + '">' +
+                    ' data-name="' + it.name.replace(/"/g, '&quot;') + '">' +
                     '<strong>' + it.name + '</strong>' +
                     (it.sku ? ' <small style="color:#94a3b8;">· ' + it.sku + '</small>' : '') +
-                    '<small style="float:right;color:#059669;font-weight:700;">' + currency + ' ' + parseFloat(it.sale_price || 0).toFixed(3) + '</small>' +
+                    '<small style="float:right;color:#64748b;">sold price from invoice</small>' +
                     '</div>'
                 ).join('');
                 drop.style.display = 'block';
@@ -548,7 +551,13 @@ function searchNewItem(n, q) {
 function selectNewItem(n, id, name, price) {
     document.getElementById('newItemId_' + n).value = id;
     document.getElementById('newSearch_' + n).value = name;
-    document.getElementById('newPrice_' + n).value  = parseFloat(price).toFixed(3);
+    const priceEl = document.getElementById('newPrice_' + n);
+    if (price != null && price !== '' && parseFloat(price) > 0) {
+        priceEl.value = parseFloat(price).toFixed(3);
+    } else {
+        priceEl.value = '';
+        applyEditSoldPriceFromInvoice(n, id, name);
+    }
     const label = document.getElementById('newItemLabel_' + n);
     if (label) { label.textContent = name; label.style.display = ''; }
     const tr = document.getElementById('newrow_' + n);
@@ -556,6 +565,34 @@ function selectNewItem(n, id, name, price) {
     document.getElementById('newDrop_' + n).style.display = 'none';
     document.getElementById('newSearch_' + n).style.display = 'none';
     recalcReturn();
+}
+
+function applyEditSoldPriceFromInvoice(n, itemId, itemName) {
+    if (!returnRefId || !itemId) {
+        setRetScanMsg('Scan IMEI or use linked invoice sold price — catalog price is not used.', 'err');
+        return;
+    }
+    fetch('?page=returns&action=saleReturnLimits&ref_id=' + encodeURIComponent(returnRefId) +
+          '&warehouse_id=' + encodeURIComponent(warehouseId))
+        .then(r => r.json())
+        .then(data => {
+            const lim = (data.limits || {})[itemId];
+            const priceEl = document.getElementById('newPrice_' + n);
+            if (!priceEl) return;
+            if (lim && lim.unit_price != null && lim.unit_price !== '') {
+                priceEl.value = parseFloat(lim.unit_price).toFixed(3);
+                recalcReturn();
+            } else {
+                priceEl.value = '';
+                setRetScanMsg(
+                    lim
+                        ? ('"' + (itemName || lim.name) + '" has mixed sold prices — scan IMEIs.')
+                        : ('"' + (itemName || 'Item') + '" was not on the linked invoice.'),
+                    'err'
+                );
+            }
+        })
+        .catch(function() {});
 }
 
 function hideNewDrop(n) {
@@ -615,20 +652,32 @@ function setRetScanMsg(text, type) {
 }
 
 function normalizeReturnScanImei(raw) {
-    if (!raw) return '';
-    return String(raw).replace(/[\r\n\t]/g, '').trim().toUpperCase().replace(/\s+/g, '');
+    return (window.IqbalImei && IqbalImei.normalize) ? IqbalImei.normalize(raw) : String(raw || '').toUpperCase().replace(/[\r\n\t\s]/g, '');
 }
 
-function findRowKeyForItem(itemId) {
+function findRowKeyForItem(itemId, unitPrice) {
     let found = null;
+    const wantPrice = unitPrice != null && unitPrice !== ''
+        ? parseFloat(unitPrice).toFixed(3)
+        : null;
     document.querySelectorAll('#itemsTbody tr').forEach(function(tr) {
         if (found) return;
         if (tr.classList.contains('deleted-row')) return;
         const del = tr.id.startsWith('row_') ? document.getElementById('del_' + tr.id.replace('row_', '')) : null;
         if (del && del.value === '1') return;
-        if (parseInt(tr.dataset.itemId, 10) === itemId) {
-            found = tr.dataset.rowKey;
+        if (parseInt(tr.dataset.itemId, 10) !== itemId) return;
+        if (wantPrice !== null) {
+            const rowKey = tr.dataset.rowKey || '';
+            let priceEl = null;
+            if (rowKey.startsWith('new_')) {
+                priceEl = document.getElementById('newPrice_' + rowKey.replace('new_', ''));
+            } else if (rowKey.startsWith('row_')) {
+                priceEl = tr.querySelector('.edit-price');
+            }
+            const rowPrice = parseFloat(priceEl?.value || 0).toFixed(3);
+            if (rowPrice !== wantPrice) return;
         }
+        found = tr.dataset.rowKey;
     });
     return found;
 }
@@ -662,8 +711,8 @@ function processRetEditScan() {
     const imei  = normalizeReturnScanImei(input.value);
     if (!imei || retScanBusy) return;
 
-    if (!/^\d{13}$/.test(imei) && !/^\d{15,18}$/.test(imei)) {
-        setRetScanMsg('Invalid IMEI length', 'err');
+    if (!IqbalImei.isPlausible(imei)) {
+        setRetScanMsg('Need a phone IMEI or tablet serial', 'err');
         input.value = '';
         input.focus();
         return;
@@ -691,32 +740,39 @@ function processRetEditScan() {
             }
 
             if (data.found) {
-                if (returnPartyId > 0 && data.sale_party_id && parseInt(data.sale_party_id, 10) !== returnPartyId) {
-                    setRetScanMsg('IMEI belongs to a different customer', 'err');
-                    return;
-                }
+                // Cross-party OK: credit stays on this return's customer; IMEI may be from another buyer.
+                const soldPartyId = parseInt(data.party_id || data.sale_party_id || 0, 10);
+                const crossParty = returnPartyId > 0 && soldPartyId > 0 && soldPartyId !== returnPartyId;
 
-                let rowKey = findRowKeyForItem(parseInt(data.item_id, 10));
+                const soldPriceMatch = parseFloat(data.unit_price || data.sale_price || 0).toFixed(3);
+                let rowKey = findRowKeyForItem(parseInt(data.item_id, 10), soldPriceMatch);
                 if (rowKey) {
                     attachImeiToRow(rowKey, data.imei, true);
                 } else {
                     let emptyKey = findEmptyNewRow();
                     if (!emptyKey) {
+                        const soldPrice = parseFloat(data.unit_price || data.sale_price || 0).toFixed(3);
                         const n = addNewItemRow({
                             itemId: data.item_id,
                             name: data.item_name,
-                            price: parseFloat(data.sale_price || 0).toFixed(3),
+                            price: soldPrice,
                             imeis: [data.imei]
                         });
                         rowKey = 'new_' + n;
                     } else {
                         const n = emptyKey.replace('new_', '');
-                        selectNewItem(n, data.item_id, data.item_name, parseFloat(data.sale_price || 0).toFixed(3));
+                        const soldPrice = parseFloat(data.unit_price || data.sale_price || 0).toFixed(3);
+                        selectNewItem(n, data.item_id, data.item_name, soldPrice);
                         attachImeiToRow(emptyKey, data.imei, true);
                         rowKey = emptyKey;
                     }
                 }
-                setRetScanMsg('Added', 'ok');
+                setRetScanMsg(
+                    crossParty
+                        ? ('Added — originally sold to ' + (data.party_name || 'another customer'))
+                        : 'Added',
+                    crossParty ? 'warn' : 'ok'
+                );
                 flashRetRow(rowKey);
                 renderRetScanCount();
                 return;
@@ -787,7 +843,7 @@ document.addEventListener('DOMContentLoaded', function() {
             parseInt(item.dataset.n, 10),
             parseInt(item.dataset.id, 10),
             item.dataset.name,
-            item.dataset.price
+            null
         );
     });
 
@@ -802,7 +858,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     scanBar.addEventListener('input', function() {
         const val = normalizeReturnScanImei(this.value);
-        if (/^\d{13}$/.test(val) || /^\d{15,18}$/.test(val)) {
+        if (IqbalImei.shouldAutoConfirmAny(val)) {
             setTimeout(processRetEditScan, 120);
         }
     });

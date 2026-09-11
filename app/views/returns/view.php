@@ -3,7 +3,7 @@
 <!-- Header -->
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="?page=returns" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
-    <h1 class="page-title mb-0"><?= $return['return_no'] ?></h1>
+    <h1 class="page-title mb-0"><?= htmlspecialchars((string) ($return['return_no'] ?? '')) ?></h1>
     <?php
     $retStatus = $return['status'] ?? '';
     $statusBg  = $retStatus === 'approved' ? 'rgba(16,185,129,0.15)' : ($retStatus === 'cancelled' ? 'rgba(100,116,139,0.15)' : 'rgba(245,158,11,0.15)');
@@ -60,7 +60,7 @@
             <div class="card-body px-0 py-0">
                 <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
                     <span style="color:var(--text-muted);">Return No</span>
-                    <span style="font-weight:700;color:var(--primary);"><?= $return['return_no'] ?></span>
+                    <span style="font-weight:700;color:var(--primary);"><?= htmlspecialchars((string) ($return['return_no'] ?? '')) ?></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border-color);font-size:0.82rem;">
                     <span style="color:var(--text-muted);">Date</span>

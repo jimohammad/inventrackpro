@@ -85,6 +85,8 @@ class MandoobInventoryController extends BaseController {
                         count_date      DATE NOT NULL,
                         next_due_after  DATE DEFAULT NULL,
                         notes           VARCHAR(500) DEFAULT NULL,
+                        line_count      INT NOT NULL DEFAULT 0,
+                        total_qty       INT NOT NULL DEFAULT 0,
                         recorded_by     INT DEFAULT NULL,
                         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (schedule_id) REFERENCES mandoob_inventory_schedules(id) ON DELETE CASCADE,
@@ -94,13 +96,69 @@ class MandoobInventoryController extends BaseController {
                         INDEX idx_mandoob_hist_wh (warehouse_id, count_date DESC)
                     )"
                 );
+            } else {
+                $this->ensureHistoryCountColumns();
             }
+
+            $this->ensureCountItemsTable();
 
             self::$schemaReady = true;
         } catch (Throwable $e) {
             error_log('[MandoobInventory] ensureSchema failed: ' . $e->getMessage());
             self::$schemaReady = false;
         }
+    }
+
+    private function ensureHistoryCountColumns(): void {
+        foreach (['line_count', 'total_qty'] as $col) {
+            $exists = $this->db->fetchOne(
+                "SELECT 1 AS ok FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'mandoob_inventory_history'
+                   AND COLUMN_NAME = ?
+                 LIMIT 1",
+                [$col]
+            );
+            if (!$exists) {
+                if ($col !== 'line_count' && $col !== 'total_qty') {
+                    continue;
+                }
+                $this->db->execute(
+                    "ALTER TABLE mandoob_inventory_history
+                     ADD COLUMN {$col} INT NOT NULL DEFAULT 0"
+                );
+            }
+        }
+    }
+
+    private function ensureCountItemsTable(): void {
+        $tbl = $this->db->fetchOne(
+            "SELECT 1 AS ok FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'mandoob_inventory_count_items'
+             LIMIT 1"
+        );
+        if ($tbl) {
+            return;
+        }
+        $this->db->execute(
+            "CREATE TABLE mandoob_inventory_count_items (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                history_id      INT NOT NULL,
+                warehouse_id    INT NOT NULL,
+                item_id         INT NOT NULL,
+                item_name       VARCHAR(200) NOT NULL,
+                sku             VARCHAR(80) DEFAULT NULL,
+                quantity        INT NOT NULL DEFAULT 1,
+                imeis           TEXT DEFAULT NULL,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_mi_ci_hist FOREIGN KEY (history_id) REFERENCES mandoob_inventory_history(id) ON DELETE CASCADE,
+                CONSTRAINT fk_mi_ci_wh FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
+                CONSTRAINT fk_mi_ci_item FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE RESTRICT,
+                INDEX idx_mi_ci_hist (history_id),
+                INDEX idx_mi_ci_wh (warehouse_id, history_id)
+            )"
+        );
     }
 
     private function whId(): int {
@@ -159,6 +217,115 @@ class MandoobInventoryController extends BaseController {
         }
         $row = $this->db->fetchOne($sql, $params);
         return !$row;
+    }
+
+    /** @return array<int, array{item_id:int,quantity:int,imeis:?string}> */
+    private function parseCountItems(): array {
+        $raw = $_POST['items'] ?? [];
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $merged = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $itemId = (int) ($row['item_id'] ?? 0);
+            $qty    = (int) ($row['quantity'] ?? 0);
+            if ($itemId <= 0 || $qty < 1) {
+                continue;
+            }
+            if ($qty > 9999) {
+                $qty = 9999;
+            }
+            $imeiRaw = (string) ($row['imeis'] ?? '');
+            if (strlen($imeiRaw) > 8000) {
+                $imeiRaw = substr($imeiRaw, 0, 8000);
+            }
+            $imeis = $this->normalizeImeiList($imeiRaw);
+            if (isset($merged[$itemId])) {
+                $merged[$itemId]['quantity'] += $qty;
+                if ($merged[$itemId]['quantity'] > 9999) {
+                    $merged[$itemId]['quantity'] = 9999;
+                }
+                if ($imeis !== null) {
+                    $prev = (string) ($merged[$itemId]['imeis'] ?? '');
+                    $merged[$itemId]['imeis'] = $this->normalizeImeiList($prev . "\n" . $imeis);
+                }
+            } else {
+                $merged[$itemId] = [
+                    'item_id'  => $itemId,
+                    'quantity' => $qty,
+                    'imeis'    => $imeis,
+                ];
+            }
+            if (count($merged) >= 200) {
+                break;
+            }
+        }
+
+        return array_values($merged);
+    }
+
+    private function normalizeImeiList(string $raw): ?string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        $parts = preg_split('/[\s,;]+/', $raw) ?: [];
+        $out   = [];
+        $seen  = [];
+        foreach ($parts as $part) {
+            $token = strtoupper(preg_replace('/[^A-Z0-9]/i', '', (string) $part) ?? '');
+            $len   = strlen($token);
+            if ($len < 8 || $len > 20 || isset($seen[$token])) {
+                continue;
+            }
+            $seen[$token] = true;
+            $out[] = $token;
+        }
+        return $out !== [] ? implode("\n", $out) : null;
+    }
+
+    /**
+     * @param list<array{item_id:int,quantity:int,imeis:?string}> $parsed
+     * @return list<array{item_id:int,item_name:string,sku:?string,quantity:int,imeis:?string}>
+     */
+    private function hydrateCountItems(array $parsed): array {
+        if ($parsed === []) {
+            return [];
+        }
+        $ids = [];
+        foreach ($parsed as $row) {
+            $ids[] = (int) $row['item_id'];
+        }
+        $ids = array_values(array_unique($ids));
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $rows = $this->db->fetchAll(
+            "SELECT id, name, sku FROM items WHERE id IN ({$placeholders})",
+            $ids
+        );
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int) $row['id']] = $row;
+        }
+
+        $out = [];
+        foreach ($parsed as $row) {
+            $item = $byId[$row['item_id']] ?? null;
+            if (!$item) {
+                continue;
+            }
+            $out[] = [
+                'item_id'   => (int) $item['id'],
+                'item_name' => (string) $item['name'],
+                'sku'       => $item['sku'] !== null && $item['sku'] !== '' ? (string) $item['sku'] : null,
+                'quantity'  => (int) $row['quantity'],
+                'imeis'     => $row['imeis'],
+            ];
+        }
+        return $out;
     }
 
     public function index(): void {
@@ -367,7 +534,103 @@ class MandoobInventoryController extends BaseController {
         $this->redirect('?page=mandoob_inventory');
     }
 
-    /** Mark physical count done: restart countdown (next due = count date + interval). */
+    /** Reset last-count / next-due date (inventory already done). */
+    public function reset(): void {
+        Auth::authorize('mandoob_inventory', 'edit');
+        if (!$this->schemaIsReady()) {
+            $this->schemaFailureRedirect();
+        }
+
+        $id   = $this->inputInt('id', 0, 'get');
+        $whId = $this->whId();
+        $row  = $this->db->fetchOne(
+            "SELECT * FROM mandoob_inventory_schedules WHERE id = ? AND warehouse_id = ? AND is_active = 1",
+            [$id, $whId]
+        );
+        if (!$row) {
+            $this->flash('error', 'Record not found.');
+            $this->redirect('?page=mandoob_inventory');
+        }
+
+        $today     = date('Y-m-d');
+        $pageTitle = 'Reset inventory date — ' . ($row['name'] ?? '');
+        $page      = 'mandoob_inventory';
+
+        ob_start();
+        include __DIR__ . '/../views/mandoob_inventory/reset.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    /** Record inventory page — date, notes, and counted items. */
+    public function record(): void {
+        Auth::authorize('mandoob_inventory', 'edit');
+        if (!$this->schemaIsReady()) {
+            $this->schemaFailureRedirect();
+        }
+
+        $id   = $this->inputInt('id', 0, 'get');
+        $whId = $this->whId();
+        $row  = $this->db->fetchOne(
+            "SELECT * FROM mandoob_inventory_schedules WHERE id = ? AND warehouse_id = ? AND is_active = 1",
+            [$id, $whId]
+        );
+        if (!$row) {
+            $this->flash('error', 'Record not found.');
+            $this->redirect('?page=mandoob_inventory');
+        }
+
+        $lastItems = [];
+        try {
+            $lastHist = $this->db->fetchOne(
+                "SELECT id FROM mandoob_inventory_history
+                 WHERE schedule_id = ? AND warehouse_id = ?
+                 ORDER BY count_date DESC, id DESC
+                 LIMIT 1",
+                [$id, $whId]
+            );
+            if ($lastHist) {
+                $lastItems = $this->db->fetchAll(
+                    "SELECT item_id, item_name, sku, quantity, imeis
+                     FROM mandoob_inventory_count_items
+                     WHERE history_id = ? AND warehouse_id = ?
+                     ORDER BY id ASC",
+                    [(int) $lastHist['id'], $whId]
+                );
+            }
+        } catch (Throwable $e) {
+            $lastItems = [];
+        }
+
+        $today     = date('Y-m-d');
+        $pageTitle = 'Record inventory — ' . ($row['name'] ?? '');
+        $page      = 'mandoob_inventory';
+
+        ob_start();
+        include __DIR__ . '/../views/mandoob_inventory/record.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    /** AJAX item search for the record form. */
+    public function searchItems(): void {
+        header('Content-Type: application/json');
+        if (!Auth::can('mandoob_inventory', 'edit')) {
+            http_response_code(403);
+            echo json_encode([]);
+            exit;
+        }
+        $q = $this->inputSearch('q', '', 'get');
+        if (strlen($q) < 1) {
+            echo json_encode([]);
+            exit;
+        }
+        $items = (new Item())->search($q, $this->whId() ?: null);
+        echo json_encode($items);
+        exit;
+    }
+
+    /** Mark physical count done: save counted items and restart countdown. */
     public function record_count(): void {
         Auth::authorize('mandoob_inventory', 'edit');
         if (!$this->schemaIsReady()) {
@@ -380,7 +643,7 @@ class MandoobInventoryController extends BaseController {
         $id   = $this->inputInt('id');
         $whId = $this->whId();
         $row  = $this->db->fetchOne(
-            "SELECT id, interval_months, party_id FROM mandoob_inventory_schedules WHERE id = ? AND warehouse_id = ? AND is_active = 1",
+            "SELECT id, interval_months, party_id, name FROM mandoob_inventory_schedules WHERE id = ? AND warehouse_id = ? AND is_active = 1",
             [$id, $whId]
         );
         if (!$row) {
@@ -391,12 +654,19 @@ class MandoobInventoryController extends BaseController {
         $countDate = $this->parseDate('count_date');
         if ($countDate === null) {
             $this->flash('error', 'Please enter a valid inventory date.');
-            $this->redirect('?page=mandoob_inventory');
+            $returnTo = $this->input('return_to', '', 'post', 20);
+            $this->redirect('?page=mandoob_inventory&action=' . ($returnTo === 'list' ? 'reset' : 'record') . '&id=' . $id);
         }
 
         $months = max(1, min(24, (int) ($row['interval_months'] ?? 3)));
         $next   = $this->addMonthsTo($countDate, $months);
         $notes  = trim($this->input('notes', '', 'post', 500));
+        $lines  = $this->hydrateCountItems($this->parseCountItems());
+        $lineCount = count($lines);
+        $totalQty  = 0;
+        foreach ($lines as $line) {
+            $totalQty += (int) $line['quantity'];
+        }
 
         $partyId = (int) ($row['party_id'] ?? 0);
         $sql     = 'UPDATE mandoob_inventory_schedules SET last_count_date = ?, next_due_date = ?, is_paused = 0, paused_at = NULL';
@@ -418,28 +688,62 @@ class MandoobInventoryController extends BaseController {
         $this->db->beginTransaction();
         try {
             $this->db->execute($sql, $params);
-            $this->db->insert(
+            $historyId = $this->db->insert(
                 "INSERT INTO mandoob_inventory_history
-                    (schedule_id, warehouse_id, count_date, next_due_after, notes, recorded_by)
-                 VALUES (?,?,?,?,?,?)",
+                    (schedule_id, warehouse_id, count_date, next_due_after, notes, line_count, total_qty, recorded_by)
+                 VALUES (?,?,?,?,?,?,?,?)",
                 [
                     $id,
                     $whId,
                     $countDate,
                     $next,
                     $notes !== '' ? $notes : null,
+                    $lineCount,
+                    $totalQty,
                     Auth::id(),
                 ]
             );
+            if ($historyId === false || (int) $historyId <= 0) {
+                throw new RuntimeException('History insert failed');
+            }
+            foreach ($lines as $line) {
+                $this->db->insert(
+                    "INSERT INTO mandoob_inventory_count_items
+                        (history_id, warehouse_id, item_id, item_name, sku, quantity, imeis)
+                     VALUES (?,?,?,?,?,?,?)",
+                    [
+                        (int) $historyId,
+                        $whId,
+                        $line['item_id'],
+                        $line['item_name'],
+                        $line['sku'],
+                        $line['quantity'],
+                        $line['imeis'],
+                    ]
+                );
+            }
             $this->db->commit();
         } catch (Throwable $e) {
             $this->db->rollback();
+            error_log('[MandoobInventory] record_count failed: ' . $e->getMessage());
             $this->flash('error', 'Could not record inventory. Please try again.');
-            $this->redirect('?page=mandoob_inventory');
+            $returnTo = $this->input('return_to', '', 'post', 20);
+            $this->redirect('?page=mandoob_inventory&action=' . ($returnTo === 'list' ? 'reset' : 'record') . '&id=' . $id);
         }
 
-        $this->flash('success', 'Inventory recorded for ' . $countDate . '. Countdown reset — next due: ' . ($next ?? '') . ' (every ' . $months . ' mo).');
-        $this->redirect('?page=mandoob_inventory');
+        $who = trim((string) ($row['name'] ?? 'mandoob'));
+        $msg = 'Inventory recorded for ' . $who . ' on ' . $countDate . '.';
+        if ($lineCount > 0) {
+            $msg .= ' ' . $lineCount . ' item' . ($lineCount === 1 ? '' : 's') . ', qty ' . $totalQty . '.';
+        }
+        $msg .= ' Next due: ' . ($next ?? '') . '.';
+        $this->logActivity('mandoob_inventory_count', 'mandoob_inventory', $id, $msg);
+        $this->flash('success', $msg);
+        $returnTo = $this->input('return_to', '', 'post', 20);
+        if ($returnTo === 'list' || $lineCount === 0) {
+            $this->redirect('?page=mandoob_inventory');
+        }
+        $this->redirect('?page=mandoob_inventory&action=history&id=' . $id);
     }
 
     /** Pause countdown (e.g. vacation) — due date frozen until resumed. */
@@ -561,6 +865,7 @@ class MandoobInventoryController extends BaseController {
         }
 
         $history = [];
+        $itemsByHistory = [];
         try {
             $history = $this->db->fetchAll(
                 "SELECT h.*, u.name AS recorded_by_name
@@ -570,8 +875,27 @@ class MandoobInventoryController extends BaseController {
                  ORDER BY h.count_date DESC, h.id DESC",
                 [$id, $whId]
             );
+            $histIds = [];
+            foreach ($history as $h) {
+                $histIds[] = (int) $h['id'];
+            }
+            if ($histIds !== []) {
+                $placeholders = implode(',', array_fill(0, count($histIds), '?'));
+                $itemRows = $this->db->fetchAll(
+                    "SELECT history_id, item_id, item_name, sku, quantity, imeis
+                     FROM mandoob_inventory_count_items
+                     WHERE warehouse_id = ? AND history_id IN ({$placeholders})
+                     ORDER BY id ASC",
+                    array_merge([$whId], $histIds)
+                );
+                foreach ($itemRows as $itemRow) {
+                    $hid = (int) $itemRow['history_id'];
+                    $itemsByHistory[$hid][] = $itemRow;
+                }
+            }
         } catch (Throwable $e) {
-            $history = [];
+            $history = $history ?: [];
+            $itemsByHistory = [];
         }
 
         $pageTitle = 'Inventory History — ' . ($schedule['name'] ?? '');

@@ -1,7 +1,10 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Customer IMEI Report</h1>
-        <p class="page-subtitle">IMEI list sold to a customer, grouped by invoice & item</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Customer IMEI Report</h1>
+            <p class="page-subtitle">IMEI list sold to a customer, grouped by invoice & item</p>
+        </div>
     </div>
     <?php if (!empty($records)):
         $imeiPrintQs = 'party_id=' . (int) $partyId

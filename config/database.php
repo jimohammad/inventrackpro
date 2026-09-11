@@ -9,9 +9,10 @@
  */
 
 // ── Load .env file (once per request) ───────────────────────
-static $envBootstrapped = false;
-if (!$envBootstrapped) {
-    $envBootstrapped = true;
+// require_once already prevents a second include; defined() is file-scope safe
+// (plain `static $var` at file level is a parse error in PHP).
+if (!defined('IQBALERP_ENV_BOOTSTRAPPED')) {
+    define('IQBALERP_ENV_BOOTSTRAPPED', true);
 
     $envPaths = [];
     $hostingerEnv = '/home/u793102776/.env';
@@ -218,12 +219,27 @@ class Database {
         }
     }
 
+    public function inTransaction(): bool {
+        return $this->pdo->inTransaction();
+    }
+
     public function commit(): void {
         $this->pdo->commit();
     }
 
     public function rollback(): void {
         $this->pdo->rollBack();
+    }
+
+    /** Roll back only when a transaction is active (safe after MySQL DDL implicit commit). */
+    public function rollbackQuiet(): void {
+        try {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+        } catch (Throwable $e) {
+            error_log('[Database] rollbackQuiet: ' . $e->getMessage());
+        }
     }
 
     private function __clone() {}

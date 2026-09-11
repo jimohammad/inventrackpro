@@ -53,7 +53,8 @@ $newArrivalCutoff = date('Y-m-d H:i:s', strtotime('-7 days'));
 
 // Get all active items with stock and category
 $items = $db->fetchAll(
-    "SELECT i.id, i.name, i.sku, i.brand, i.model, i.sale_price, i.has_imei, i.unit, i.created_at,
+    "SELECT i.id, i.name, i.sku, i.brand, i.model, i.sale_price, i.has_imei,
+            COALESCE(i.has_nfc, 0) AS has_nfc, i.unit, i.created_at,
             c.name as category_name, c.id as category_id,
             COALESCE(SUM(s.quantity), 0) as stock
      FROM items i
@@ -80,7 +81,7 @@ foreach ($grouped as $cat => $catItems) {
     $catCounts[$cat] = count($catItems);
 }
 
-$companyName  = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'")['value'] ?? APP_NAME;
+$companyName  = 'Iqbal Electronics Co. LLC';
 $companyPhone = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_phone'")['value'] ?? '';
 ?>
 <!DOCTYPE html>
@@ -90,8 +91,8 @@ $companyPhone = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'comp
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#2e7d32">
 <title>Price List — <?= htmlspecialchars($companyName) ?></title>
-<link rel="apple-touch-icon" href="/assets/pwa/apps/icons/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/assets/pwa/apps/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/assets/img/icare-logo.png">
+<link rel="icon" type="image/png" href="/assets/img/icare-logo.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -129,13 +130,13 @@ body {
     gap: 12px;
 }
 .pl-brand-icon {
-    width: 40px; height: 40px;
-    background: linear-gradient(135deg, #2e7d32, #1b5e20);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff;
-    font-size: 1.1rem;
-    font-weight: 800;
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: block;
+    background: #fff;
 }
 .pl-brand-name { font-size: 1.1rem; font-weight: 800; color: #1e293b; }
 .pl-brand-sub { font-size: 0.72rem; color: #94a3b8; font-weight: 500; }
@@ -279,11 +280,12 @@ body {
     font-weight: 700;
 }
 
-/* Item row */
+/* Item row — name | NFC column (near name) | spacer | stock | price */
 .pl-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, min(360px, 46%)) 46px minmax(8px, 1fr) auto auto;
     align-items: center;
-    gap: 14px;
+    column-gap: 8px;
     padding: 10px 14px;
     background: #fff;
     border: 1px solid #e8f5e9;
@@ -296,11 +298,11 @@ body {
     box-shadow: 0 2px 8px rgba(46,125,50,0.08);
     transform: translateX(2px);
 }
-.pl-item-info { flex: 1; min-width: 0; }
+.pl-item-info { min-width: 0; }
 .pl-item-name-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: wrap;
     margin-bottom: 1px;
 }
@@ -318,14 +320,32 @@ body {
     flex-shrink: 0;
     line-height: 1.4;
 }
+.pl-item-nfc {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 1.4em;
+}
+.pl-nfc-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #0d9488, #0891b2);
+    color: #fff;
+    line-height: 1.4;
+}
 .pl-item-meta { font-size: 0.72rem; color: #94a3b8; }
 .pl-item-price {
+    grid-column: 5;
     font-size: 1rem;
     font-weight: 800;
     color: #1e293b;
     text-align: right;
     min-width: 110px;
-    flex-shrink: 0;
 }
 .pl-item-price.locked {
     color: #cbd5e1;
@@ -334,9 +354,9 @@ body {
     font-style: italic;
 }
 .pl-item-stock {
+    grid-column: 4;
     min-width: 70px;
     text-align: center;
-    flex-shrink: 0;
 }
 .pl-stock-badge {
     display: inline-block;
@@ -370,8 +390,14 @@ body {
 @media (max-width: 600px) {
     .pl-header-inner { flex-direction: column; gap: 8px; text-align: center; }
     .pl-header-right { flex-direction: column; gap: 6px; }
-    .pl-item { flex-wrap: wrap; }
-    .pl-item-price, .pl-item-stock { min-width: auto; }
+    .pl-item {
+        grid-template-columns: minmax(0, 1fr) 42px auto;
+        row-gap: 4px;
+    }
+    .pl-item-info { grid-column: 1; grid-row: 1 / span 2; }
+    .pl-item-nfc { grid-column: 2; grid-row: 1 / span 2; }
+    .pl-item-stock { grid-column: 3; grid-row: 1; min-width: auto; justify-self: end; }
+    .pl-item-price { grid-column: 3; grid-row: 2; min-width: auto; justify-self: end; }
 }
 </style>
 </head>
@@ -380,7 +406,7 @@ body {
 <header class="pl-header">
     <div class="pl-header-inner">
         <div class="pl-brand">
-            <div class="pl-brand-icon">IQ</div>
+            <img class="pl-brand-icon" src="/assets/img/icare-logo.png" alt="iCARE" width="44" height="44">
             <div>
                 <div class="pl-brand-name"><?= htmlspecialchars($companyName) ?></div>
                 <div class="pl-brand-sub">Product Catalog & Price List</div>
@@ -435,10 +461,15 @@ body {
                     <span class="pl-new-badge">New Arrival</span>
                     <?php endif; ?>
                 </div>
-                <?php if ($item['brand'] || $item['sku']): ?>
+                <?php if (!empty($item['brand'])): ?>
                 <div class="pl-item-meta">
-                    <?= htmlspecialchars(trim(($item['brand'] ?? '') . ($item['sku'] ? ' · ' . $item['sku'] : ''))) ?>
+                    <?= htmlspecialchars((string) $item['brand']) ?>
                 </div>
+                <?php endif; ?>
+            </div>
+            <div class="pl-item-nfc">
+                <?php if (!empty($item['has_nfc'])): ?>
+                <span class="pl-nfc-badge" title="NFC available">NFC</span>
                 <?php endif; ?>
             </div>
             <div class="pl-item-stock">

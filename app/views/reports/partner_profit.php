@@ -13,9 +13,12 @@ $hasData = !empty($rows) || !empty($payments);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <div>
-        <h1 class="page-title">Partner Profit Report</h1>
-        <p class="page-subtitle">Import partner profit accrued on shipments and payments made · <a href="?page=landedcost&action=partnerHistory">Paid history</a></p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Partner Profit Report</h1>
+            <p class="page-subtitle">Import partner profit accrued on shipments and payments made · <a href="?page=landedcost&action=partnerHistory">Paid history</a></p>
+        </div>
     </div>
     <?php if ($hasData): ?>
     <div class="d-flex gap-2">

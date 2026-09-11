@@ -49,6 +49,7 @@ $skipListAssets = true;
 .se-btn-ghost:hover { background: rgba(255,255,255,0.18); color: #fff; }
 .se-btn-primary { background: #fff; color: #1e3a5f; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .se-btn-primary:hover { background: #f0f9ff; transform: translateY(-1px); }
+.se-btn-primary:disabled, .se-btn-outline:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .se-btn-outline { background: transparent; color: #fff; border: 1.5px solid rgba(255,255,255,0.45); }
 .se-btn-outline:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .se-btn-thermal { background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(110,231,183,0.4); }
@@ -102,6 +103,36 @@ $skipListAssets = true;
 .se-info-chip i { color: #94a3b8; font-size: 0.85rem; margin-top: 2px; }
 .se-info-chip .name { font-weight: 700; color: #1e293b; font-size: 0.88rem; line-height: 1.3; }
 .se-info-chip .sub { font-size: 0.78rem; color: #64748b; margin-top: 2px; }
+
+.se-party-search { position: relative; }
+.se-party-search .se-party-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: #6366f1; font-size: 0.95rem; z-index: 2; pointer-events: none;
+}
+.se-party-search .se-input {
+    padding-left: 38px; font-weight: 600;
+}
+.se-party-search .se-input.is-selected {
+    border-color: #10b981; background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+    color: #065f46;
+}
+.se-party-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 6px; font-weight: 600; }
+
+.se-credit-hint {
+    margin-top: 8px; padding: 8px 12px; border-radius: 8px;
+    font-size: 0.75rem; font-weight: 600; line-height: 1.4;
+    display: flex; align-items: flex-start; gap: 8px;
+}
+.se-credit-hint a { font-weight: 700; text-decoration: underline; }
+.se-credit-ok { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+.se-credit-warn { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.se-draft-banner {
+    margin: 12px 18px 0; padding: 10px 14px;
+    background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+    color: #9a3412; font-size: 0.8rem; font-weight: 600;
+    display: flex; align-items: flex-start; gap: 8px; line-height: 1.45;
+}
+.se-draft-banner a { color: #9a3412; font-weight: 800; text-decoration: underline; }
 
 .se-totals {
     background: linear-gradient(145deg, #eff6ff 0%, #eef2ff 100%);
@@ -202,26 +233,27 @@ $skipListAssets = true;
 }
 .se-tbl-scroll .se-tbl thead th {
     position: sticky; top: 0; z-index: 2;
-    box-shadow: 0 1px 0 #e2e8f0;
 }
 .se-tbl-wrap { overflow-x: auto; }
 .se-subtotal-bar {
     display: flex; justify-content: flex-end; align-items: center; gap: 12px;
     padding: 10px 18px; background: #f8fafc;
-    border-top: 2px solid #e2e8f0; flex-shrink: 0;
+    flex-shrink: 0;
 }
 .se-subtotal-bar .lbl {
     font-size: 0.72rem; font-weight: 800; color: #64748b;
     text-transform: uppercase; letter-spacing: 0.05em;
 }
 .se-subtotal-bar .val { font-weight: 800; color: #4338ca; font-size: 0.95rem; white-space: nowrap; }
-.se-tbl { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.se-tbl { width: 100%; border-collapse: collapse; border-spacing: 0; font-size: 0.86rem; }
+.se-tbl th,
+.se-tbl td { border: none; }
 .se-tbl th {
     padding: 10px 12px; font-size: 0.68rem; font-weight: 800;
     text-transform: uppercase; letter-spacing: 0.06em; color: #64748b;
-    background: #f8fafc; border-bottom: 2px solid #e2e8f0; white-space: nowrap;
+    background: #f8fafc; white-space: nowrap;
 }
-.se-tbl td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.se-tbl td { padding: 10px 12px; vertical-align: middle; }
 .se-tbl tbody tr { transition: background .1s; }
 .se-tbl tbody tr:hover { background: #f8faff; }
 .se-tbl tr.deleted-row { opacity: 0.4; background: #fff5f5 !important; }
@@ -284,7 +316,8 @@ $skipListAssets = true;
     padding: 10px 14px; cursor: pointer; font-size: 0.82rem;
     border-bottom: 1px solid #f1f5f9; transition: background .1s;
 }
-.se-autocomplete-item:hover { background: #f0f4ff; }
+.se-autocomplete-item:hover,
+.se-autocomplete-item.is-active { background: #f0f4ff; }
 .se-autocomplete-item:last-child { border-bottom: none; }
 
 .new-row-flash { animation: seRowFlash .65s ease-out; }
@@ -308,6 +341,12 @@ $itemCount = count($editSale['items']);
 ?>
 
 <div class="se-wrap">
+<?php if (!empty($saleEditUnlock['unlocked_until'])): ?>
+<div class="alert alert-success mb-3" style="border-radius:12px;">
+    <strong>Unlocked by admin</strong> until <?= htmlspecialchars((string) $saleEditUnlock['unlocked_until']) ?>.
+    Saving this invoice closes the unlock. Customer cannot be changed.
+</div>
+<?php endif; ?>
 <form method="POST" action="?page=sales&action=update&id=<?= $editSale['id'] ?>" id="editSaleForm">
     <?= Auth::csrfField() ?>
     <input type="hidden" name="sale_edit_nonce" value="<?= htmlspecialchars($saleEditNonce ?? '') ?>">
@@ -353,16 +392,29 @@ $itemCount = count($editSale['items']);
                     </div>
 
                     <div class="se-field">
-                        <label class="se-label">Customer</label>
-                        <div class="se-info-chip">
-                            <i class="bi bi-person-circle"></i>
-                            <div>
-                                <div class="name"><?= htmlspecialchars($editSale['party_name']) ?></div>
-                                <?php if ($editSale['party_phone']): ?>
-                                <div class="sub"><?= htmlspecialchars($editSale['party_phone']) ?></div>
-                                <?php endif; ?>
-                            </div>
+                        <label class="se-label" for="partySearch">Customer</label>
+                        <?php if (!empty($saleEditLockParty)): ?>
+                        <div class="se-party-search" id="partySearchWrap">
+                            <i class="bi bi-person-circle se-party-icon"></i>
+                            <input type="text" id="partySearch" class="se-input is-selected" readonly
+                                   value="<?= htmlspecialchars($editSale['party_name']) ?>">
+                            <input type="hidden" name="party_id" id="partyIdInput" required
+                                   value="<?= (int) $editSale['party_id'] ?>">
                         </div>
+                        <div class="se-party-hint">Customer cannot be changed on a salesman unlock. Ask admin if the party is wrong.</div>
+                        <?php else: ?>
+                        <div class="se-party-search" id="partySearchWrap">
+                            <i class="bi bi-person-circle se-party-icon"></i>
+                            <input type="text" id="partySearch" class="se-input is-selected"
+                                   value="<?= htmlspecialchars($editSale['party_name']) ?>"
+                                   placeholder="Search customer…" autocomplete="off">
+                            <div class="se-autocomplete" id="partyDropdown" style="display:none;"></div>
+                            <input type="hidden" name="party_id" id="partyIdInput" required
+                                   value="<?= (int) $editSale['party_id'] ?>">
+                        </div>
+                        <div class="se-party-hint">Type a name to change the customer on this invoice</div>
+                        <?php endif; ?>
+                        <div id="editCreditHint" class="se-credit-hint se-credit-ok" hidden></div>
                     </div>
 
                     <input type="hidden" name="discount" id="editDiscount"
@@ -402,6 +454,18 @@ $itemCount = count($editSale['items']);
                 <span class="se-items-head-title"><i class="bi bi-box-seam"></i> Line Items</span>
                 <span class="se-items-hint"><?= $itemCount ?> line<?= $itemCount !== 1 ? 's' : '' ?> · scan to add</span>
             </div>
+
+            <?php if (!empty($saleEditDraft['items'])): ?>
+            <div class="se-draft-banner" id="editDraftBanner">
+                <i class="bi bi-upc-scan" style="margin-top:2px;"></i>
+                <span>
+                    Unsaved scanned IMEIs were kept. Collect payment to free credit, then Save again.
+                    <?php if (!empty($editSale['party_id'])): ?>
+                    <a href="?page=parties&amp;action=edit&amp;id=<?= (int) $editSale['party_id'] ?>" target="_blank" rel="noopener">Open customer</a>
+                    <?php endif; ?>
+                </span>
+            </div>
+            <?php endif; ?>
 
             <div class="se-scan">
                 <div class="se-scan-wrap">
@@ -475,6 +539,8 @@ $itemCount = count($editSale['items']);
                                 <input type="number" name="items[<?= $item['id'] ?>][unit_price]"
                                        value="<?= number_format((float)$item['unit_price'], 3, '.', '') ?>"
                                        step="0.001" min="0"
+                                       data-catalog="<?= number_format((float) ($item['sale_price'] ?? 0), 3, '.', '') ?>"
+                                       data-max-sale-qty="<?= (int) ($item['max_sale_qty'] ?? 0) ?>"
                                        class="se-cell-input price edit-price" data-row="<?= $item['id'] ?>">
                             </td>
                             <td class="text-end se-row-total row-total" id="rowTotal_<?= $item['id'] ?>"><?= editMoney($item['total']) ?></td>
@@ -515,7 +581,7 @@ $itemCount = count($editSale['items']);
             <div class="modal-body">
                 <p style="font-size:0.82rem;color:#64748b;margin-bottom:10px;">
                     <i class="bi bi-info-circle me-1" style="color:#0ea5e9;"></i>
-                    Paste IMEIs below — one per line, or separated by commas/semicolons. Each IMEI is looked up and added as a new line item.
+                    Paste IMEIs below — one per line, or separated by commas/semicolons. Press <strong>Enter</strong> to validate, then <strong>Enter</strong> again to import. <span style="color:#94a3b8;">Shift+Enter for a new line.</span>
                 </p>
                 <div style="font-size:0.78rem;color:#475569;margin-bottom:8px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                     <span><i class="bi bi-stickies me-1"></i> Lines pasted: <strong id="editSpLineCount">0</strong></span>
@@ -564,6 +630,58 @@ var editSpValidList = [];
 var editBulkScanQueue = [];
 var editBulkScanRunning = false;
 var editBulkScanStats = { saved: 0, skipped: [] };
+var SALE_EDIT_ID = <?= (int)$editSale['id'] ?>;
+var EDIT_DRAFT_KEY = 'sale_edit_new_' + SALE_EDIT_ID;
+var saleEditDraft = <?= json_encode($saleEditDraft ?? null, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS) ?>;
+var partyCreditLimit = <?= json_encode((float)($partyCreditLimit ?? 0)) ?>;
+var partyOutstanding = <?= json_encode((float)($partyOutstanding ?? 0)) ?>;
+var partyCustomerKind = <?= json_encode((string)($partyCustomerKind ?? 'wholesale')) ?>;
+const SALE_EDIT_LOCK_PARTY = <?= !empty($saleEditLockParty) ? 'true' : 'false' ?>;
+const isCashier = <?= in_array(Auth::role(), ['cashier','viewer'], true) ? 'true' : 'false' ?>;
+const enforcePriceFloor = <?= (in_array(Auth::role(), ['cashier','viewer'], true) && empty($allowSalesmanFreePrice)) ? 'true' : 'false' ?>;
+const RETAIL_TIER_KWD = 40;
+const RETAIL_MARKUP_LOW = 0.5;
+const RETAIL_MARKUP_HIGH = 1;
+function isRetailCustomer(kind) {
+    return String(kind || partyCustomerKind || '') === 'retail';
+}
+function retailMarkupFromCatalog(catalog) {
+    return (parseFloat(catalog) || 0) >= RETAIL_TIER_KWD ? RETAIL_MARKUP_HIGH : RETAIL_MARKUP_LOW;
+}
+function applyNewSaleUnitPrice(priceEl, catalogPrice) {
+    const catalog = parseFloat(catalogPrice) || 0;
+    const min = isRetailCustomer() ? catalog + retailMarkupFromCatalog(catalog) : catalog;
+    if (!priceEl) return min;
+    if (isRetailCustomer()) {
+        priceEl.value = min.toFixed(3);
+        priceEl.placeholder = min.toFixed(3);
+        priceEl.min = String(min.toFixed(3));
+        priceEl.title = 'Retail minimum ' + min.toFixed(3) + ' (wholesale + ' + retailMarkupFromCatalog(catalog).toFixed(3) + '). You can increase.';
+        priceEl.dataset.minRetail = String(min.toFixed(3));
+    } else {
+        priceEl.value = catalog.toFixed(3);
+        priceEl.placeholder = '0.000';
+        if (enforcePriceFloor && catalog > 0) {
+            priceEl.min = String(catalog.toFixed(3));
+            priceEl.title = 'Cannot sell below ' + catalog.toFixed(3);
+        } else {
+            priceEl.removeAttribute('min');
+            priceEl.title = '';
+        }
+        priceEl.dataset.minRetail = '';
+    }
+    return min;
+}
+var originalGrand = <?= json_encode((float)$editSale['grand_total']) ?>;
+var originalPartyId = <?= (int) ($invoicePartyId ?? $editSale['party_id']) ?>;
+var originalPartyName = <?= json_encode((string) ($editSale['party_name'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS) ?>;
+var lockedPartyId = originalPartyId;
+var lockedPartyName = originalPartyName;
+var partyEditUrl = <?= json_encode(!empty($editSale['party_id']) ? ('?page=parties&action=edit&id=' . (int)$editSale['party_id']) : '') ?>;
+var partyStore = {};
+var partyTimer;
+var partyHighlightIdx = -1;
+var partySearchAbort = null;
 
 function renumberItemRows() {
     var n = 1;
@@ -640,9 +758,8 @@ function addNewItemRow(prefill) {
             '<input type="text" class="se-cell-input new-item-search" style="max-width:none;text-align:left;font-weight:500;"' +
                 ' id="newSearch_' + n + '" placeholder="Search item…" autocomplete="off">' +
             '<input type="hidden" name="new_items[' + n + '][item_id]" id="newItemId_' + n + '" value="' + (prefill ? prefill.itemId : '') + '">' +
-            '<input type="hidden" name="new_items[' + n + '][imeis]" id="newImeis_' + n + '" value="' + newItemImeiData[n].join('\\n') + '">' +
+            '<input type="hidden" name="new_items[' + n + '][imeis]" id="newImeis_' + n + '" value="">' +
             '<input type="hidden" id="newHasImei_' + n + '" value="' + (prefill && prefill.hasImei ? '1' : '0') + '">' +
-            '<input type="hidden" id="newImeiOpt_' + n + '" value="0">' +
             '<div id="newItemLabel_' + n + '" class="se-item-name" style="' + (prefill ? '' : 'display:none;') + '">' + (prefill ? prefill.name : '') + '</div>' +
             imeiBadge +
             '<div class="se-autocomplete" id="newDrop_' + n + '" style="display:none;"></div>' +
@@ -660,9 +777,12 @@ function addNewItemRow(prefill) {
             '<button type="button" class="se-btn-remove" title="Remove" data-new-row="' + n + '">×</button>' +
         '</td>';
     document.getElementById('itemsTbody').appendChild(tr);
+    if (prefill && prefill.price != null && prefill.price !== '') {
+        applyNewSaleUnitPrice(document.getElementById('newPrice_' + n), prefill.price);
+    }
     if (prefill) {
         document.getElementById('newSearch_' + n).style.display = 'none';
-        recalcItems();
+        syncNewRowImeis(n);
         renderEditScanCount();
     } else {
         document.getElementById('newSearch_' + n).focus();
@@ -690,6 +810,7 @@ function syncNewRowImeis(n) {
     updateNewImeiBadge(n);
     recalcItems();
     renderEditScanCount();
+    persistEditDraftLocal();
     scrollEditRowIntoView(document.getElementById('newrow_' + n));
 }
 
@@ -699,6 +820,7 @@ function removeNewRow(n) {
     renderEditScanCount();
     recalcItems();
     renumberItemRows();
+    persistEditDraftLocal();
 }
 
 function searchNewItem(n, q) {
@@ -751,7 +873,7 @@ function selectNewItem(n, id, name, price, hasImei) {
 
     document.getElementById('newItemId_' + n).value  = id;
     document.getElementById('newSearch_' + n).value  = name;
-    document.getElementById('newPrice_' + n).value   = parseFloat(price).toFixed(3);
+    applyNewSaleUnitPrice(document.getElementById('newPrice_' + n), price);
     document.getElementById('newHasImei_' + n).value = hasImei ? '1' : '0';
     const label = document.getElementById('newItemLabel_' + n);
     if (label) { label.textContent = name; label.style.display = ''; }
@@ -803,9 +925,179 @@ function recalcTotal() {
     document.getElementById('newGrandTotal').textContent = currency + ' ' + newTotal.toFixed(3);
     const balEl = document.getElementById('newBalance');
     if (balEl) balEl.textContent = currency + ' ' + newBal.toFixed(3);
+    updateCreditLimitHint(newTotal);
+}
+
+function setEditSaveEnabled(enabled) {
+    document.querySelectorAll('#editSaleForm [data-print-mode]').forEach(function(btn) {
+        btn.disabled = !enabled;
+    });
+}
+
+function editCreditOverAmount(newTotal) {
+    if (partyCreditLimit <= 0) return 0;
+    const currentPartyId = parseInt(document.getElementById('partyIdInput')?.value, 10) || 0;
+    let projected;
+    if (currentPartyId && currentPartyId !== originalPartyId) {
+        const newBal = Math.max(0, newTotal - paidAmount);
+        projected = partyOutstanding + newBal;
+    } else {
+        const delta = newTotal - originalGrand;
+        projected = partyOutstanding + delta;
+    }
+    return projected - partyCreditLimit;
+}
+
+function updateCreditLimitHint(newTotal) {
+    const el = document.getElementById('editCreditHint');
+    if (!el) return;
+    if (partyCreditLimit <= 0) {
+        el.hidden = true;
+        setEditSaveEnabled(true);
+        return;
+    }
+    const over = editCreditOverAmount(newTotal);
+    el.hidden = false;
+    if (over > 0.001) {
+        el.className = 'se-credit-hint se-credit-warn';
+        el.innerHTML = '<i class="bi bi-exclamation-octagon-fill"></i><span>Over credit limit by '
+            + currency + ' ' + over.toFixed(3)
+            + '. Collect payment first — this cannot be overridden on the invoice (including admin).'
+            + '</span>';
+        setEditSaveEnabled(false);
+    } else {
+        const remaining = Math.max(0, -over);
+        el.className = 'se-credit-hint se-credit-ok';
+        el.innerHTML = '<i class="bi bi-shield-check"></i><span>Credit remaining for this save: <strong>'
+            + currency + ' ' + remaining.toFixed(3) + '</strong></span>';
+        setEditSaveEnabled(true);
+    }
+}
+
+function persistEditDraftLocal() {
+    const items = [];
+    document.querySelectorAll('#itemsTbody tr[data-new-row]').forEach(function(tr) {
+        const n = tr.dataset.newRow;
+        const itemId = parseInt(document.getElementById('newItemId_' + n)?.value, 10) || 0;
+        if (!itemId) return;
+        items.push({
+            itemId: itemId,
+            name: document.getElementById('newItemLabel_' + n)?.textContent || '',
+            price: document.getElementById('newPrice_' + n)?.value || '',
+            qty: parseInt(document.getElementById('newQty_' + n)?.value, 10) || 1,
+            hasImei: document.getElementById('newHasImei_' + n)?.value === '1',
+            imeis: (newItemImeiData[n] || []).slice()
+        });
+    });
+    try {
+        sessionStorage.setItem(EDIT_DRAFT_KEY, JSON.stringify({
+            date: document.getElementById('editDate')?.value || '',
+            notes: document.getElementById('editNotes')?.value || '',
+            party_id: parseInt(document.getElementById('partyIdInput')?.value, 10) || 0,
+            party_name: document.getElementById('partySearch')?.value || '',
+            items: items
+        }));
+    } catch (e) {}
+}
+
+function applyEditDraft(draft) {
+    if (!draft || typeof draft !== 'object') return;
+    if (draft.date) {
+        const dateEl = document.getElementById('editDate');
+        if (dateEl) dateEl.value = draft.date;
+    }
+    if (typeof draft.notes === 'string') {
+        const notesEl = document.getElementById('editNotes');
+        if (notesEl) notesEl.value = draft.notes;
+    }
+    if (draft.party_id && draft.party_name) {
+        const idEl = document.getElementById('partyIdInput');
+        const nameEl = document.getElementById('partySearch');
+        if (idEl && nameEl) {
+            idEl.value = String(draft.party_id);
+            nameEl.value = draft.party_name;
+            nameEl.classList.add('is-selected');
+            lockedPartyId = parseInt(draft.party_id, 10) || lockedPartyId;
+            lockedPartyName = draft.party_name;
+            partyEditUrl = '?page=parties&action=edit&id=' + encodeURIComponent(draft.party_id);
+        }
+    }
+    if (draft.existing && typeof draft.existing === 'object') {
+        Object.keys(draft.existing).forEach(function(sid) {
+            const row = draft.existing[sid];
+            const qtyEl = document.querySelector('.edit-qty[data-row="' + sid + '"]');
+            const priceEl = document.querySelector('.edit-price[data-row="' + sid + '"]');
+            if (qtyEl && row.quantity) qtyEl.value = row.quantity;
+            if (priceEl && typeof row.unit_price !== 'undefined') {
+                priceEl.value = parseFloat(row.unit_price).toFixed(3);
+            }
+            if (row.deleted) {
+                const delBtn = document.querySelector('.btn-del-row[data-row-id="' + sid + '"]');
+                const delInput = document.getElementById('del_' + sid);
+                if (delInput && delInput.value === '0' && delBtn) {
+                    toggleDelete(parseInt(sid, 10), delBtn);
+                }
+            }
+        });
+    }
+    (draft.items || []).forEach(function(item) {
+        const itemId = parseInt(item.itemId || item.item_id, 10) || 0;
+        if (!itemId) return;
+        let imeis = (item.imeis || []).map(normalizeScanImei).filter(Boolean);
+        imeis = imeis.filter(function(im) { return getAllInvoiceImeisForScan().indexOf(im) === -1; });
+        const hasImei = item.hasImei === true || item.hasImei === 1 || item.hasImei === '1';
+        const existingN = findNewRowByItemId(itemId);
+        if (existingN !== null) {
+            if (imeis.length) {
+                const merged = (newItemImeiData[existingN] || []).concat(imeis);
+                newItemImeiData[existingN] = merged.filter(function(v, i) { return merged.indexOf(v) === i; });
+                syncNewRowImeis(existingN);
+            }
+            return;
+        }
+        if (hasImei && !imeis.length) return;
+        const n = addNewItemRow({
+            itemId: itemId,
+            name: item.name || ('Item #' + itemId),
+            price: item.price || '0.000',
+            hasImei: hasImei,
+            imeis: imeis
+        });
+        if (!hasImei) {
+            const qtyEl = document.getElementById('newQty_' + n);
+            const qty = parseInt(item.qty, 10) || imeis.length || 1;
+            if (qtyEl) qtyEl.value = qty;
+        }
+    });
+}
+
+function loadEditDraft() {
+    if (saleEditDraft) {
+        applyEditDraft(saleEditDraft);
+        persistEditDraftLocal();
+        return;
+    }
+    try {
+        const raw = sessionStorage.getItem(EDIT_DRAFT_KEY);
+        if (!raw) return;
+        applyEditDraft(JSON.parse(raw));
+        if (getAllNewScannedImeis().length > 0 && !document.getElementById('editDraftBanner')) {
+            const scan = document.querySelector('.se-scan');
+            if (scan) {
+                const banner = document.createElement('div');
+                banner.className = 'se-draft-banner';
+                banner.id = 'editDraftBanner';
+                banner.innerHTML = '<i class="bi bi-upc-scan" style="margin-top:2px;"></i><span>Unsaved scanned IMEIs were kept. Collect payment to free credit, then Save again.'
+                    + (partyEditUrl ? ' <a href="' + partyEditUrl + '" target="_blank" rel="noopener">Open customer</a>' : '')
+                    + '</span>';
+                scan.parentNode.insertBefore(banner, scan);
+            }
+        }
+    } catch (e) {}
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    loadEditDraft();
     recalcItems();
     renumberItemRows();
 
@@ -830,6 +1122,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (e.target.classList.contains('new-qty') || e.target.classList.contains('new-price')) {
             recalcItems();
+            persistEditDraftLocal();
         }
     });
 
@@ -864,6 +1157,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('btnEditScanPaste').addEventListener('click', openEditSalePasteModal);
     document.getElementById('editSpTextarea').addEventListener('input', updateEditSalePasteLineCount);
+    document.getElementById('editSpTextarea').addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        e.preventDefault();
+        var confirmBtn = document.getElementById('editSpConfirmBtn');
+        var validateBtn = document.getElementById('editSpValidateBtn');
+        if (confirmBtn && !confirmBtn.disabled && editSpValidList.length > 0) {
+            confirmEditSalePaste();
+            return;
+        }
+        if (validateBtn && !validateBtn.disabled) {
+            validateEditSalePaste();
+        }
+    });
     document.getElementById('editSpValidateBtn').addEventListener('click', validateEditSalePaste);
     document.getElementById('editSpConfirmBtn').addEventListener('click', confirmEditSalePaste);
 
@@ -876,11 +1182,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.getElementById('editImeiScanBar').focus();
+    window.addEventListener('pagehide', persistEditDraftLocal);
 });
 
 function normalizeScanImei(raw) {
-    if (!raw) return '';
-    return String(raw).replace(/[\r\n\t]/g, '').trim().toUpperCase().replace(/\s+/g, '');
+    return (window.IqbalImei && IqbalImei.normalize) ? IqbalImei.normalize(raw) : String(raw || '').toUpperCase().replace(/[\r\n\t\s]/g, '');
 }
 
 function getAllNewScannedImeis() {
@@ -987,7 +1293,7 @@ function applyEditScannedImei(data, imei) {
             document.getElementById('newHasImei_' + emptyN).value = data.has_imei ? '1' : '0';
             document.getElementById('newSearch_' + emptyN).value = data.item_name;
             document.getElementById('newSearch_' + emptyN).style.display = 'none';
-            document.getElementById('newPrice_' + emptyN).value = parseFloat(data.sale_price).toFixed(3);
+            applyNewSaleUnitPrice(document.getElementById('newPrice_' + emptyN), data.sale_price);
             const label = document.getElementById('newItemLabel_' + emptyN);
             if (label) { label.textContent = data.item_name; label.style.display = ''; }
             newItemImeiData[emptyN] = [imei];
@@ -1048,6 +1354,13 @@ function updateEditSalePasteLineCount() {
     var raw = document.getElementById('editSpTextarea').value;
     var lines = raw.split(/[\r\n,;]+/).filter(function(s) { return s.trim().length > 0; });
     document.getElementById('editSpLineCount').textContent = lines.length;
+    // Editing after validate → require Validate again before Import (Enter flow)
+    if (editSpValidList.length > 0) {
+        editSpValidList = [];
+        document.getElementById('editSpConfirmBtn').disabled = true;
+        document.getElementById('editSpPreview').style.display = 'none';
+        document.getElementById('editSpPreview').innerHTML = '';
+    }
 }
 
 function validateEditSalePaste() {
@@ -1062,8 +1375,8 @@ function validateEditSalePaste() {
         var imei = normalizeScanImei(line);
         if (!imei) return;
 
-        if (!/^\d{15,18}$/.test(imei)) {
-            errors.push({ imei: imei, reason: 'Must be 15–18 digits (got ' + imei.length + ')' });
+        if (!IqbalImei.isPlausible(imei)) {
+            errors.push({ imei: imei, reason: 'Not a phone IMEI (15–18 digits) or tablet serial (11–20 letters/numbers)' });
             return;
         }
         if (seen[imei]) {
@@ -1190,22 +1503,268 @@ function finishEditBulkPaste() {
     editBulkScanStats = { saved: 0, skipped: [] };
 }
 
+function escEditHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function editPartyBalanceLine(party) {
+    if (!Object.prototype.hasOwnProperty.call(party, 'balance')) {
+        return '<br><small style="color:#94a3b8;font-weight:600;">…</small>';
+    }
+    const pBal = parseFloat(party.balance) || 0;
+    if (pBal > 0.001) {
+        return '<br><small style="color:#dc2626;font-weight:600;">Due: ' + currency + ' ' + pBal.toFixed(3) + '</small>';
+    }
+    if (pBal < -0.001) {
+        return '<br><small style="color:#6366f1;font-weight:600;">Balance: -' + currency + ' ' + Math.abs(pBal).toFixed(3) + '</small>';
+    }
+    return '<br><small style="color:#16a34a;font-weight:600;">No outstanding</small>';
+}
+
+function updateEditPartyHighlight(scrollActive) {
+    const drop = document.getElementById('partyDropdown');
+    if (!drop) return;
+    drop.querySelectorAll('.se-autocomplete-item').forEach(function(el) {
+        el.classList.toggle('is-active', parseInt(el.dataset.idx, 10) === partyHighlightIdx);
+    });
+    if (!scrollActive) return;
+    const active = drop.querySelector('.se-autocomplete-item.is-active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function bindEditPartyDropdown(drop) {
+    drop.querySelectorAll('.se-autocomplete-item').forEach(function(el) {
+        el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectEditParty(partyStore.results[parseInt(this.dataset.idx, 10)]);
+        });
+        el.addEventListener('mouseenter', function() {
+            partyHighlightIdx = parseInt(this.dataset.idx, 10);
+            updateEditPartyHighlight(false);
+        });
+    });
+}
+
+function renderEditPartyResults(parties, keepHighlight) {
+    const drop = document.getElementById('partyDropdown');
+    const input = document.getElementById('partySearch');
+    if (!drop || !input) return;
+    if (!parties.length) {
+        drop.style.display = 'none';
+        partyHighlightIdx = -1;
+        return;
+    }
+    partyStore.results = parties;
+    if (!keepHighlight) partyHighlightIdx = -1;
+    drop.innerHTML = parties.map(function(p, idx) {
+        return '<div class="se-autocomplete-item" data-idx="' + idx + '">'
+            + '<strong>' + escEditHtml(p.name) + '</strong>'
+            + (p.customer_kind === 'retail' ? ' <small style="color:#4338ca;font-weight:700;">Retail</small>' : '')
+            + '<small class="float-end" style="color:#94a3b8;">' + escEditHtml(p.phone || '') + '</small>'
+            + editPartyBalanceLine(p)
+            + '</div>';
+    }).join('');
+    bindEditPartyDropdown(drop);
+    positionEditDropdown(input, drop);
+    if (document.activeElement === input) drop.style.display = 'block';
+}
+
+function runEditPartySearch() {
+    const input = document.getElementById('partySearch');
+    const drop = document.getElementById('partyDropdown');
+    if (!input || !drop) return;
+    clearTimeout(partyTimer);
+    const q = input.value.trim();
+    if (q.length < 1) { drop.style.display = 'none'; return; }
+    partyTimer = setTimeout(function() {
+        const qNow = input.value.trim();
+        if (qNow.length < 1) { drop.style.display = 'none'; return; }
+        if (partySearchAbort) partySearchAbort.abort();
+        partySearchAbort = new AbortController();
+        const signal = partySearchAbort.signal;
+        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=customer&balances=0', { signal })
+            .then(function(r) { return r.json(); })
+            .then(function(parties) {
+                if (input.value.trim() !== qNow) return;
+                if (!Array.isArray(parties) || !parties.length) {
+                    drop.style.display = 'none';
+                    partyHighlightIdx = -1;
+                    return;
+                }
+                renderEditPartyResults(parties, false);
+                const ids = parties.map(function(p) { return p.id; }).join(',');
+                return fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(ids) + '&type=customer', { signal })
+                    .then(function(r) { return r.json(); })
+                    .then(function(enriched) {
+                        if (input.value.trim() !== qNow) return;
+                        if (!Array.isArray(enriched) || !enriched.length) return;
+                        renderEditPartyResults(enriched, true);
+                    });
+            })
+            .catch(function(err) {
+                if (err && err.name === 'AbortError') return;
+                drop.style.display = 'none';
+            });
+    }, 300);
+}
+
+function restoreLockedEditParty() {
+    const idEl = document.getElementById('partyIdInput');
+    const nameEl = document.getElementById('partySearch');
+    if (!idEl || !nameEl) return;
+    if (idEl.value) return;
+    idEl.value = String(lockedPartyId || '');
+    nameEl.value = lockedPartyName || '';
+    if (idEl.value) nameEl.classList.add('is-selected');
+}
+
+function selectEditParty(party) {
+    if (!party) return;
+    const el = document.getElementById('partySearch');
+    const idEl = document.getElementById('partyIdInput');
+    const drop = document.getElementById('partyDropdown');
+    if (!el || !idEl) return;
+    el.value = party.name || '';
+    el.classList.add('is-selected');
+    idEl.value = String(party.id || '');
+    if (drop) drop.style.display = 'none';
+    partyHighlightIdx = -1;
+    lockedPartyId = parseInt(party.id, 10) || 0;
+    lockedPartyName = party.name || '';
+    partyEditUrl = party.id ? ('?page=parties&action=edit&id=' + encodeURIComponent(party.id)) : '';
+    partyCreditLimit = parseFloat(party.credit_limit) || 0;
+    partyCustomerKind = party.customer_kind === 'retail' ? 'retail' : 'wholesale';
+    if (Object.prototype.hasOwnProperty.call(party, 'balance')) {
+        partyOutstanding = Math.max(0, parseFloat(party.balance) || 0);
+        const grandEl = document.getElementById('newGrandTotal');
+        const newTotal = parseFloat(String(grandEl?.textContent || '').replace(/[^0-9.]/g, '')) || 0;
+        updateCreditLimitHint(newTotal || originalGrand);
+        persistEditDraftLocal();
+        return;
+    }
+    fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(party.id) + '&type=customer')
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+            if (String(idEl.value) !== String(party.id)) return;
+            const extra = Array.isArray(rows) && rows[0] ? rows[0] : { balance: 0 };
+            selectEditParty(Object.assign({}, party, extra));
+        })
+        .catch(function() {
+            if (String(idEl.value) !== String(party.id)) return;
+            selectEditParty(Object.assign({}, party, { balance: 0 }));
+        });
+}
+
+(function bindEditPartySearch() {
+    const input = document.getElementById('partySearch');
+    const drop = document.getElementById('partyDropdown');
+    if (SALE_EDIT_LOCK_PARTY || !input || !drop) return;
+
+    input.addEventListener('input', function() {
+        this.classList.remove('is-selected');
+        document.getElementById('partyIdInput').value = '';
+        runEditPartySearch();
+    });
+    input.addEventListener('focus', function() {
+        this.select();
+        if (this.value.trim().length >= 1 && !document.getElementById('partyIdInput').value) {
+            runEditPartySearch();
+        }
+    });
+    input.addEventListener('blur', function() {
+        setTimeout(restoreLockedEditParty, 180);
+    });
+    input.addEventListener('keydown', function(e) {
+        const visible = drop.style.display !== 'none';
+        const parties = partyStore.results || [];
+        if (e.key === 'ArrowDown') {
+            if (!visible || !parties.length) return;
+            e.preventDefault();
+            partyHighlightIdx = partyHighlightIdx < parties.length - 1 ? partyHighlightIdx + 1 : 0;
+            updateEditPartyHighlight(true);
+        } else if (e.key === 'ArrowUp') {
+            if (!visible || !parties.length) return;
+            e.preventDefault();
+            partyHighlightIdx = partyHighlightIdx > 0 ? partyHighlightIdx - 1 : parties.length - 1;
+            updateEditPartyHighlight(true);
+        } else if (e.key === 'Enter') {
+            if (!visible || !parties.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = partyHighlightIdx >= 0 ? partyHighlightIdx : 0;
+            selectEditParty(parties[idx]);
+        } else if (e.key === 'Escape') {
+            if (!visible) return;
+            e.preventDefault();
+            drop.style.display = 'none';
+            partyHighlightIdx = -1;
+        }
+    });
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#partySearchWrap')) {
+            drop.style.display = 'none';
+            partyHighlightIdx = -1;
+        }
+    });
+})();
+
 document.getElementById('editSaleForm').addEventListener('submit', function(e) {
     let err = null;
+    if (!document.getElementById('partyIdInput')?.value) {
+        err = 'Please select a customer.';
+    }
+    if (document.querySelector('#itemsTbody .se-imei-warn')) {
+        err = 'Scan all required IMEIs on existing lines before saving. Selling without serials causes stock / IMEI mismatch.';
+    }
     document.querySelectorAll('#itemsTbody tr[data-new-row]').forEach(function(tr) {
         const n = tr.dataset.newRow;
+        syncNewRowImeis(n);
         const itemId = document.getElementById('newItemId_' + n)?.value;
         if (!itemId) return;
         const qty     = parseInt(document.getElementById('newQty_' + n)?.value, 10) || 0;
         const hasImei = document.getElementById('newHasImei_' + n)?.value === '1';
-        const imeiOpt = document.getElementById('newImeiOpt_' + n)?.value === '1';
         const imeis   = (newItemImeiData[n] || []).length;
         if (qty <= 0) err = 'Quantity required for all new items.';
-        if (hasImei && !imeiOpt && imeis !== qty) {
+        if (hasImei && imeis !== qty) {
             const name = document.getElementById('newItemLabel_' + n)?.textContent || 'item';
-            err = 'Item "' + name + '": must scan ' + qty + ' IMEIs (currently ' + imeis + ').';
+            err = 'Item "' + name + '": must scan ' + qty + ' IMEIs before selling (currently ' + imeis + ').';
         }
     });
+    persistEditDraftLocal();
+    const grandEl = document.getElementById('newGrandTotal');
+    const newTotal = grandEl
+        ? (parseFloat(String(grandEl.textContent || '').replace(/[^0-9.]/g, '')) || 0)
+        : (window._subtotal || 0);
+    const creditOver = editCreditOverAmount(newTotal);
+    if (creditOver > 0.001) {
+        err = 'This customer’s credit limit would be exceeded by ' + currency + ' ' + creditOver.toFixed(3)
+            + '. Collect payment first. No user (including admin) can override this on the invoice.';
+    }
+    if (isRetailCustomer()) {
+        document.querySelectorAll('#itemsTbody tr[data-new-row]').forEach(function(tr) {
+            const n = tr.dataset.newRow;
+            const itemId = document.getElementById('newItemId_' + n)?.value;
+            if (!itemId) return;
+            const priceEl = document.getElementById('newPrice_' + n);
+            const price = parseFloat(priceEl?.value) || 0;
+            const min = parseFloat(priceEl?.min || priceEl?.dataset.minRetail || 0) || 0;
+            if (min > 0 && price < min) {
+                err = 'Retail prices cannot go below wholesale + 0.500 (under 40 KWD) or + 1.000 (40 KWD+). You may increase the price.';
+            }
+        });
+    }
+    if (enforcePriceFloor) {
+        document.querySelectorAll('#itemsTbody .edit-price').forEach(function(el) {
+            const price = parseFloat(el.value) || 0;
+            const catalog = parseFloat(el.dataset.catalog || 0) || 0;
+            const min = isRetailCustomer()
+                ? catalog + ((catalog >= RETAIL_TIER_KWD) ? RETAIL_MARKUP_HIGH : RETAIL_MARKUP_LOW)
+                : catalog;
+            if (min > 0 && price < min) {
+                err = 'Price cannot be below the catalog / retail floor.';
+            }
+        });
+    }
     if (err) { e.preventDefault(); alert(err); }
 });
 </script>

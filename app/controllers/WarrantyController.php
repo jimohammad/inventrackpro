@@ -16,8 +16,25 @@ class WarrantyController extends BaseController {
         Auth::authorize('warranty', 'view');
 
         $search   = $this->input('search',    '', 'get');
-        $fromDate = $this->input('from_date', '', 'get');
-        $toDate   = $this->input('to_date',   '', 'get');
+        $hasSearch = $search !== '';
+
+        $dateRange = ListPage::resolveDateFiltersFromGet(2);
+        if ($hasSearch && !empty($dateRange['dates_defaulted'])) {
+            $dateRange = [
+                'from_date'       => '',
+                'to_date'         => '',
+                'all_dates'       => true,
+                'dates_defaulted' => false,
+            ];
+        }
+        $fromDate = (string) $dateRange['from_date'];
+        $toDate   = (string) $dateRange['to_date'];
+        if ($fromDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate)) {
+            $fromDate = '';
+        }
+        if ($toDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate)) {
+            $toDate = '';
+        }
 
         $where  = "WHERE 1=1";
         $params = [];
@@ -31,9 +48,10 @@ class WarrantyController extends BaseController {
             $where  .= " AND (wr.replacement_no LIKE ? OR p.name LIKE ? OR wr.old_imei LIKE ? OR wr.new_imei LIKE ? OR i_old.name LIKE ?)";
             $params  = array_merge($params, [$like, $like, $like, $like, $like]);
         }
-        if ($fromDate) { $where .= " AND wr.date >= ?"; $params[] = $fromDate; }
-        if ($toDate)   { $where .= " AND wr.date <= ?"; $params[] = $toDate; }
+        if ($fromDate !== '') { $where .= " AND wr.date >= ?"; $params[] = $fromDate; }
+        if ($toDate !== '')   { $where .= " AND wr.date <= ?"; $params[] = $toDate; }
 
+        $fetchCap = ListPage::MAX_ROWS + 1;
         $replacements = $this->db->fetchAll(
             "SELECT wr.*, p.name AS customer_name, w.name AS warehouse_name,
                     i_old.name AS old_item_name, i_new.name AS new_item_name,
@@ -45,17 +63,14 @@ class WarrantyController extends BaseController {
              JOIN items i_new   ON i_new.id = wr.new_item_id
              LEFT JOIN sales s  ON s.id = wr.sale_id
              $where
-             ORDER BY wr.created_at DESC",
+             ORDER BY wr.created_at DESC
+             LIMIT {$fetchCap}",
             $params
-        );
-
-        // Also load data needed for the New Replacement modal
-        $warehouses = $this->db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name");
-        $customers  = $this->db->fetchAll(
-            "SELECT id, name, phone FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name"
-        );
-        $items  = $this->db->fetchAll("SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name");
-        $nextNo = $this->nextNo();
+        ) ?: [];
+        $capped        = ListPage::capRows($replacements);
+        $replacements  = $capped['items'];
+        $listTruncated = $capped['truncated'];
+        $listLimit     = $capped['limit'];
 
         $pageTitle = 'Warranty Replacements';
         $page      = 'warranty';
@@ -108,6 +123,20 @@ class WarrantyController extends BaseController {
         if (!$partyId || !$oldItemId || !$newItemId) {
             $this->flash('error', 'Customer and both items are required.');
             $this->redirect('?page=warranty&action=create');
+        }
+        if (!$this->imeisPresent($oldImei, $newImei)) {
+            $this->flash('error', 'Old IMEI and New IMEI are both required.');
+            $this->redirect('?page=warranty&action=create');
+        }
+        if ($oldImei !== '') {
+            $oldRec = $this->db->fetchOne(
+                "SELECT status FROM imei_records WHERE imei = ? OR imei2 = ? LIMIT 1",
+                [$oldImei, $oldImei]
+            );
+            if ($oldRec && ($oldRec['status'] ?? '') === 'dumped') {
+                $this->flash('error', 'Old IMEI was dumped. Void the dump credit before a warranty replacement.');
+                $this->redirect('?page=warranty&action=create');
+            }
         }
 
         $this->db->beginTransaction();
@@ -188,23 +217,7 @@ class WarrantyController extends BaseController {
         Auth::authorize('warranty', 'view');
 
         $id = $this->inputInt('id', 0, 'get');
-        $wr = $this->db->fetchOne(
-            "SELECT wr.*, p.name AS customer_name, p.phone AS customer_phone,
-                    w.name AS warehouse_name,
-                    i_old.name AS old_item_name, i_old.sku AS old_sku,
-                    i_new.name AS new_item_name, i_new.sku AS new_sku,
-                    s.invoice_no AS sale_invoice_no,
-                    u.name AS created_by_name
-             FROM warranty_replacements wr
-             JOIN parties p     ON p.id = wr.party_id
-             JOIN warehouses w  ON w.id = wr.warehouse_id
-             JOIN items i_old   ON i_old.id = wr.old_item_id
-             JOIN items i_new   ON i_new.id = wr.new_item_id
-             LEFT JOIN sales s  ON s.id = wr.sale_id
-             LEFT JOIN users u  ON u.id = wr.created_by
-             WHERE wr.id = ?",
-            [$id]
-        );
+        $wr = $this->findReplacement($id);
 
         if (!$wr) { $this->flash('error', 'Record not found.'); $this->redirect('?page=warranty'); }
 
@@ -215,6 +228,184 @@ class WarrantyController extends BaseController {
         include __DIR__ . '/../views/warranty/view.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    // ─── Edit form ────────────────────────────────────────────────────────────
+    public function edit(): void {
+        Auth::authorize('warranty', 'edit');
+
+        $id = $this->inputInt('id', 0, 'get');
+        $wr = $this->findReplacement($id);
+        if (!$wr) {
+            $this->flash('error', 'Record not found.');
+            $this->redirect('?page=warranty');
+        }
+
+        $warehouses = $this->db->fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name");
+        $customers  = $this->db->fetchAll(
+            "SELECT id, name, phone FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name"
+        );
+        $items = $this->db->fetchAll(
+            "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name"
+        );
+
+        $pageTitle = 'Edit ' . $wr['replacement_no'];
+        $page      = 'warranty';
+
+        ob_start();
+        include __DIR__ . '/../views/warranty/edit.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    // ─── Update ───────────────────────────────────────────────────────────────
+    public function update(): void {
+        Auth::authorize('warranty', 'edit');
+        if (!$this->isPost()) {
+            $this->redirect('?page=warranty');
+        }
+
+        $id = $this->inputInt('id');
+        $existing = $this->findReplacement($id);
+        if (!$existing) {
+            $this->flash('error', 'Record not found.');
+            $this->redirect('?page=warranty');
+        }
+
+        $partyId   = $this->inputInt('party_id');
+        $saleId    = $this->inputInt('sale_id') ?: null;
+        $oldItemId = $this->inputInt('old_item_id');
+        $newItemId = $this->inputInt('new_item_id');
+        $oldImei   = trim($this->input('old_imei'));
+        $oldImei2  = trim($this->input('old_imei2'));
+        $newImei   = trim($this->input('new_imei'));
+        $newImei2  = trim($this->input('new_imei2'));
+        $fault     = $this->input('fault_description');
+        $notes     = $this->input('notes');
+        $status    = $this->input('status') === 'pending_supplier' ? 'pending_supplier' : 'completed';
+        $date      = $this->input('date') ?: $existing['date'];
+
+        // Keep branch fixed — stock/IMEI effects belong to the original warehouse.
+        $warehouseId = (int) $existing['warehouse_id'];
+        $no          = (string) $existing['replacement_no'];
+
+        if (!$partyId || !$oldItemId || !$newItemId) {
+            $this->flash('error', 'Customer and both items are required.');
+            $this->redirect('?page=warranty&action=edit&id=' . $id);
+        }
+        if (!$this->imeisPresent($oldImei, $newImei)) {
+            $this->flash('error', 'Old IMEI and New IMEI are both required.');
+            $this->redirect('?page=warranty&action=edit&id=' . $id);
+        }
+        if ($oldImei !== '') {
+            $oldRec = $this->db->fetchOne(
+                "SELECT status FROM imei_records WHERE imei = ? OR imei2 = ? LIMIT 1",
+                [$oldImei, $oldImei]
+            );
+            if ($oldRec && ($oldRec['status'] ?? '') === 'dumped') {
+                $this->flash('error', 'Old IMEI was dumped. Void the dump credit before a warranty replacement.');
+                $this->redirect('?page=warranty&action=edit&id=' . $id);
+            }
+        }
+
+        $prevOldImei   = trim((string) ($existing['old_imei'] ?? ''));
+        $prevNewImei   = trim((string) ($existing['new_imei'] ?? ''));
+        $prevNewItemId = (int) $existing['new_item_id'];
+        $oldImeiChanged = $oldImei !== $prevOldImei;
+        $newImeiChanged = $newImei !== $prevNewImei;
+        $newItemChanged = $newItemId !== $prevNewItemId;
+
+        $this->db->beginTransaction();
+        try {
+            // Reverse previous faulty IMEI if changed
+            if ($oldImeiChanged && $prevOldImei !== '') {
+                $this->db->execute(
+                    "UPDATE imei_records
+                     SET status = 'sold',
+                         notes = CONCAT(COALESCE(notes,''), ' | Warranty edit restore ', ?)
+                     WHERE (imei = ? OR imei2 = ?) AND status = 'defective'",
+                    [$no, $prevOldImei, $prevOldImei]
+                );
+            }
+
+            // Mark new faulty IMEI defective
+            if ($oldImeiChanged && $oldImei !== '') {
+                $this->db->execute(
+                    "UPDATE imei_records
+                     SET status = 'defective',
+                         notes = CONCAT(COALESCE(notes,''), ' | Warranty replacement ', ?)
+                     WHERE imei = ? OR imei2 = ?",
+                    [$no, $oldImei, $oldImei]
+                );
+            }
+
+            // Reverse previous replacement device / stock when item or IMEI changes
+            if ($newItemChanged || $newImeiChanged) {
+                // Only return the previous serial to stock when swapping to a different IMEI.
+                // Clearing new_imei leaves the unit marked sold (still with the customer).
+                if ($prevNewImei !== '' && $newImei !== '' && $newImei !== $prevNewImei) {
+                    $this->db->execute(
+                        "UPDATE imei_records
+                         SET status = 'in_stock',
+                             notes = CONCAT(COALESCE(notes,''), ' | Warranty edit reverse ', ?)
+                         WHERE (imei = ? OR imei2 = ?) AND status = 'sold'",
+                        [$no, $prevNewImei, $prevNewImei]
+                    );
+                }
+
+                if ($newItemChanged) {
+                    $this->adjustStock($prevNewItemId, $warehouseId, +1);
+                    $this->adjustStock($newItemId, $warehouseId, -1);
+                }
+
+                if ($newImei !== '' && ($newImeiChanged || $newItemChanged)) {
+                    $existingImei = $this->db->fetchOne(
+                        "SELECT id FROM imei_records WHERE imei = ? OR imei2 = ?",
+                        [$newImei, $newImei]
+                    );
+                    if ($existingImei) {
+                        $this->db->execute(
+                            "UPDATE imei_records SET status = 'sold', item_id = ?,
+                                  notes = CONCAT(COALESCE(notes,''), ' | Warranty out: ', ?)
+                             WHERE imei = ? OR imei2 = ?",
+                            [$newItemId, $no, $newImei, $newImei]
+                        );
+                    } else {
+                        $this->db->insert(
+                            "INSERT INTO imei_records (imei, imei2, item_id, warehouse_id, status, notes)
+                             VALUES (?,?,?,?,'sold',?)",
+                            [$newImei, $newImei2 ?: null, $newItemId, $warehouseId,
+                             "Warranty replacement out: $no"]
+                        );
+                    }
+                }
+            }
+
+            $this->db->execute(
+                "UPDATE warranty_replacements SET
+                    sale_id = ?, party_id = ?, date = ?,
+                    old_item_id = ?, old_imei = ?, old_imei2 = ?,
+                    new_item_id = ?, new_imei = ?, new_imei2 = ?,
+                    fault_description = ?, notes = ?, status = ?
+                 WHERE id = ? AND warehouse_id = ?",
+                [
+                    $saleId, $partyId, $date,
+                    $oldItemId, $oldImei ?: null, $oldImei2 ?: null,
+                    $newItemId, $newImei ?: null, $newImei2 ?: null,
+                    $fault ?: null, $notes ?: null, $status,
+                    $id, $warehouseId,
+                ]
+            );
+
+            $this->db->commit();
+            $this->logActivity('warranty_replacement_update', 'warranty_replacements', $id, $no);
+            $this->flash('success', "Warranty replacement $no updated.");
+            $this->redirect('?page=warranty&action=view&id=' . $id);
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->flash('error', 'Error: ' . $e->getMessage());
+            $this->redirect('?page=warranty&action=edit&id=' . $id);
+        }
     }
 
     // ─── AJAX: look up IMEI ───────────────────────────────────────────────────
@@ -269,13 +460,20 @@ class WarrantyController extends BaseController {
         $q = trim($this->input('q', '', 'get'));
         if (strlen($q) < 2) { echo json_encode([]); return; }
         $like = "%$q%";
+        $params = [$like, $like];
+        $whFilter = '';
+        if (Auth::warehouseId()) {
+            $whFilter = ' AND s.warehouse_id = ?';
+            $params[] = Auth::warehouseId();
+        }
         $rows = $this->db->fetchAll(
             "SELECT s.id, s.invoice_no, s.date, p.name AS customer_name
              FROM sales s JOIN parties p ON p.id = s.party_id
              WHERE s.status != 'cancelled'
                AND (s.invoice_no LIKE ? OR p.name LIKE ?)
+               $whFilter
              ORDER BY s.date DESC LIMIT 10",
-            [$like, $like]
+            $params
         );
         echo json_encode($rows);
     }
@@ -285,5 +483,69 @@ class WarrantyController extends BaseController {
         $last = $this->db->fetchOne("SELECT replacement_no FROM warranty_replacements ORDER BY id DESC LIMIT 1 FOR UPDATE");
         $num  = $last ? (int)substr($last['replacement_no'], 3) : 0;
         return 'WR-' . str_pad($num + 1, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function imeisPresent(string $oldImei, string $newImei): bool {
+        return $oldImei !== '' && $newImei !== '';
+    }
+
+    /** Load one replacement scoped to the active branch. */
+    private function findReplacement(int $id): ?array {
+        if ($id <= 0) {
+            return null;
+        }
+        $where  = 'WHERE wr.id = ?';
+        $params = [$id];
+        if (Auth::warehouseId()) {
+            $where .= ' AND wr.warehouse_id = ?';
+            $params[] = Auth::warehouseId();
+        }
+        $row = $this->db->fetchOne(
+            "SELECT wr.*, p.name AS customer_name, p.phone AS customer_phone,
+                    w.name AS warehouse_name,
+                    i_old.name AS old_item_name, i_old.sku AS old_sku,
+                    i_new.name AS new_item_name, i_new.sku AS new_sku,
+                    s.invoice_no AS sale_invoice_no,
+                    u.name AS created_by_name
+             FROM warranty_replacements wr
+             JOIN parties p     ON p.id = wr.party_id
+             JOIN warehouses w  ON w.id = wr.warehouse_id
+             JOIN items i_old   ON i_old.id = wr.old_item_id
+             JOIN items i_new   ON i_new.id = wr.new_item_id
+             LEFT JOIN sales s  ON s.id = wr.sale_id
+             LEFT JOIN users u  ON u.id = wr.created_by
+             $where",
+            $params
+        );
+        return $row ?: null;
+    }
+
+    /** Adjust stock qty (+/-) with row lock; creates row when restoring into empty stock. */
+    private function adjustStock(int $itemId, int $warehouseId, int $delta): void {
+        if ($itemId <= 0 || $warehouseId <= 0 || $delta === 0) {
+            return;
+        }
+        $row = $this->db->fetchOne(
+            "SELECT quantity FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE",
+            [$itemId, $warehouseId]
+        );
+        if ($row) {
+            $newQty = (int) $row['quantity'] + $delta;
+            if ($newQty < 0) {
+                throw new Exception('Insufficient stock for replacement item.');
+            }
+            $this->db->execute(
+                "UPDATE stock SET quantity = ? WHERE item_id = ? AND warehouse_id = ?",
+                [$newQty, $itemId, $warehouseId]
+            );
+            return;
+        }
+        if ($delta < 0) {
+            throw new Exception('Insufficient stock for replacement item.');
+        }
+        $this->db->insert(
+            "INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?,?,?)",
+            [$itemId, $warehouseId, $delta]
+        );
     }
 }

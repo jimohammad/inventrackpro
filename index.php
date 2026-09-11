@@ -46,7 +46,7 @@ $action = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['action'] ?? 'index');
 if (empty($action)) $action = 'index';
 
 // Public pages that don't need login (see Auth::isPublicPage)
-$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetrack', 'imeitrack'];
+$warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetrack', 'imeitrack', 'appshub', 'appsorder', 'verify', 'podocsverify', 'paymentverify'];
 
 if (!Auth::isPublicPage($page)) {
     Auth::required();
@@ -54,6 +54,9 @@ if (!Auth::isPublicPage($page)) {
 
 // Require warehouse selection for all pages except exempt ones
 if (!in_array($page, $warehouseExempt)) {
+    if (empty(Auth::warehouseId()) && !(defined('WAREHOUSE_UI_SWITCHER') && WAREHOUSE_UI_SWITCHER)) {
+        Auth::autoSelectOperationalWarehouse();
+    }
     Auth::requireWarehouse();
     Auth::ensureOperationalWarehouse();
 }
@@ -76,6 +79,7 @@ $routes = [
     'purchases'       => 'PurchaseController',
     'purchaseorders'  => 'PurchaseOrderController',
     'warranty'        => 'WarrantyController',
+    'dumps'           => 'DumpController',
     'sales'           => 'SalesController',
     'payments'        => 'PaymentController',
     'returns'         => 'ReturnController',
@@ -86,6 +90,7 @@ $routes = [
     'transfers'       => 'StockTransferController',
     'accounts'        => 'AccountController',
     'openingstock'    => 'OpeningStockController',
+    'intershop'       => 'IntershopController',
     'mandoob_inventory' => 'MandoobInventoryController',
     'fieldstatement'  => 'FieldStatementController',
     'landedcost'      => 'LandedCostController',
@@ -97,6 +102,14 @@ $routes = [
     'service'         => 'ServiceController',
     'servicetrack'    => 'ServiceController',
     'imeitrack'       => 'IMEIController',
+    'verify'          => 'VerifyController',
+    'podocsverify'    => 'PoDocsVerifyController',
+    'paymentverify'   => 'PaymentVerifyController',
+    'appshub'         => 'AppsController',
+    'appsorder'       => 'AppsOrderController',
+    'orderrequests'   => 'OrderRequestController',
+    'saleedits'       => 'SaleEditRequestController',
+    'employees'       => 'EmployeeController',
     'users'           => 'UserController',
     'warehouses'      => 'WarehouseAdminController',
     'settings'        => 'SettingsController',

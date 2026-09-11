@@ -158,21 +158,21 @@ $pct       = $qty > 0 ? round(($existing / $qty) * 100) : 0;
 
 <script>
 var siRemaining = <?= $remaining ?>;
-var siItemName  = '<?= addslashes(strtolower($line['item_name'])) ?>';
+var siItemName  = <?= json_encode(strtolower($line['item_name'] ?? '')) ?>;
+var siSerialKind = <?= json_encode($line['serial_kind'] ?? 'phone') ?>;
 var siExisting  = <?= json_encode(array_column($existingImeis, 'imei')) ?>;
 var siScanned   = [];
 var _siAutoT    = null;
 
 function siRule() {
-    if (siItemName.indexOf('h40') !== -1) return { min: 13, max: 13, label: '13' };
-    return { min: 15, max: 15, label: '15' };
+    return IqbalImei.rule(siSerialKind, siItemName, '', { phoneMin: 15, phoneMax: 15 });
 }
 
 function siAuto() {
     clearTimeout(_siAutoT);
-    var v = document.getElementById('siInput').value.trim();
+    var v = IqbalImei.normalize(document.getElementById('siInput').value);
     var r = siRule();
-    if (v.length >= r.min && v.length <= r.max && /^\d+$/.test(v)) {
+    if (IqbalImei.shouldAutoConfirm(v, r)) {
         _siAutoT = setTimeout(siScan, 150);
     }
 }
@@ -180,13 +180,12 @@ function siAuto() {
 function siScan() {
     clearTimeout(_siAutoT);
     var input = document.getElementById('siInput');
-    var imei  = input.value.trim();
+    var imei  = IqbalImei.normalize(input.value);
     input.value = '';
     if (!imei) return;
 
     var r = siRule();
-    if (!/^\d+$/.test(imei))                                 { siMsg('Not digits: ' + imei, 'err'); input.focus(); return; }
-    if (imei.length < r.min || imei.length > r.max)          { siMsg('Length must be ' + r.label, 'err'); input.focus(); return; }
+    if (!r.test(imei)) { siMsg('Need ' + r.label + ': ' + imei, 'err'); input.focus(); return; }
     if (siExisting.indexOf(imei) !== -1)                     { siMsg('Already linked', 'err'); input.focus(); return; }
     if (siScanned.indexOf(imei) !== -1)                      { siMsg('Already in scan list', 'err'); input.focus(); return; }
     if (siScanned.length >= siRemaining)                     { siMsg('Limit reached (' + siRemaining + ')', 'err'); input.focus(); return; }
@@ -210,8 +209,8 @@ function siProcessPaste() {
     var added = 0, skipped = 0, invalid = 0, full = false;
     list.forEach(function(im) {
         if (full) return;
-        if (!/^\d+$/.test(im)) { invalid++; return; }
-        if (im.length < r.min || im.length > r.max) { invalid++; return; }
+        if (!r.test(IqbalImei.normalize(im))) { invalid++; return; }
+        im = IqbalImei.normalize(im);
         if (siExisting.indexOf(im) !== -1) { skipped++; return; }
         if (siScanned.indexOf(im) !== -1) { skipped++; return; }
         if (siScanned.length >= siRemaining) { full = true; return; }

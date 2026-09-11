@@ -1,14 +1,23 @@
 <!-- Customer Statement -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Party Statement</h1>
-        <p class="page-subtitle">Full transaction history per party (unified account)</p>
+    <div class="d-flex align-items-start gap-2">
+        <a href="?page=reports" class="btn btn-sm btn-outline-secondary mt-1" title="Back to Reports"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h1 class="page-title">Party Statement</h1>
+            <p class="page-subtitle">Full transaction history per party (unified account)</p>
+        </div>
     </div>
     <?php if ($party && !empty($transactions)): ?>
+    <?php
+    $partyPrintUrl = '?page=reports&action=partyPrint'
+        . '&party_id=' . urlencode((string) $partyId)
+        . '&from_date=' . urlencode((string) $fromDate)
+        . '&to_date=' . urlencode((string) $toDate);
+    ?>
     <div class="d-flex gap-2">
-        <button onclick="exportReportCSV('partyStmtTable','Party_Statement')" class="btn btn-success"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
-        <button onclick="exportReportPDF()" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</button>
-        <a href="?page=reports&action=partyPrint&party_id=<?= $partyId ?>&from_date=<?= $fromDate ?>&to_date=<?= $toDate ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
+        <button type="button" class="btn btn-success js-export-report-csv" data-table-id="partyStmtTable" data-title="Party_Statement"><i class="bi bi-file-earmark-excel me-1"></i> Excel</button>
+        <a href="<?= htmlspecialchars($partyPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="<?= htmlspecialchars($partyPrintUrl) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="bi bi-printer me-1"></i> Print</a>
     </div>
     <?php endif; ?>
 </div>
@@ -51,7 +60,46 @@
 <?php include __DIR__ . '/../partials/report_ledger_alerts.php'; ?>
 
 <?php if ($party): ?>
-
+<?php
+    $stmtClosing = (float) ($summary['balance'] ?? 0);
+    $canRepairStmt = (Auth::isAdmin() || Auth::can('payments', 'delete')) && abs($stmtClosing) > 0.001;
+?>
+<?php if ($canRepairStmt): ?>
+<div class="alert alert-warning border-warning mb-3" style="border-radius:12px;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <div class="fw-bold">Statement not Clear</div>
+            <div class="small text-muted mb-0">
+                Closing is
+                <strong><?= APP_CURRENCY ?> <?= number_format(abs($stmtClosing), DECIMAL_PLACES) ?>
+                <?= $stmtClosing > 0 ? 'DR' : 'CR' ?></strong>
+                — usually Union/freight invoice paid vs ERP packing estimate, or two PAYs for the same settle.
+                This adjusts party opening only (no bank change). Then click View again.
+            </div>
+        </div>
+        <form method="POST" action="?page=reports&action=repairPartyLedger" id="partyStmtRepairForm">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="party_id" value="<?= (int) $partyId ?>">
+            <input type="hidden" name="from_date" value="<?= htmlspecialchars((string) $fromDate) ?>">
+            <input type="hidden" name="to_date" value="<?= htmlspecialchars((string) $toDate) ?>">
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-shield-check me-1"></i> Fix statement → Clear
+            </button>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    var f = document.getElementById('partyStmtRepairForm');
+    if (!f) return;
+    f.addEventListener('submit', function (e) {
+        if (!window.confirm('Align this party statement to Clear? Bank payments will not change.')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+<?php endif; ?>
 
 <!-- Transactions Table -->
 <?php if (!empty($transactions)): ?>
@@ -92,26 +140,40 @@
             <?php endif; ?>
             <?php foreach ($transactions as $i => $t):
                 $typeColors = [
-                    'sale'     => '#6366f1',
-                    'purchase' => '#f59e0b',
-                    'payment'  => '#10b981',
-                    'return'   => '#dc2626',
-                    'discount' => '#8b5cf6',
+                    'sale'           => '#6366f1',
+                    'purchase'       => '#f59e0b',
+                    'payment'        => '#10b981',
+                    'po_advance'     => '#c2410c',
+                    'return'         => '#dc2626',
+                    'dump'           => '#c2410c',
+                    'discount'       => '#8b5cf6',
+                    'import_payable' => '#0ea5e9',
+                    'vendor_bill'    => '#0891b2',
                 ];
                 $typeLabels = [
-                    'sale'     => 'Sale',
-                    'purchase' => 'Purchase',
-                    'payment'  => 'Payment',
-                    'return'   => 'Return',
-                    'discount' => 'Discount',
+                    'sale'           => 'Sale',
+                    'purchase'       => 'Purchase',
+                    'payment'        => 'Payment',
+                    'po_advance'     => 'PO Advance',
+                    'return'         => 'Return',
+                    'dump'           => 'Dump',
+                    'discount'       => 'Discount',
+                    'import_payable' => 'Import payable',
+                    'vendor_bill'    => 'Vendor bill',
                 ];
                 $typeColor = $typeColors[$t['txn_type']] ?? '#94a3b8';
                 $typeLabel = $typeLabels[$t['txn_type']] ?? ucfirst($t['txn_type']);
 
                 $balColor = $t['running_balance'] > 0 ? '#f59e0b' : '#10b981';
+                $when = Party::statementWhenParts($t['date'] ?? '', $t['created_at'] ?? '');
             ?>
             <tr style="background:<?= $i % 2 === 0 ? '#fff' : '#fafbff' ?>;border-bottom:1px solid #f0f3f8;">
-                <td style="padding:9px 14px;color:var(--text-muted);"><?= date('d M Y', strtotime($t['date'])) ?></td>
+                <td style="padding:9px 14px;color:var(--text-muted);white-space:nowrap;">
+                    <?= htmlspecialchars($when['day']) ?>
+                    <?php if ($when['time'] !== ''): ?>
+                    <div style="font-size:0.72rem;color:#64748b;font-weight:500;margin-top:1px;"><?= htmlspecialchars($when['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td style="padding:9px 14px;">
                     <?php if ($t['txn_type'] === 'sale'): ?>
                     <a href="?page=sales&action=detail&id=<?= $t['id'] ?>" style="color:#6366f1;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
@@ -119,6 +181,8 @@
                     <a href="?page=purchases&action=detail&id=<?= $t['id'] ?>" style="color:#f59e0b;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
                     <?php elseif ($t['txn_type'] === 'return'): ?>
                     <span style="color:#dc2626;font-weight:600;"><?= $t['ref_no'] ?></span>
+                    <?php elseif ($t['txn_type'] === 'dump'): ?>
+                    <a href="?page=dumps&action=view&id=<?= (int) $t['id'] ?>" style="color:#c2410c;text-decoration:none;font-weight:600;"><?= $t['ref_no'] ?></a>
                     <?php elseif ($t['txn_type'] === 'discount'): ?>
                     <span style="color:#8b5cf6;font-weight:600;"><?= $t['ref_no'] ?></span>
                     <?php else: ?>

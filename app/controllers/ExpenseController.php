@@ -13,26 +13,46 @@ class ExpenseController extends BaseController {
 
     public function index(): void {
         Auth::authorize('expenses', 'view');
+
+        $search     = $this->inputSearch('search', '', 'get');
+        $categoryId = $this->inputInt('category_id', 0, 'get');
+        $hasEntity  = ($search !== '') || ($categoryId > 0);
+
+        $dateRange = ListPage::resolveDateFiltersFromGet();
+        if ($hasEntity && !empty($dateRange['dates_defaulted'])) {
+            $dateRange = [
+                'from_date'       => '',
+                'to_date'         => '',
+                'all_dates'       => true,
+                'dates_defaulted' => false,
+            ];
+        }
+
         $filters = [
-            'search'      => $this->input('search', '', 'get'),
-            'category_id' => $this->inputInt('category_id', 0, 'get'),
-            'from_date'   => $this->input('from_date', date('Y-m-01'), 'get'),
-            'to_date'     => $this->input('to_date', date('Y-m-d'), 'get'),
+            'search'      => $search,
+            'category_id' => $categoryId,
+            'from_date'   => $dateRange['from_date'],
+            'to_date'     => $dateRange['to_date'],
+            'all_dates'   => $dateRange['all_dates'],
         ];
-        $expenses   = $this->expenseModel->getAll($filters);
+
+        $listPage  = $this->expenseModel->getIndexPage($filters, Expense::INDEX_LIST_LIMIT);
+        $expenses  = $listPage['items'];
         $categories = $this->expenseModel->getCategories();
-        $summary    = $this->expenseModel->getSummaryByCategory($filters['from_date'], $filters['to_date']);
-        $totalAmt   = array_sum(array_column($expenses, 'amount'));
 
         $thisMonthStart = date('Y-m-01');
         $thisMonthEnd   = date('Y-m-d');
         $lastMonthStart  = date('Y-m-01', strtotime('first day of last month'));
         $lastMonthEnd    = date('Y-m-t', strtotime('last month'));
-        $expenseThisMonth = $this->expenseModel->sumAmountBetween($thisMonthStart, $thisMonthEnd);
-        $expenseLastMonth = $this->expenseModel->sumAmountBetween($lastMonthStart, $lastMonthEnd);
+        $monthTotals      = $this->expenseModel->sumThisAndLastMonth(
+            $thisMonthStart, $thisMonthEnd, $lastMonthStart, $lastMonthEnd
+        );
+        $expenseThisMonth = $monthTotals['this_month'];
+        $expenseLastMonth = $monthTotals['last_month'];
         $accounts   = self::getAccounts();
         $pageTitle  = 'Expenses';
         $page       = 'expenses';
+        $skipListAssets = true;
 
         // One-time token to prevent double-submit bulk expense save
         $_SESSION['expense_form_nonce'] = bin2hex(random_bytes(16));
@@ -56,7 +76,9 @@ class ExpenseController extends BaseController {
         }
         unset($_SESSION['expense_form_nonce']);
 
-        $date      = $this->input('date') ?: date('Y-m-d');
+        $when      = $this->resolveExpenseDateTime($this->input('date'), $this->input('time'));
+        $date      = $when['date'];
+        $createdAt = $when['created_at'];
         $accountId = $this->inputInt('account_id');
         $rows      = $_POST['rows'] ?? [];
 
@@ -82,6 +104,7 @@ class ExpenseController extends BaseController {
                     'account_id'  => $accountId,
                     'amount'      => $amount,
                     'date'        => $date,
+                    'created_at'  => $createdAt,
                     'description' => trim($row['description'] ?? ''),
                 ]);
 
@@ -150,6 +173,8 @@ class ExpenseController extends BaseController {
 
         $categories = $this->expenseModel->getCategories();
         $accounts   = self::getAccounts();
+        $returnAccountId = $this->inputInt('return_account_id', 0, 'get');
+        $accountsReturnUrl = $returnAccountId > 0 ? '?page=accounts&account_id=' . $returnAccountId : '';
         $pageTitle  = 'Edit Expense: ' . $expense['expense_no'];
         $page       = 'expenses';
 
@@ -164,13 +189,15 @@ class ExpenseController extends BaseController {
         if (!$this->isPost()) { $this->redirect('?page=expenses'); return; }
 
         $id = $this->inputInt('id');
+        $returnAccountId = $this->inputInt('return_account_id') ?: $this->inputInt('return_account_id', 0, 'get');
+        $editReturnQs = $returnAccountId > 0 ? '&return_account_id=' . $returnAccountId : '';
         $db = Database::getInstance();
 
         // Zero/negative amounts would inflate the account balance in the diff math below.
         $newAmount = $this->inputFloat('amount');
         if ($newAmount <= 0) {
             $this->flash('error', 'Amount must be greater than zero.');
-            $this->redirect('?page=expenses&action=edit&id=' . $id);
+            $this->redirect('?page=expenses&action=edit&id=' . $id . $editReturnQs);
             return;
         }
 
@@ -210,14 +237,22 @@ class ExpenseController extends BaseController {
                 );
             }
 
+            $when = $this->resolveExpenseDateTime(
+                $this->input('date'),
+                $this->input('time'),
+                (string) ($old['date'] ?? ''),
+                (string) ($old['created_at'] ?? '')
+            );
+
             $db->execute(
-                "UPDATE expenses SET category_id=?, account_id=?, amount=?, date=?, description=? WHERE id=?",
+                "UPDATE expenses SET category_id=?, account_id=?, amount=?, date=?, description=?, created_at=? WHERE id=?",
                 [
                     $this->inputInt('category_id') ?: null,
                     $newAccountId,
                     $newAmount,
-                    $this->input('date') ?: $old['date'],
+                    $when['date'],
                     $this->input('description'),
+                    $when['created_at'],
                     $id,
                 ]
             );
@@ -232,6 +267,43 @@ class ExpenseController extends BaseController {
             $this->flash('error', 'Failed to update expense. Please try again or check server logs.');
         }
 
+        if ($returnAccountId > 0) {
+            $this->redirect('?page=accounts&account_id=' . $returnAccountId);
+            return;
+        }
+
         $this->redirect('?page=expenses');
+    }
+
+    /**
+     * Combine posted date + time into DATE + DATETIME for expenses.date / created_at.
+     * @return array{date:string,created_at:string}
+     */
+    private function resolveExpenseDateTime(string $date, string $time, string $fallbackDate = '', string $fallbackDateTime = ''): array {
+        $date = trim($date);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $fallbackDay = substr($fallbackDate, 0, 10);
+            $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', $fallbackDay) ? $fallbackDay : date('Y-m-d');
+        }
+
+        $time = trim($time);
+        if (preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+            $time .= ':00';
+        }
+        if (!preg_match('/^\d{1,2}:\d{2}:\d{2}$/', $time)) {
+            $fromFallback = $fallbackDateTime !== '' ? strtotime($fallbackDateTime) : false;
+            $time = $fromFallback ? date('H:i:s', $fromFallback) : date('H:i:s');
+        }
+        if (preg_match('/^(\d{1,2}):(\d{2}):(\d{2})$/', $time, $m)) {
+            $hour = max(0, min(23, (int) $m[1]));
+            $min  = max(0, min(59, (int) $m[2]));
+            $sec  = max(0, min(59, (int) $m[3]));
+            $time = sprintf('%02d:%02d:%02d', $hour, $min, $sec);
+        }
+
+        return [
+            'date'       => $date,
+            'created_at' => $date . ' ' . $time,
+        ];
     }
 }

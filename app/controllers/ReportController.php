@@ -1,9 +1,6 @@
 <?php
 
 require_once __DIR__ . '/BaseController.php';
-require_once __DIR__ . '/../services/NetWorthService.php';
-require_once __DIR__ . '/../services/AccountBalanceService.php';
-require_once __DIR__ . '/../models/Party.php';
 
 class ReportController extends BaseController {
 
@@ -74,17 +71,78 @@ class ReportController extends BaseController {
         return (int) Auth::warehouseId();
     }
 
+    /** Load account-ledger helpers only on reports that need them (not the hub). */
+    private function requireAccountBalanceService(): void {
+        require_once __DIR__ . '/../services/AccountBalanceService.php';
+    }
+
+    /** Load net-worth reconstruction only on balance-sheet reports. */
+    private function requireNetWorthService(): void {
+        $this->requireAccountBalanceService();
+        require_once __DIR__ . '/../services/NetWorthService.php';
+    }
+
+    /** User-safe message for report SQL / runtime failures (details logged server-side). */
+    private function reportLoadErrorMessage(Throwable $e, string $context): string {
+        error_log('[ERP] ' . $context . ': ' . $e->getMessage());
+        $msg = $e->getMessage();
+        if ($e instanceof RuntimeException && stripos($msg, 'Report view missing') !== false) {
+            return 'This report is not fully installed on the server. Upload the matching file under app/views/reports/ '
+                . '(and app/services/AccountBalanceService.php for Account Statement), then try again.';
+        }
+        if ($e instanceof PDOException) {
+            if (stripos($msg, 'account_balance_adjustments') !== false) {
+                return 'Account statement requires the balance-adjustments table on the database. '
+                    . 'Run migration database/migrations/2026_05_09_account_balance_adjustments.sql, then try again.';
+            }
+            if (stripos($msg, 'gl_code') !== false) {
+                return 'Accounts list requires the gl_code column. '
+                    . 'Run migration database/migrations/2026_05_09_accounts_gl_code.sql, then try again.';
+            }
+            if (stripos($msg, 'purchase_order_documents') !== false) {
+                return 'PO document uploads are not installed on this database yet. '
+                    . 'Open a purchase order and attach a file once, then try this report again.';
+            }
+            if (stripos($msg, 'paid_kwd') !== false || stripos($msg, 'adjustment_kwd') !== false) {
+                return 'Purchase-order payment columns are missing on the database. '
+                    . 'Apply the latest purchase_orders migrations, then try again.';
+            }
+            if (stripos($msg, 'ambiguous') !== false) {
+                return 'Could not load this report (database column conflict). Please contact support.';
+            }
+            return 'Could not load this report from the database. Please try a shorter date range or contact support.';
+        }
+        return 'Could not load this report. Please try again or contact support.';
+    }
+
+    /**
+     * Render a report view.
+     *
+     * The include happens in this method's scope, so the calling action MUST hand over its
+     * locals — pass get_defined_vars() — otherwise the view sees no data at all (blank
+     * dropdowns, empty filters). Underscored locals below avoid colliding with extracted keys.
+     *
+     * @param array<string,mixed> $vars Caller locals to expose to the view.
+     */
+    private function includeReportView(string $relativePath, array $vars = []): void {
+        $__viewPath = __DIR__ . '/../views/reports/' . ltrim($relativePath, '/\\');
+        if (!is_readable($__viewPath)) {
+            throw new RuntimeException('Report view missing: app/views/reports/' . ltrim($relativePath, '/\\'));
+        }
+        extract($vars, EXTR_SKIP);
+        include $__viewPath;
+    }
+
     public function index(): void {
         // Allow access if user has master reports OR any individual report permission
-        if (!Auth::can('reports', 'view')) {
-            $hasAny = false;
-            foreach (['rpt_daybook','rpt_sales','rpt_profit','rpt_stock','rpt_payments','rpt_party','rpt_item_sales','rpt_customer_purchases','rpt_reconciliation','rpt_account_stmt','rpt_expenses','rpt_sales_returns','rpt_supplier_stmt','rpt_balance_sheet','rpt_customer_imei','rpt_purchase_imei','rpt_purchase_orders','rpt_partner_profit'] as $rk) {
-                if (Auth::can($rk, 'view')) { $hasAny = true; break; }
-            }
-            if (!$hasAny) { Auth::authorize('reports', 'view'); }
+        if (!Auth::hasAnyReportAccess()) {
+            Auth::authorize('reports', 'view');
         }
         $pageTitle = 'Reports';
         $page      = 'reports';
+        // Hub is tiles only — skip DataTables, jQuery, and Chart.js.
+        $skipListAssets = true;
+        $skipJquery     = true;
 
         ob_start();
         include __DIR__ . '/../views/reports/index.php';
@@ -246,7 +304,6 @@ class ReportController extends BaseController {
         $data    = $report['rows'];
         $summary = $report['summary'];
 
-        $parties    = (new Party())->listForFilter('customer');
         $pageTitle  = 'Sales Report';
         $page       = 'reports';
         $reportType = 'sales';
@@ -338,13 +395,13 @@ class ReportController extends BaseController {
         $params      = [$warehouseId];
 
         $rows = $this->db->fetchAll(
-            "SELECT i.name, i.sku, i.brand, i.model, i.min_stock,
+            "SELECT i.name, i.sku, i.brand, i.model, i.min_stock, i.is_active,
                     i.purchase_price, i.sale_price,
                     COALESCE(SUM(s.quantity), 0) as stock,
                     COALESCE(SUM(s.quantity), 0) * i.purchase_price as stock_value
              FROM items i
              LEFT JOIN stock s ON s.item_id = i.id {$wClause}
-             WHERE i.is_active = 1
+             WHERE i.is_active = 1 OR COALESCE(s.quantity, 0) > 0
              GROUP BY i.id
              HAVING COALESCE(SUM(s.quantity), 0) > 0
              ORDER BY i.name",
@@ -417,8 +474,9 @@ class ReportController extends BaseController {
             [$fromDate, $toDate, $whId]
         );
 
-        $pageTitle = 'Profit & Loss';
-        $page      = 'reports';
+        $pageTitle   = 'Profit & Loss';
+        $page        = 'reports';
+        $loadChartJs = true;
 
         ob_start();
         include __DIR__ . '/../views/reports/profit.php';
@@ -507,6 +565,51 @@ class ReportController extends BaseController {
         include __DIR__ . '/../views/reports/party_statement.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /**
+     * Admin: force party statement net to Clear via opening_balance (no cash change).
+     * Use when freight/packing invoice payments left a false DR/CR vs ERP accruals.
+     */
+    public function repairPartyLedger(): void {
+        // Opening-balance offset is high risk — admin only (not payments:delete).
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Only admin can repair party statement balance.');
+            $this->redirect('?page=reports&action=party');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=reports&action=party');
+            return;
+        }
+
+        $partyId  = $this->inputInt('party_id');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'post');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'post');
+        if ($partyId <= 0) {
+            $this->flash('error', 'Select a party first.');
+            $this->redirect('?page=reports&action=party');
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Party.php';
+        require_once __DIR__ . '/../services/PartyLedgerZeroService.php';
+
+        $wh = $this->reportWarehouseId();
+        $result = PartyLedgerZeroService::forceNetToZero(
+            $this->db,
+            new Party(),
+            $partyId,
+            $wh > 0 ? $wh : 1,
+            'Party Statement repair'
+        );
+        $this->logActivity('repair_party_ledger', 'parties', $partyId, $result['message']);
+        $this->flash($result['ok'] ? 'success' : 'error', $result['message']);
+        $this->redirect(
+            '?page=reports&action=party&party_id=' . $partyId
+            . '&from_date=' . urlencode($fromDate)
+            . '&to_date=' . urlencode($toDate)
+        );
     }
 
     public function partyPrint(): void {
@@ -872,6 +975,7 @@ class ReportController extends BaseController {
 
     public function reconciliation(): void {
         $this->authorizeReport('rpt_reconciliation');
+        $this->requireAccountBalanceService();
 
         $date = $this->input('date', date('Y-m-d'), 'get');
         $db   = $this->db;
@@ -918,9 +1022,48 @@ class ReportController extends BaseController {
 
     public function accountStatement(): void {
         $this->authorizeReport('rpt_account_stmt');
+        $this->requireAccountBalanceService();
 
-        $db       = Database::getInstance();
-        $accounts = self::getAccounts();
+        $db = Database::getInstance();
+        $reportError = null;
+        $accountsLoadError = null;
+
+        require_once __DIR__ . '/../services/AccountLedgerLoader.php';
+        AccountLedgerLoader::ensureTable($db);
+        AccountLedgerLoader::seedIfEmpty($db);
+        self::clearAccountsCache();
+        try {
+            $accounts = self::getAccounts();
+            if (empty($accounts)) {
+                AccountLedgerLoader::seedIfEmpty($db);
+                self::clearAccountsCache();
+                $accounts = self::getAccounts();
+            }
+        } catch (Throwable $e) {
+            error_log('[ERP] Account statement accounts list: ' . $e->getMessage());
+            $accountsLoadError = $e->getMessage();
+            $accounts = [];
+            try {
+                $accounts = self::normalizeAccountRows(
+                    $db->fetchAll('SELECT id, name FROM accounts ORDER BY id ASC')
+                );
+            } catch (Throwable $e2) {
+                error_log('[ERP] Account statement minimal accounts: ' . $e2->getMessage());
+            }
+        }
+
+        if (empty($accounts) && $reportError === null && $accountsLoadError !== null) {
+            $reportError = 'Could not load accounts: ' . $accountsLoadError;
+        }
+
+        $accountsTableCount = 0;
+        try {
+            $accountsTableCount = (int) ($db->fetchOne('SELECT COUNT(*) AS c FROM accounts')['c'] ?? 0);
+        } catch (Throwable $e) {
+            error_log('[ERP] Account statement count: ' . $e->getMessage());
+        }
+        $canManageAccounts = Auth::can('settings', 'add') || Auth::isAdmin();
+        $canOpenAccounts   = Auth::canAny(['settings', 'payments', 'rpt_account_stmt'], 'view');
 
         $accountId = $this->inputInt('account_id', 0, 'get');
         $fromDate  = $this->input('from_date', date('Y-m-01'), 'get');
@@ -932,7 +1075,6 @@ class ReportController extends BaseController {
         $transactionsAll  = [];
         $openingBalance   = 0;
         $closingBalance   = 0;
-        $reportError      = null;
         $listTruncated    = false;
         $listLimit        = ListPage::REPORT_LEDGER_MAX;
         $ledgerTotalCount = 0;
@@ -943,14 +1085,16 @@ class ReportController extends BaseController {
             $account = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$accountId]);
 
             if ($account && $reportError === null) {
+            try {
             $whId = $this->reportWarehouseId();
             $whForLedger = $scopeAll ? null : ($whId > 0 ? $whId : null);
             $statementScopeLabel = $scopeAll
                 ? 'Company-wide (all branches — matches Settings → Recalculate)'
                 : trim((string) Auth::warehouseName()) . ' branch + legacy rows with no warehouse';
 
-            [$payWhSql, $payWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger);
-            [$payRangeSql, $payRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate);
+            // Qualify columns: payments JOIN parties both have warehouse_id (ambiguous otherwise).
+            [$payWhSql, $payWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger, 'p.warehouse_id');
+            [$payRangeSql, $payRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate, 'p.date');
             $payWhere = AccountBalanceService::sqlPaymentLedgerWhere('p');
             $payBaseParams = array_merge([$accountId], $payWhParams, $payRangeParams);
 
@@ -976,8 +1120,8 @@ class ReportController extends BaseController {
                 $payBaseParams
             );
 
-            [$expWhSql, $expWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger);
-            [$expRangeSql, $expRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate);
+            [$expWhSql, $expWhParams] = AccountBalanceService::warehouseSqlAndParams($whForLedger, 'e.warehouse_id');
+            [$expRangeSql, $expRangeParams] = AccountBalanceService::dateBetweenSql($fromDate, $toDate, 'e.date');
 
             $expenses = $db->fetchAll(
                 "SELECT e.date, e.expense_no as ref, COALESCE(ec.name,'—') as party_name,
@@ -1100,6 +1244,13 @@ class ReportController extends BaseController {
                     $listLimit        = $ledgerView['listLimit'];
                     $ledgerTotalCount = $ledgerView['ledgerTotalCount'];
                 }
+            } catch (Throwable $e) {
+                $reportError = $this->reportLoadErrorMessage($e, 'Account statement');
+                $transactions = [];
+                $transactionsAll = [];
+                $openingBalance = 0;
+                $closingBalance = 0;
+            }
             }
         }
 
@@ -1107,7 +1258,12 @@ class ReportController extends BaseController {
         $page      = 'reports';
 
         ob_start();
-        include __DIR__ . '/../views/reports/account_statement.php';
+        try {
+            $this->includeReportView('account_statement.php', get_defined_vars());
+        } catch (Throwable $e) {
+            $reportError = $this->reportLoadErrorMessage($e, 'Account statement view');
+            echo '<div class="alert alert-danger">' . htmlspecialchars((string) $reportError) . '</div>';
+        }
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
     }
@@ -1373,8 +1529,9 @@ class ReportController extends BaseController {
                         } else {
                             $totalPurchases += $amount;
                         }
-                    } elseif ($txnType === 'payment') {
+                    } elseif ($txnType === 'payment' || $txnType === 'po_advance') {
                         $amount = $debit > 0 ? $debit : $credit;
+                        $displayType = $txnType === 'po_advance' ? 'po_advance' : 'payment';
                         if ($debit > 0) {
                             $totalPaid += $debit;
                         }
@@ -1391,7 +1548,7 @@ class ReportController extends BaseController {
 
                     $transactions[] = [
                         'id'         => $t['id'],
-                        'txn_type'   => $displayType === 'purchase' ? 'purchase' : 'payment',
+                        'txn_type'   => $displayType === 'purchase' ? 'purchase' : $displayType,
                         'ref_no'     => $t['ref_no'],
                         'date'       => $t['date'],
                         'amount'     => $amount,
@@ -1453,6 +1610,7 @@ class ReportController extends BaseController {
      * @return list<array<string,mixed>>
      */
     private function accountsAsOf(string $asOfDate): array {
+        $this->requireNetWorthService();
         return NetWorthService::accountsAsOf($this->db, $asOfDate, $this->reportWarehouseId());
     }
 
@@ -1471,6 +1629,7 @@ class ReportController extends BaseController {
      * }
      */
     private function balanceSheetTotalsAsOf(string $asOfDate): array {
+        $this->requireNetWorthService();
         return NetWorthService::snapshot($this->db, $asOfDate, $this->reportWarehouseId());
     }
 
@@ -1481,6 +1640,7 @@ class ReportController extends BaseController {
      * @return array{net_worth: float, recorded: bool}
      */
     private function monthEndNetWorth(string $endDate): array {
+        $this->requireNetWorthService();
         $whId     = $this->reportWarehouseId();
         $recorded = NetWorthService::recordedSnapshot($this->db, $endDate, $whId);
         if ($recorded !== null) {
@@ -1571,6 +1731,7 @@ class ReportController extends BaseController {
         }
 
         try {
+            $this->requireNetWorthService();
             $whId   = $this->reportWarehouseId();
             $totals = NetWorthService::snapshot($this->db, $snapshotDate, $whId);
             NetWorthService::storeSnapshot($this->db, $snapshotDate, $totals, 'manual', null, $whId);
@@ -1588,6 +1749,7 @@ class ReportController extends BaseController {
 
     public function balanceSheet(): void {
         $this->authorizeReport('rpt_balance_sheet');
+        $this->requireNetWorthService();
 
         $date = $this->parseReportDate($this->input('as_of', date('Y-m-d'), 'get'));
         $whId = $this->reportWarehouseId();
@@ -1626,6 +1788,7 @@ class ReportController extends BaseController {
 
     public function balanceSheetPrint(): void {
         $this->authorizeReport('rpt_balance_sheet');
+        $this->requireNetWorthService();
 
         $date = $this->parseReportDate($this->input('as_of', date('Y-m-d'), 'get'));
         $whId = $this->reportWarehouseId();
@@ -1820,6 +1983,201 @@ class ReportController extends BaseController {
              JOIN parties p ON p.id = s.party_id
              {$where}
              ORDER BY s.date DESC, s.id DESC, i.name ASC, ir.imei ASC",
+            $params
+        );
+    }
+
+    // Customer Return IMEI — IMEIs on sale return invoices for a party
+    public function returnImei(): void {
+        $this->authorizeReport('rpt_return_imei');
+
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $itemId   = $this->inputInt('item_id', 0, 'get');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $returnNo = trim((string) $this->input('return_no', '', 'get'));
+
+        $customers = (new Party())->listForFilter('customer');
+        $items = $this->db->fetchAll(
+            "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name ASC"
+        );
+
+        $records = $partyId
+            ? $this->fetchReturnImeiRecords($partyId, $fromDate, $toDate, $returnNo, $itemId)
+            : [];
+
+        $pageTitle = 'Customer Return IMEI';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/return_imei.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function returnImeiPrint(): void {
+        $this->authorizeReport('rpt_return_imei');
+
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $itemId   = $this->inputInt('item_id', 0, 'get');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $returnNo = trim((string) $this->input('return_no', '', 'get'));
+
+        if (!$partyId) {
+            $this->redirect('?page=reports&action=returnImei');
+        }
+
+        $party = $this->db->fetchOne(
+            "SELECT id, name, phone, party_code FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'customer' OR type = 'both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->redirect('?page=reports&action=returnImei');
+        }
+
+        $itemName = '';
+        if ($itemId > 0) {
+            $itemRow = $this->db->fetchOne(
+                "SELECT name FROM items WHERE id = ? AND is_active = 1",
+                [$itemId]
+            );
+            $itemName = $itemRow ? (string) $itemRow['name'] : '';
+        }
+
+        $records  = $this->fetchReturnImeiRecords($partyId, $fromDate, $toDate, $returnNo, $itemId);
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/return_imei_print.php';
+    }
+
+    public function returnImeiExport(): void {
+        $this->authorizeReport('rpt_return_imei');
+
+        $partyId  = $this->inputInt('party_id', 0, 'get');
+        $itemId   = $this->inputInt('item_id', 0, 'get');
+        $fromDate = $this->input('from_date', date('Y-m-01'), 'get');
+        $toDate   = $this->input('to_date', date('Y-m-d'), 'get');
+        $returnNo = trim((string) $this->input('return_no', '', 'get'));
+
+        if (!$partyId) {
+            $this->redirect('?page=reports&action=returnImei');
+        }
+
+        $party = $this->db->fetchOne(
+            "SELECT id, name FROM parties
+             WHERE id = ? AND is_active = 1 AND (type = 'customer' OR type = 'both')",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->redirect('?page=reports&action=returnImei');
+        }
+
+        $records = $this->fetchReturnImeiRecords($partyId, $fromDate, $toDate, $returnNo, $itemId);
+
+        $safeName = preg_replace('/[^a-z0-9]+/i', '_', (string) $party['name']) ?: 'Customer';
+        $filename = 'Customer_Return_IMEI_' . $safeName . '_' . date('Y-m-d') . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+
+        $out = fopen('php://output', 'w');
+        if ($out === false) {
+            http_response_code(500);
+            exit;
+        }
+
+        fprintf($out, "\xEF\xBB\xBF");
+        fputcsv($out, ['#', 'Return No', 'Date', 'Customer', 'Original Invoice', 'Item', 'Brand', 'Model', 'IMEI', 'IMEI 2']);
+
+        $num = 1;
+        foreach ($records as $r) {
+            fputcsv($out, [
+                $num++,
+                $r['return_no'] ?? '',
+                $r['date'] ?? '',
+                $r['party_name'] ?? '',
+                $r['original_invoice'] ?? '',
+                $r['item_name'] ?? '',
+                $r['brand'] ?? '',
+                $r['model'] ?? '',
+                $r['imei'] ?? '',
+                $r['imei2'] ?? '',
+            ]);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchReturnImeiRecords(
+        int $partyId,
+        string $fromDate,
+        string $toDate,
+        string $returnNo,
+        int $itemId = 0
+    ): array {
+        $where  = "WHERE r.party_id = ? AND r.warehouse_id = ? AND r.type = 'sale_return'
+                     AND r.status != 'cancelled' AND ir.id IS NOT NULL";
+        $params = [$partyId, $this->reportWarehouseId()];
+
+        if ($fromDate !== '') {
+            $where .= " AND r.date >= ?";
+            $params[] = $fromDate;
+        }
+        if ($toDate !== '') {
+            $where .= " AND r.date <= ?";
+            $params[] = $toDate;
+        }
+        if ($returnNo !== '') {
+            $where .= " AND r.return_no LIKE ?";
+            $params[] = '%' . $returnNo . '%';
+        }
+        if ($itemId > 0) {
+            $where .= " AND ri.item_id = ?";
+            $params[] = $itemId;
+        }
+
+        return $this->db->fetchAll(
+            "SELECT ir.imei, ir.imei2, i.name as item_name, i.brand, i.model,
+                    r.return_no, r.date, r.id as return_id,
+                    p.name as party_name, p.phone as party_phone, p.party_code,
+                    COALESCE(
+                        (SELECT s.invoice_no
+                         FROM sale_item_imei sii
+                         JOIN sale_items si ON si.id = sii.sale_item_id
+                         JOIN sales s ON s.id = si.sale_id
+                         WHERE sii.imei_id = ir.id
+                           AND s.status != 'cancelled'
+                           AND s.date <= r.date
+                         ORDER BY s.date DESC, s.id DESC
+                         LIMIT 1),
+                        s_ref.invoice_no
+                    ) as original_invoice,
+                    COALESCE(
+                        (SELECT s.id
+                         FROM sale_item_imei sii
+                         JOIN sale_items si ON si.id = sii.sale_item_id
+                         JOIN sales s ON s.id = si.sale_id
+                         WHERE sii.imei_id = ir.id
+                           AND s.status != 'cancelled'
+                           AND s.date <= r.date
+                         ORDER BY s.date DESC, s.id DESC
+                         LIMIT 1),
+                        s_ref.id
+                    ) as original_sale_id
+             FROM return_item_imei rii
+             JOIN return_items ri ON ri.id = rii.return_item_id
+             JOIN returns r ON r.id = ri.return_id
+             JOIN imei_records ir ON ir.id = rii.imei_id
+             JOIN items i ON i.id = ri.item_id
+             JOIN parties p ON p.id = r.party_id
+             LEFT JOIN sales s_ref ON s_ref.id = r.ref_id AND r.type = 'sale_return'
+             {$where}
+             ORDER BY r.date DESC, r.id DESC, i.name ASC, ir.imei ASC",
             $params
         );
     }
@@ -2073,7 +2431,7 @@ class ReportController extends BaseController {
                 continue;
             }
 
-            $kwdTotal = (float) $o['subtotal_kwd'] + (float) ($o['other_charges_kwd'] ?? 0);
+            $kwdTotal = (float) $o['subtotal_kwd'] + (float) ($o['other_charges_kwd'] ?? 0) + (float) ($o['adjustment_kwd'] ?? 0);
             $totalKwd += $kwdTotal;
             $totalPaidKwd += (float) ($o['paid_kwd'] ?? 0);
 
@@ -2300,6 +2658,910 @@ class ReportController extends BaseController {
                 'paymentCount'     => count($payments),
             ],
         ];
+    }
+
+    /**
+     * Bank KYC — consolidated A4 register of sales invoices with IMEI/serial numbers
+     * for a date period (branch-scoped). For bank / compliance presentation.
+     */
+    public function bankKyc(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate = trim((string) $this->input('from_date', date('Y-m-01'), 'get'));
+        $toDate   = trim((string) $this->input('to_date', date('Y-m-d'), 'get'));
+        $imeiOnly = $this->input('imei_only', '1', 'get') !== '0';
+        $generated = isset($_GET['from_date']) || isset($_GET['to_date']);
+
+        $reportError = null;
+        $invoices    = [];
+        $summary     = [
+            'invoice_count' => 0,
+            'imei_count'    => 0,
+            'line_count'    => 0,
+            'grand_total'   => 0.0,
+        ];
+
+        if ($generated) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+            if ($reportError === null) {
+                try {
+                    $bundle  = $this->fetchBankKycSales($fromDate, $toDate, $imeiOnly);
+                    $invoices = $bundle['invoices'];
+                    $summary  = $bundle['summary'];
+                } catch (Throwable $e) {
+                    $reportError = $this->reportLoadErrorMessage($e, 'Bank KYC sales register');
+                }
+            }
+        }
+
+        $warehouse = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ?',
+            [$this->reportWarehouseId()]
+        );
+
+        $pageTitle = 'Bank KYC — Sales with IMEI';
+        $page      = 'reports';
+
+        ob_start();
+        try {
+            $this->includeReportView('bank_kyc.php', get_defined_vars());
+        } catch (Throwable $e) {
+            $reportError = $this->reportLoadErrorMessage($e, 'Bank KYC sales screen');
+            echo '<div class="alert alert-danger">' . htmlspecialchars((string) $reportError) . '</div>';
+        }
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function bankKycPrint(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate = trim((string) $this->input('from_date', '', 'get'));
+        $toDate   = trim((string) $this->input('to_date', '', 'get'));
+        $imeiOnly = $this->input('imei_only', '1', 'get') !== '0';
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            $this->flash('error', $reportError);
+            $this->redirect('?page=reports&action=bankKyc');
+        }
+
+        try {
+            $bundle    = $this->fetchBankKycSales($fromDate, $toDate, $imeiOnly);
+            $invoices  = $bundle['invoices'];
+            $summary   = $bundle['summary'];
+            $settings  = self::getSettings();
+            $warehouse = $this->db->fetchOne(
+                'SELECT id, name FROM warehouses WHERE id = ?',
+                [$this->reportWarehouseId()]
+            );
+            $preparedBy = Auth::name();
+            $docRef     = 'BANK-KYC-' . date('Ymd-Hi') . '-W' . $this->reportWarehouseId();
+
+            $this->includeReportView('bank_kyc_print.php', get_defined_vars());
+        } catch (Throwable $e) {
+            error_log('[ERP] Bank KYC print: ' . $e->getMessage());
+            $this->flash('error', $this->reportLoadErrorMessage($e, 'Bank KYC print'));
+            $this->redirect('?page=reports&action=bankKyc&from_date=' . urlencode($fromDate) . '&to_date=' . urlencode($toDate));
+        }
+    }
+
+    /**
+     * @return array{
+     *   invoices: list<array<string,mixed>>,
+     *   summary: array{invoice_count:int,imei_count:int,line_count:int,grand_total:float}
+     * }
+     */
+    private function fetchBankKycSales(string $fromDate, string $toDate, bool $imeiOnly): array {
+        $whId = $this->reportWarehouseId();
+
+        $salesSql = "SELECT s.id, s.invoice_no, s.date, s.subtotal, s.discount, s.tax,
+                            s.grand_total, s.paid_amount, s.balance, s.status,
+                            p.name AS party_name, p.phone AS party_phone,
+                            p.party_code, p.tax_no, p.id_card
+                     FROM sales s
+                     JOIN parties p ON p.id = s.party_id
+                     WHERE s.date BETWEEN ? AND ?
+                       AND s.warehouse_id = ?
+                       AND s.status != 'cancelled'";
+        $params = [$fromDate, $toDate, $whId];
+
+        if ($imeiOnly) {
+            $salesSql .= " AND EXISTS (
+                SELECT 1 FROM sale_items si
+                JOIN sale_item_imei sii ON sii.sale_item_id = si.id
+                WHERE si.sale_id = s.id
+            )";
+        }
+
+        $salesSql .= ' ORDER BY s.date ASC, s.id ASC';
+        $sales = $this->db->fetchAll($salesSql, $params);
+
+        if (empty($sales)) {
+            return [
+                'invoices' => [],
+                'summary'  => [
+                    'invoice_count' => 0,
+                    'imei_count'    => 0,
+                    'line_count'    => 0,
+                    'grand_total'   => 0.0,
+                ],
+            ];
+        }
+
+        $saleIds = array_map(static fn($s) => (int) $s['id'], $sales);
+        $placeholders = implode(',', array_fill(0, count($saleIds), '?'));
+
+        $lines = $this->db->fetchAll(
+            "SELECT si.sale_id, si.id AS sale_item_id, si.quantity, si.unit_price, si.total,
+                    i.name AS item_name, i.brand, i.model, i.sku, i.has_imei,
+                    GROUP_CONCAT(DISTINCT ir.imei ORDER BY ir.imei SEPARATOR '||') AS imei_list,
+                    GROUP_CONCAT(DISTINCT NULLIF(ir.imei2, '') ORDER BY ir.imei SEPARATOR '||') AS imei2_list,
+                    COUNT(DISTINCT ir.id) AS imei_count
+             FROM sale_items si
+             JOIN items i ON i.id = si.item_id
+             LEFT JOIN sale_item_imei sii ON sii.sale_item_id = si.id
+             LEFT JOIN imei_records ir ON ir.id = sii.imei_id
+             WHERE si.sale_id IN ({$placeholders})
+             GROUP BY si.id
+             ORDER BY si.sale_id ASC, si.id ASC",
+            $saleIds
+        );
+
+        $linesBySale = [];
+        foreach ($lines as $line) {
+            $sid = (int) $line['sale_id'];
+            if (!isset($linesBySale[$sid])) {
+                $linesBySale[$sid] = [];
+            }
+            $imeis = [];
+            if (!empty($line['imei_list'])) {
+                $imeiParts  = explode('||', (string) $line['imei_list']);
+                $imei2Parts = !empty($line['imei2_list'])
+                    ? explode('||', (string) $line['imei2_list'])
+                    : [];
+                foreach ($imeiParts as $idx => $imei) {
+                    $imeis[] = [
+                        'imei'  => $imei,
+                        'imei2' => $imei2Parts[$idx] ?? '',
+                    ];
+                }
+            }
+            $line['imeis'] = $imeis;
+            $linesBySale[$sid][] = $line;
+        }
+
+        $invoices   = [];
+        $imeiTotal  = 0;
+        $lineTotal  = 0;
+        $moneyTotal = 0.0;
+
+        foreach ($sales as $sale) {
+            $sid   = (int) $sale['id'];
+            $items = $linesBySale[$sid] ?? [];
+            $saleImeiCount = 0;
+            foreach ($items as $it) {
+                $saleImeiCount += (int) ($it['imei_count'] ?? 0);
+            }
+            $sale['items']      = $items;
+            $sale['imei_count'] = $saleImeiCount;
+            $sale['line_count'] = count($items);
+            $invoices[] = $sale;
+            $imeiTotal  += $saleImeiCount;
+            $lineTotal  += count($items);
+            $moneyTotal += (float) ($sale['grand_total'] ?? 0);
+        }
+
+        return [
+            'invoices' => $invoices,
+            'summary'  => [
+                'invoice_count' => count($invoices),
+                'imei_count'    => $imeiTotal,
+                'line_count'    => $lineTotal,
+                'grand_total'   => $moneyTotal,
+            ],
+        ];
+    }
+
+    /**
+     * Bank KYC — A4 register of incoming / receive payments for a date period.
+     * Excludes discounts by default (not bank cash). Branch-scoped.
+     */
+    public function bankKycReceipts(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate       = trim((string) $this->input('from_date', date('Y-m-01'), 'get'));
+        $toDate         = trim((string) $this->input('to_date', date('Y-m-d'), 'get'));
+        $method         = trim((string) $this->input('method', '', 'get'));
+        $excludeDiscount = $this->input('exclude_discount', '1', 'get') !== '0';
+        $generated      = isset($_GET['from_date']) || isset($_GET['to_date']);
+
+        $allowedMethods = ['', 'cash', 'bank_transfer', 'cheque', 'mobile_wallet', 'card', 'bank_like'];
+        if (!in_array($method, $allowedMethods, true)) {
+            $method = '';
+        }
+
+        $reportError = null;
+        $receipts    = [];
+        $summary     = [
+            'count'         => 0,
+            'grand_total'   => 0.0,
+            'by_method'     => [],
+            'by_account'    => [],
+        ];
+
+        if ($generated) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+            if ($reportError === null) {
+                try {
+                    $bundle   = $this->fetchBankKycReceipts($fromDate, $toDate, $method, $excludeDiscount);
+                    $receipts = $bundle['receipts'];
+                    $summary  = $bundle['summary'];
+                } catch (Throwable $e) {
+                    $reportError = $this->reportLoadErrorMessage($e, 'Bank KYC receipts register');
+                }
+            }
+        }
+
+        $warehouse = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ?',
+            [$this->reportWarehouseId()]
+        );
+
+        $pageTitle = 'Bank KYC — Payments Received';
+        $page      = 'reports';
+
+        ob_start();
+        try {
+            $this->includeReportView('bank_kyc_receipts.php', get_defined_vars());
+        } catch (Throwable $e) {
+            $reportError = $this->reportLoadErrorMessage($e, 'Bank KYC receipts screen');
+            echo '<div class="alert alert-danger">' . htmlspecialchars((string) $reportError) . '</div>';
+        }
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function bankKycReceiptsPrint(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate        = trim((string) $this->input('from_date', '', 'get'));
+        $toDate          = trim((string) $this->input('to_date', '', 'get'));
+        $method          = trim((string) $this->input('method', '', 'get'));
+        $excludeDiscount = $this->input('exclude_discount', '1', 'get') !== '0';
+
+        $allowedMethods = ['', 'cash', 'bank_transfer', 'cheque', 'mobile_wallet', 'card', 'bank_like'];
+        if (!in_array($method, $allowedMethods, true)) {
+            $method = '';
+        }
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            $this->flash('error', $reportError);
+            $this->redirect('?page=reports&action=bankKycReceipts');
+        }
+
+        try {
+            $bundle    = $this->fetchBankKycReceipts($fromDate, $toDate, $method, $excludeDiscount);
+            $receipts  = $bundle['receipts'];
+            $summary   = $bundle['summary'];
+            $settings  = self::getSettings();
+            $warehouse = $this->db->fetchOne(
+                'SELECT id, name FROM warehouses WHERE id = ?',
+                [$this->reportWarehouseId()]
+            );
+            $preparedBy = Auth::name();
+            $docRef     = 'BANK-KYC-RCP-' . date('Ymd-Hi') . '-W' . $this->reportWarehouseId();
+
+            $this->includeReportView('bank_kyc_receipts_print.php', get_defined_vars());
+        } catch (Throwable $e) {
+            error_log('[ERP] Bank KYC receipts print: ' . $e->getMessage());
+            $this->flash('error', $this->reportLoadErrorMessage($e, 'Bank KYC receipts print'));
+            $this->redirect('?page=reports&action=bankKycReceipts&from_date=' . urlencode($fromDate) . '&to_date=' . urlencode($toDate));
+        }
+    }
+
+    /**
+     * @return array{
+     *   receipts: list<array<string,mixed>>,
+     *   summary: array{
+     *     count:int,
+     *     grand_total:float,
+     *     by_method: list<array{method:string,count:int,total:float}>,
+     *     by_account: list<array{account:string,count:int,total:float}>
+     *   }
+     * }
+     */
+    private function fetchBankKycReceipts(
+        string $fromDate,
+        string $toDate,
+        string $method,
+        bool $excludeDiscount
+    ): array {
+        $whId   = $this->reportWarehouseId();
+        $where  = "WHERE py.date BETWEEN ? AND ?
+                     AND py.warehouse_id = ?
+                     AND py.payment_type = 'in'
+                     AND py.status = 'active'";
+        $params = [$fromDate, $toDate, $whId];
+
+        if ($excludeDiscount) {
+            $where .= " AND py.ref_type != 'discount'";
+        }
+
+        if ($method === 'bank_like') {
+            $where .= " AND py.payment_method IN ('bank_transfer','cheque','card')";
+        } elseif ($method !== '') {
+            $where .= ' AND py.payment_method = ?';
+            $params[] = $method;
+        }
+
+        $receipts = $this->db->fetchAll(
+            "SELECT py.id, py.payment_no, py.date, py.amount, py.payment_method, py.cheque_no,
+                    py.ref_type, py.ref_id, py.notes, py.phone_no,
+                    pa.name AS party_name, pa.phone AS party_phone, pa.party_code, pa.tax_no,
+                    a.name AS account_name,
+                    u.name AS created_by_name,
+                    s.invoice_no AS sale_invoice_no
+             FROM payments py
+             LEFT JOIN parties pa ON pa.id = py.party_id
+             LEFT JOIN accounts a ON a.id = py.account_id
+             LEFT JOIN users u ON u.id = py.created_by
+             LEFT JOIN sales s ON py.ref_type = 'sale' AND s.id = py.ref_id
+             {$where}
+             ORDER BY py.date ASC, py.id ASC",
+            $params
+        );
+
+        $byMethodMap  = [];
+        $byAccountMap = [];
+        $grandTotal   = 0.0;
+
+        foreach ($receipts as $r) {
+            $amt = (float) ($r['amount'] ?? 0);
+            $grandTotal += $amt;
+
+            $m = trim((string) ($r['payment_method'] ?? ''));
+            if ($m === '') {
+                $m = 'unspecified';
+            }
+            if (!isset($byMethodMap[$m])) {
+                $byMethodMap[$m] = ['method' => $m, 'count' => 0, 'total' => 0.0];
+            }
+            $byMethodMap[$m]['count']++;
+            $byMethodMap[$m]['total'] += $amt;
+
+            $acc = trim((string) ($r['account_name'] ?? '')) ?: 'Unassigned';
+            if (!isset($byAccountMap[$acc])) {
+                $byAccountMap[$acc] = ['account' => $acc, 'count' => 0, 'total' => 0.0];
+            }
+            $byAccountMap[$acc]['count']++;
+            $byAccountMap[$acc]['total'] += $amt;
+        }
+
+        usort($byMethodMap, static fn($a, $b) => $b['total'] <=> $a['total']);
+        usort($byAccountMap, static fn($a, $b) => $b['total'] <=> $a['total']);
+
+        return [
+            'receipts' => $receipts,
+            'summary'  => [
+                'count'       => count($receipts),
+                'grand_total' => $grandTotal,
+                'by_method'   => array_values($byMethodMap),
+                'by_account'  => array_values($byAccountMap),
+            ],
+        ];
+    }
+
+    /**
+     * Public Authority of Manpower — certified A4 copies of sales invoices
+     * for a period (defaults to last 3 calendar months). Branch-scoped.
+     */
+    public function manpowerInvoices(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate      = trim((string) $this->input('from_date', ListPage::defaultFromDate(3), 'get'));
+        $toDate        = trim((string) $this->input('to_date', ListPage::defaultToDate(), 'get'));
+        $includeCopies = $this->input('include_copies', '1', 'get') !== '0';
+
+        require_once __DIR__ . '/../helpers/ManpowerVerify.php';
+        $coverHeading = ManpowerVerify::coverHeading($fromDate, $toDate);
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        $invoices    = [];
+        $summary     = [
+            'invoice_count' => 0,
+            'line_count'    => 0,
+            'grand_total'   => 0.0,
+            'by_month'      => [],
+        ];
+
+        if ($reportError === null) {
+            try {
+                $bundle   = $this->fetchManpowerInvoices($fromDate, $toDate);
+                $invoices = $bundle['invoices'];
+                $summary  = $bundle['summary'];
+            } catch (Throwable $e) {
+                $reportError = $this->reportLoadErrorMessage($e, 'Manpower invoices');
+            }
+        }
+
+        $warehouse = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ?',
+            [$this->reportWarehouseId()]
+        );
+
+        $verifyUrl = '';
+        if ($reportError === null) {
+            require_once __DIR__ . '/../helpers/ManpowerVerify.php';
+            $coverHeading = ManpowerVerify::coverHeading($fromDate, $toDate);
+            $verifyToken = ManpowerVerify::sign(
+                $this->db,
+                $this->reportWarehouseId(),
+                $fromDate,
+                $toDate,
+                (int) $summary['invoice_count'],
+                (float) $summary['grand_total']
+            );
+            $verifyUrl = ManpowerVerify::url($verifyToken);
+        }
+
+        $pageTitle = 'Manpower — Formal Invoices';
+        $page      = 'reports';
+
+        ob_start();
+        try {
+            $this->includeReportView('manpower_invoices.php', get_defined_vars());
+        } catch (Throwable $e) {
+            $reportError = $this->reportLoadErrorMessage($e, 'Manpower invoices screen');
+            echo '<div class="alert alert-danger">' . htmlspecialchars((string) $reportError) . '</div>';
+        }
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function manpowerInvoicesPrint(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate      = trim((string) $this->input('from_date', '', 'get'));
+        $toDate        = trim((string) $this->input('to_date', '', 'get'));
+        $includeCopies = $this->input('include_copies', '1', 'get') !== '0';
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            $this->flash('error', $reportError);
+            $this->redirect('?page=reports&action=manpowerInvoices');
+        }
+
+        try {
+            $bundle     = $this->fetchManpowerInvoices($fromDate, $toDate);
+            $invoices   = $bundle['invoices'];
+            $summary    = $bundle['summary'];
+            $settings   = self::getSettings();
+            $warehouse  = $this->db->fetchOne(
+                'SELECT id, name FROM warehouses WHERE id = ?',
+                [$this->reportWarehouseId()]
+            );
+            $preparedBy = Auth::name();
+            $docRef     = 'PAM-INV-' . date('Ymd-Hi') . '-W' . $this->reportWarehouseId();
+            require_once __DIR__ . '/../helpers/ManpowerVerify.php';
+            $coverHeading = ManpowerVerify::coverHeading($fromDate, $toDate);
+            $verifyToken = ManpowerVerify::sign(
+                $this->db,
+                $this->reportWarehouseId(),
+                $fromDate,
+                $toDate,
+                (int) $summary['invoice_count'],
+                (float) $summary['grand_total']
+            );
+            $verifyUrl = ManpowerVerify::url($verifyToken);
+            $verifyQr  = null;
+            if ($verifyUrl !== '') {
+                require_once __DIR__ . '/../helpers/QrSvg.php';
+                try {
+                    $verifyQr = QrSvg::sprite($verifyUrl);
+                } catch (Throwable $e) {
+                    error_log('[ERP] Manpower QR: ' . $e->getMessage());
+                }
+            }
+
+            $this->includeReportView('manpower_invoices_print.php', get_defined_vars());
+        } catch (Throwable $e) {
+            error_log('[ERP] Manpower invoices print: ' . $e->getMessage());
+            $this->flash('error', $this->reportLoadErrorMessage($e, 'Manpower invoices print'));
+            $this->redirect(
+                '?page=reports&action=manpowerInvoices&from_date=' . urlencode($fromDate)
+                . '&to_date=' . urlencode($toDate)
+                . '&include_copies=' . ($includeCopies ? '1' : '0')
+            );
+        }
+    }
+
+    /**
+     * @return array{
+     *   invoices: list<array<string,mixed>>,
+     *   summary: array{
+     *     invoice_count:int,
+     *     line_count:int,
+     *     grand_total:float,
+     *     by_month: list<array{month:string,label:string,count:int,total:float}>
+     *   }
+     * }
+     */
+    private function fetchManpowerInvoices(string $fromDate, string $toDate): array {
+        $whId = $this->reportWarehouseId();
+
+        $sales = $this->db->fetchAll(
+            "SELECT s.id, s.invoice_no, s.date, s.subtotal, s.discount, s.tax,
+                    s.grand_total, s.paid_amount, s.balance, s.status, s.notes,
+                    p.name AS party_name, p.phone AS party_phone, p.address AS party_address,
+                    w.name AS warehouse_name
+             FROM sales s
+             JOIN parties p ON p.id = s.party_id
+             LEFT JOIN warehouses w ON w.id = s.warehouse_id
+             WHERE s.date BETWEEN ? AND ?
+               AND s.warehouse_id = ?
+               AND s.status != 'cancelled'
+             ORDER BY s.date ASC, s.id ASC",
+            [$fromDate, $toDate, $whId]
+        );
+
+        $emptySummary = [
+            'invoice_count' => 0,
+            'line_count'    => 0,
+            'grand_total'   => 0.0,
+            'by_month'      => [],
+        ];
+
+        if (empty($sales)) {
+            return ['invoices' => [], 'summary' => $emptySummary];
+        }
+
+        $saleIds = array_map(static fn($s) => (int) $s['id'], $sales);
+        $placeholders = implode(',', array_fill(0, count($saleIds), '?'));
+
+        $lines = $this->db->fetchAll(
+            "SELECT si.sale_id, si.id AS sale_item_id, si.quantity, si.unit_price, si.total,
+                    i.name AS item_name, i.name_ar AS item_name_ar, i.sku
+             FROM sale_items si
+             JOIN items i ON i.id = si.item_id
+             WHERE si.sale_id IN ({$placeholders})
+             ORDER BY si.sale_id ASC, si.id ASC",
+            $saleIds
+        );
+
+        $linesBySale = [];
+        foreach ($lines as $line) {
+            $sid = (int) $line['sale_id'];
+            if (!isset($linesBySale[$sid])) {
+                $linesBySale[$sid] = [];
+            }
+            $linesBySale[$sid][] = $line;
+        }
+
+        $invoices   = [];
+        $lineTotal  = 0;
+        $moneyTotal = 0.0;
+        $byMonthMap = [];
+
+        foreach ($sales as $sale) {
+            $sid   = (int) $sale['id'];
+            $items = $linesBySale[$sid] ?? [];
+            $sale['items']      = $items;
+            $sale['line_count'] = count($items);
+            $invoices[] = $sale;
+
+            $lineTotal  += count($items);
+            $moneyTotal += (float) $sale['grand_total'];
+
+            $ym = substr((string) $sale['date'], 0, 7);
+            if (!isset($byMonthMap[$ym])) {
+                $monthTs = strtotime($ym . '-01');
+                $byMonthMap[$ym] = [
+                    'month' => $ym,
+                    'label' => $monthTs ? date('F Y', $monthTs) : $ym,
+                    'count' => 0,
+                    'total' => 0.0,
+                ];
+            }
+            $byMonthMap[$ym]['count']++;
+            $byMonthMap[$ym]['total'] += (float) $sale['grand_total'];
+        }
+
+        ksort($byMonthMap);
+
+        return [
+            'invoices' => $invoices,
+            'summary'  => [
+                'invoice_count' => count($invoices),
+                'line_count'    => $lineTotal,
+                'grand_total'   => $moneyTotal,
+                'by_month'      => array_values($byMonthMap),
+            ],
+        ];
+    }
+
+    /**
+     * Bank pack of PO supplier invoices and TT copies for a date range (branch-scoped).
+     */
+    public function bankPoDocs(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate  = trim((string) $this->input('from_date', date('Y-m-d'), 'get'));
+        $toDate    = trim((string) $this->input('to_date', date('Y-m-d'), 'get'));
+        $dateField = trim((string) $this->input('date_field', 'uploaded', 'get'));
+        if ($dateField !== 'po') {
+            $dateField = 'uploaded';
+        }
+        $generated = isset($_GET['from_date']) || isset($_GET['to_date']) || isset($_GET['date_field']);
+
+        $reportError = null;
+        $groups      = [];
+        $summary     = [
+            'po_count'      => 0,
+            'invoice_count' => 0,
+            'tt_count'      => 0,
+            'file_count'    => 0,
+        ];
+
+        if ($generated) {
+            $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+            if ($reportError === null) {
+                try {
+                    $bundle  = $this->fetchBankPoDocs($fromDate, $toDate, $dateField);
+                    $groups  = $bundle['groups'];
+                    $summary = $bundle['summary'];
+                } catch (Throwable $e) {
+                    $reportError = $this->reportLoadErrorMessage($e, 'Bank PO documents register');
+                }
+            }
+        }
+
+        $warehouse = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ?',
+            [$this->reportWarehouseId()]
+        );
+
+        $pageTitle = 'Bank — PO invoices & TT';
+        $page      = 'reports';
+
+        ob_start();
+        try {
+            $this->includeReportView('bank_po_docs.php', get_defined_vars());
+        } catch (Throwable $e) {
+            $reportError = $this->reportLoadErrorMessage($e, 'Bank PO documents screen');
+            echo '<div class="alert alert-danger">' . htmlspecialchars((string) $reportError) . '</div>';
+        }
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function bankPoDocsPrint(): void {
+        $this->authorizeReport('rpt_bank_kyc');
+
+        $fromDate  = trim((string) $this->input('from_date', '', 'get'));
+        $toDate    = trim((string) $this->input('to_date', '', 'get'));
+        $dateField = trim((string) $this->input('date_field', 'uploaded', 'get'));
+        if ($dateField !== 'po') {
+            $dateField = 'uploaded';
+        }
+
+        $reportError = ListPage::validateReportDateRange($fromDate, $toDate);
+        if ($reportError !== null) {
+            $this->flash('error', $reportError);
+            $this->redirect('?page=reports&action=bankPoDocs');
+        }
+
+        try {
+            $bundle = $this->fetchBankPoDocs($fromDate, $toDate, $dateField);
+        } catch (Throwable $e) {
+            $this->flash('error', $this->reportLoadErrorMessage($e, 'Bank PO documents print'));
+            $this->redirect('?page=reports&action=bankPoDocs&from_date=' . urlencode($fromDate)
+                . '&to_date=' . urlencode($toDate) . '&date_field=' . urlencode($dateField));
+        }
+
+        $groups  = $bundle['groups'];
+        $summary = $bundle['summary'];
+        if ($groups === []) {
+            $this->flash('error', 'No supplier invoices or TT copies in this date range.');
+            $this->redirect('?page=reports&action=bankPoDocs&from_date=' . urlencode($fromDate)
+                . '&to_date=' . urlencode($toDate) . '&date_field=' . urlencode($dateField));
+        }
+        if ((int) $summary['file_count'] > 80) {
+            $this->flash('error', 'Too many files for one PDF (' . (int) $summary['file_count']
+                . '). Narrow the dates and try again.');
+            $this->redirect('?page=reports&action=bankPoDocs&from_date=' . urlencode($fromDate)
+                . '&to_date=' . urlencode($toDate) . '&date_field=' . urlencode($dateField));
+        }
+
+        $settings    = self::getSettings();
+        $companyName = (string) ($settings['company_name'] ?? PDF_COMPANY_NAME);
+        $warehouse   = $this->db->fetchOne(
+            'SELECT id, name FROM warehouses WHERE id = ?',
+            [$this->reportWarehouseId()]
+        );
+        $periodLabel = ($fromDate === $toDate)
+            ? date('d M Y', strtotime($fromDate))
+            : (date('d M Y', strtotime($fromDate)) . ' to ' . date('d M Y', strtotime($toDate)));
+        $dateBasisLabel = $dateField === 'po' ? 'PO date' : 'Uploaded date';
+        $packFilename   = 'PO_docs_' . $fromDate . '_' . $toDate . '_bank.pdf';
+        $companyPhone   = (string) ($settings['company_phone'] ?? (defined('PDF_COMPANY_PHONE') ? PDF_COMPANY_PHONE : ''));
+        $companyAddress = trim((string) ($settings['company_address'] ?? ''));
+        if ($companyAddress === '' || strcasecmp($companyAddress, 'Your Address Here') === 0) {
+            $companyAddress = defined('PDF_COMPANY_ADDRESS') && PDF_COMPANY_ADDRESS !== 'Your Address Here'
+                ? (string) PDF_COMPANY_ADDRESS
+                : '';
+        }
+
+        $packDocs = [];
+        $coverList = [];
+        $docIds = [];
+        foreach ($groups as $g) {
+            $paidLabel  = number_format((float) ($g['paid_kwd'] ?? 0), DECIMAL_PLACES);
+            $poDateLbl  = !empty($g['po_date']) ? date('d M Y', strtotime((string) $g['po_date'])) : '';
+            $coverList[] = [
+                'label'   => (string) ($g['po_no'] ?? ''),
+                'name'    => (string) ($g['supplier_name'] ?? ''),
+                'date'    => $poDateLbl,
+                'foreign' => $this->bankPoForeignLabel($g),
+                'paid'    => $paidLabel,
+            ];
+            foreach ($g['docs'] as $doc) {
+                $docIds[] = (int) ($doc['id'] ?? 0);
+                $typeLabel = (string) ($doc['type_label'] ?? '');
+                $poNo = (string) ($g['po_no'] ?? '');
+                $packDocs[] = [
+                    'kind'  => 'file',
+                    'id'    => (int) $doc['id'],
+                    'url'   => '?page=purchaseorders&action=downloadDoc&id=' . (int) $doc['id'],
+                    'mime'  => (string) ($doc['mime_type'] ?? ''),
+                    'name'  => (string) ($doc['original_name'] ?? ''),
+                    'type'  => (string) ($doc['doc_type'] ?? ''),
+                    'label' => $poNo !== '' ? ($poNo . ' · ' . $typeLabel) : $typeLabel,
+                ];
+            }
+        }
+
+        require_once __DIR__ . '/../helpers/PoDocsVerify.php';
+        $verifyToken = PoDocsVerify::signPack(
+            $this->db,
+            $this->reportWarehouseId(),
+            $dateField,
+            $fromDate,
+            $toDate,
+            (int) $summary['po_count'],
+            (int) $summary['invoice_count'],
+            (int) $summary['tt_count'],
+            PoDocsVerify::fingerprint($docIds)
+        );
+        $verifyCover = PoDocsVerify::qrCoverFields($verifyToken);
+
+        $cover = [
+            'style'         => 'pack',
+            'company'       => $companyName,
+            'phone'         => $companyPhone,
+            'address'       => $companyAddress,
+            'heading'       => 'Bank document pack',
+            'period'        => $periodLabel,
+            'date_means'    => $dateBasisLabel,
+            'branch'        => (string) ($warehouse['name'] ?? 'Current'),
+            'prepared'      => date('d M Y H:i'),
+            'po_count'      => (int) $summary['po_count'],
+            'invoice_count' => (int) $summary['invoice_count'],
+            'tt_count'      => (int) $summary['tt_count'],
+            'list_heading'  => 'Purchase orders',
+            'list'          => $coverList,
+            'verify_url'    => $verifyCover['verify_url'],
+            'qr_png'        => $verifyCover['qr_png'],
+        ];
+
+        $this->includeReportView('bank_po_docs_print.php', get_defined_vars());
+    }
+
+    /**
+     * @return array{
+     *   groups: list<array<string,mixed>>,
+     *   summary: array{po_count:int,invoice_count:int,tt_count:int,file_count:int}
+     * }
+     */
+    private function fetchBankPoDocs(string $fromDate, string $toDate, string $dateField): array {
+        $whId = $this->reportWarehouseId();
+        $where = "WHERE d.warehouse_id = ?
+                    AND po.warehouse_id = ?
+                    AND po.status != 'cancelled'
+                    AND d.doc_type IN ('supplier_invoice', 'money_transfer')";
+        $params = [$whId, $whId];
+
+        if ($dateField === 'po') {
+            $where .= ' AND po.date BETWEEN ? AND ?';
+            $params[] = $fromDate;
+            $params[] = $toDate;
+        } else {
+            $toExclusive = (new DateTimeImmutable($toDate))->modify('+1 day')->format('Y-m-d');
+            $where .= ' AND d.created_at >= ? AND d.created_at < ?';
+            $params[] = $fromDate . ' 00:00:00';
+            $params[] = $toExclusive . ' 00:00:00';
+        }
+
+        $rows = $this->db->fetchAll(
+            "SELECT d.id, d.po_id, d.doc_type, d.original_name, d.mime_type, d.file_size, d.created_at,
+                    po.po_no, po.date AS po_date, po.status, po.subtotal_kwd, po.other_charges_kwd,
+                    po.adjustment_kwd, po.paid_kwd, po.currency, po.subtotal_foreign, p.name AS supplier_name
+             FROM purchase_order_documents d
+             JOIN purchase_orders po ON po.id = d.po_id
+             JOIN parties p ON p.id = po.party_id
+             {$where}
+             ORDER BY po.date ASC, po.id ASC,
+                      CASE d.doc_type WHEN 'supplier_invoice' THEN 0 WHEN 'money_transfer' THEN 1 ELSE 2 END,
+                      d.created_at ASC, d.id ASC",
+            $params
+        ) ?: [];
+
+        $groups = [];
+        $invoiceCount = 0;
+        $ttCount = 0;
+        foreach ($rows as $row) {
+            $poId = (int) ($row['po_id'] ?? 0);
+            if ($poId < 1) {
+                continue;
+            }
+            if (!isset($groups[$poId])) {
+                $groups[$poId] = [
+                    'po_id'          => $poId,
+                    'po_no'          => (string) ($row['po_no'] ?? ''),
+                    'po_date'        => (string) ($row['po_date'] ?? ''),
+                    'status'         => (string) ($row['status'] ?? ''),
+                    'supplier_name'  => (string) ($row['supplier_name'] ?? ''),
+                    'paid_kwd'         => round((float) ($row['paid_kwd'] ?? 0), 3),
+                    'currency'         => strtoupper(trim((string) ($row['currency'] ?? 'KWD'))) ?: 'KWD',
+                    'subtotal_foreign' => round((float) ($row['subtotal_foreign'] ?? 0), 3),
+                    'total_kwd'      => round(
+                        (float) ($row['subtotal_kwd'] ?? 0)
+                        + (float) ($row['other_charges_kwd'] ?? 0)
+                        + (float) ($row['adjustment_kwd'] ?? 0),
+                        3
+                    ),
+                    'invoice_count'  => 0,
+                    'tt_count'       => 0,
+                    'docs'           => [],
+                ];
+            }
+            $dtype = (string) ($row['doc_type'] ?? '');
+            $row['type_label'] = $dtype === 'money_transfer' ? 'TT Copy' : 'Supplier Invoice';
+            if ($dtype === 'money_transfer') {
+                $groups[$poId]['tt_count']++;
+                $ttCount++;
+            } else {
+                $groups[$poId]['invoice_count']++;
+                $invoiceCount++;
+            }
+            $groups[$poId]['docs'][] = $row;
+        }
+
+        $groupList = array_values($groups);
+        return [
+            'groups'  => $groupList,
+            'summary' => [
+                'po_count'      => count($groupList),
+                'invoice_count' => $invoiceCount,
+                'tt_count'      => $ttCount,
+                'file_count'    => $invoiceCount + $ttCount,
+            ],
+        ];
+    }
+
+    /**
+     * Cover/list label: supplier currency amount (AED/USD). Local KWD POs show "-".
+     *
+     * @param array<string,mixed> $g
+     */
+    private function bankPoForeignLabel(array $g): string {
+        $cur = strtoupper((string) ($g['currency'] ?? ''));
+        $cur = preg_replace('/[^A-Z]/', '', $cur) ?? '';
+        if ($cur === '' || $cur === 'KWD') {
+            return '-';
+        }
+        return number_format((float) ($g['subtotal_foreign'] ?? 0), DECIMAL_PLACES) . ' ' . $cur;
     }
 
 }

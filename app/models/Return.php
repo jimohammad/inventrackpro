@@ -54,6 +54,145 @@ class SaleReturn extends BaseModel {
         );
     }
 
+    /**
+     * Credit notes that reversed THIS sale for THIS customer.
+     *
+     * After a unit is returned to the warehouse it is company stock. A later sale
+     * (and that customer's return) is a new deal — sale_item_imei still holds the
+     * old invoice link, but that must not list the later return on the original invoice.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getLinkedToSale(int $saleId, ?int $warehouseId = null): array {
+        if ($saleId <= 0) {
+            return [];
+        }
+
+        $params = [$saleId];
+        $whSql  = '';
+        $wid    = $warehouseId !== null ? (int) $warehouseId : (int) (Auth::warehouseId() ?: 0);
+        if ($wid > 0) {
+            $whSql    = ' AND r.warehouse_id = ?';
+            $params[] = $wid;
+        }
+
+        $resoldAfterThisSale = $this->sqlImeiResoldAfterSale('sale', 'r');
+
+        return $this->db->fetchAll(
+            "SELECT DISTINCT r.id, r.return_no, r.date, r.grand_total, r.status, r.created_at,
+                    r.party_id, p.name AS party_name, u.name AS created_by_name
+             FROM returns r
+             INNER JOIN sales sale ON sale.id = ?
+             LEFT JOIN parties p ON p.id = r.party_id
+             LEFT JOIN users u ON u.id = r.created_by
+             WHERE r.type = 'sale_return'
+               AND r.status != 'cancelled'
+               AND r.party_id = sale.party_id
+               AND (
+                 (
+                   r.ref_id = sale.id
+                   AND NOT {$resoldAfterThisSale}
+                 )
+                 OR (
+                   (r.ref_id IS NULL OR r.ref_id = 0)
+                   AND EXISTS (
+                       SELECT 1
+                       FROM return_items ri
+                       INNER JOIN return_item_imei rii ON rii.return_item_id = ri.id
+                       INNER JOIN sale_item_imei sii ON sii.imei_id = rii.imei_id
+                       INNER JOIN sale_items si ON si.id = sii.sale_item_id AND si.sale_id = sale.id
+                       WHERE ri.return_id = r.id
+                         AND NOT {$resoldAfterThisSale}
+                   )
+                 )
+               )
+               {$whSql}
+             ORDER BY r.created_at DESC
+             LIMIT 50",
+            $params
+        );
+    }
+
+    /**
+     * True when any IMEI on return $returnAlias was sold again after $saleAlias
+     * and before that return (restocked, then sold to someone else).
+     */
+    private function sqlImeiResoldAfterSale(string $saleAlias, string $returnAlias): string {
+        $saleAlias   = preg_replace('/[^a-zA-Z0-9_]/', '', $saleAlias) ?: 'sale';
+        $returnAlias = preg_replace('/[^a-zA-Z0-9_]/', '', $returnAlias) ?: 'r';
+
+        return "EXISTS (
+            SELECT 1
+            FROM return_items ri_rs
+            INNER JOIN return_item_imei rii_rs ON rii_rs.return_item_id = ri_rs.id
+            INNER JOIN sale_item_imei sii_rs ON sii_rs.imei_id = rii_rs.imei_id
+            INNER JOIN sale_items si_rs ON si_rs.id = sii_rs.sale_item_id
+            INNER JOIN sales s_rs ON s_rs.id = si_rs.sale_id
+            WHERE ri_rs.return_id = {$returnAlias}.id
+              AND s_rs.id != {$saleAlias}.id
+              AND s_rs.status != 'cancelled'
+              AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 23:59:59'))
+                  > COALESCE({$saleAlias}.created_at, CONCAT({$saleAlias}.date,' 00:00:00'))
+              AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 00:00:00'))
+                  <= COALESCE({$returnAlias}.created_at, CONCAT({$returnAlias}.date,' 23:59:59'))
+        )";
+    }
+
+    /** Same as sqlImeiResoldAfterSale, source sale taken from the return header ref_id. */
+    private function sqlImeiResoldAfterReturnRef(string $returnAlias = 'r'): string {
+        $returnAlias = preg_replace('/[^a-zA-Z0-9_]/', '', $returnAlias) ?: 'r';
+
+        return "EXISTS (
+            SELECT 1
+            FROM return_items ri_rs
+            INNER JOIN return_item_imei rii_rs ON rii_rs.return_item_id = ri_rs.id
+            INNER JOIN sale_item_imei sii_rs ON sii_rs.imei_id = rii_rs.imei_id
+            INNER JOIN sale_items si_rs ON si_rs.id = sii_rs.sale_item_id
+            INNER JOIN sales s_rs ON s_rs.id = si_rs.sale_id
+            INNER JOIN sales orig_rs ON orig_rs.id = {$returnAlias}.ref_id
+            WHERE ri_rs.return_id = {$returnAlias}.id
+              AND s_rs.id != orig_rs.id
+              AND s_rs.status != 'cancelled'
+              AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 23:59:59'))
+                  > COALESCE(orig_rs.created_at, CONCAT(orig_rs.date,' 00:00:00'))
+              AND COALESCE(s_rs.created_at, CONCAT(s_rs.date,' 00:00:00'))
+                  <= COALESCE({$returnAlias}.created_at, CONCAT({$returnAlias}.date,' 23:59:59'))
+        )";
+    }
+
+    /**
+     * Purchase returns linked to a purchase invoice (header ref_id).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getLinkedToPurchase(int $purchaseId, ?int $warehouseId = null): array {
+        if ($purchaseId <= 0) {
+            return [];
+        }
+
+        $params = [$purchaseId];
+        $whSql  = '';
+        $wid    = $warehouseId !== null ? (int) $warehouseId : (int) (Auth::warehouseId() ?: 0);
+        if ($wid > 0) {
+            $whSql    = ' AND r.warehouse_id = ?';
+            $params[] = $wid;
+        }
+
+        return $this->db->fetchAll(
+            "SELECT r.id, r.return_no, r.date, r.grand_total, r.status, r.created_at,
+                    u.name AS created_by_name
+             FROM returns r
+             LEFT JOIN users u ON u.id = r.created_by
+             WHERE r.type = 'purchase_return'
+               AND r.status != 'cancelled'
+               AND r.ref_id = ?
+               {$whSql}
+             ORDER BY r.created_at DESC
+             LIMIT 50",
+            $params
+        );
+    }
+
     public function findFull(int $id): array|false {
         $params = [$id];
         $where  = 'WHERE r.id = ?';
@@ -103,8 +242,9 @@ class SaleReturn extends BaseModel {
      * Prevents the same phone being returned twice on the same invoice.
      * Scoped to ref_id so a phone that was returned, re-sold, and returned again
      * is not incorrectly blocked by its earlier return history.
+     * Optional warehouse_id keeps the check branch-scoped (Main vs Fahaheel).
      */
-    public function isImeiAlreadyReturned(int $imeiId, ?int $saleId = null): array|false {
+    public function isImeiAlreadyReturned(int $imeiId, ?int $saleId = null, ?int $warehouseId = null): array|false {
         $sql    = "SELECT r.return_no, r.date
                    FROM return_item_imei rii
                    JOIN return_items ri ON ri.id = rii.return_item_id
@@ -116,11 +256,15 @@ class SaleReturn extends BaseModel {
             $sql .= ' AND r.ref_id = ?';
             $params[] = $saleId;
         }
+        if ($warehouseId !== null && $warehouseId > 0) {
+            $sql .= ' AND r.warehouse_id = ?';
+            $params[] = $warehouseId;
+        }
 
         return $this->db->fetchOne($sql . ' LIMIT 1', $params);
     }
 
-    public function isImeiAlreadyReturnedToSupplier(int $imeiId, ?int $purchaseId = null): array|false {
+    public function isImeiAlreadyReturnedToSupplier(int $imeiId, ?int $purchaseId = null, ?int $warehouseId = null): array|false {
         $sql    = "SELECT r.return_no, r.date
                    FROM return_item_imei rii
                    JOIN return_items ri ON ri.id = rii.return_item_id
@@ -131,6 +275,10 @@ class SaleReturn extends BaseModel {
         if ($purchaseId) {
             $sql .= ' AND r.ref_id = ?';
             $params[] = $purchaseId;
+        }
+        if ($warehouseId !== null && $warehouseId > 0) {
+            $sql .= ' AND r.warehouse_id = ?';
+            $params[] = $warehouseId;
         }
 
         return $this->db->fetchOne($sql . ' LIMIT 1', $params);
@@ -180,72 +328,151 @@ class SaleReturn extends BaseModel {
     }
 
     /**
-     * Cap return unit_price to sold / catalog price so clients cannot inflate party credits.
-     * @param array{ref_id?:int, items:array} $data
+     * Force every sale-return line to the customer's original sold unit price.
+     * Never uses current catalog sale_price. Posted client prices are ignored.
+     *
+     * @param array{ref_id?:int|null, items:array} $data
+     * @return array items with unit_price overwritten from the original sale
      */
-    private function assertSaleReturnPrices(array $data): void {
+    private function applySoldReturnPrices(array $data): array {
         $refId = (int) ($data['ref_id'] ?? 0);
-        foreach ($data['items'] as $item) {
-            $itemId  = (int) ($item['item_id'] ?? 0);
-            $posted  = (float) ($item['unit_price'] ?? 0);
-            $qty     = (int) ($item['quantity'] ?? 0);
+        $items = $data['items'] ?? [];
+        foreach ($items as $idx => $item) {
+            $itemId = (int) ($item['item_id'] ?? 0);
+            $qty    = (int) ($item['quantity'] ?? 0);
             if ($itemId <= 0 || $qty <= 0) {
                 continue;
             }
-            if ($posted <= 0) {
-                throw new Exception('Return unit price must be greater than zero.');
-            }
-
-            $maxPrice = null;
-            $nameRow  = $this->db->fetchOne('SELECT name, sale_price FROM items WHERE id = ?', [$itemId]);
-            $itemName = (string) ($nameRow['name'] ?? ('item #' . $itemId));
-
-            if ($refId > 0) {
-                $row = $this->db->fetchOne(
-                    'SELECT MAX(unit_price) AS mx FROM sale_items WHERE sale_id = ? AND item_id = ?',
-                    [$refId, $itemId]
-                );
-                if ($row && $row['mx'] !== null) {
-                    $maxPrice = (float) $row['mx'];
-                }
-            }
-
-            if ($maxPrice === null && !empty($item['imeis'])) {
+            $imeis = [];
+            if (!empty($item['imeis']) && is_array($item['imeis'])) {
                 foreach ($item['imeis'] as $imei) {
                     $imei = trim((string) $imei);
-                    if ($imei === '') {
-                        continue;
-                    }
-                    $line = $this->db->fetchOne(
-                        "SELECT si.unit_price
-                         FROM imei_records ir
-                         JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
-                         WHERE ir.imei = ? AND ir.status = 'sold' AND ir.item_id = ?
-                         ORDER BY ir.id DESC
-                         LIMIT 1",
-                        [$imei, $itemId]
-                    );
-                    if ($line) {
-                        $p = (float) $line['unit_price'];
-                        $maxPrice = $maxPrice === null ? $p : max($maxPrice, $p);
+                    if ($imei !== '') {
+                        $imeis[] = $imei;
                     }
                 }
             }
+            $items[$idx]['unit_price'] = $this->resolveSaleReturnUnitPrice(
+                $itemId,
+                $imeis,
+                $refId > 0 ? $refId : null,
+                null
+            );
+        }
+        return $items;
+    }
 
-            if ($maxPrice === null) {
-                $catalog = (float) ($nameRow['sale_price'] ?? 0);
-                if ($catalog > 0) {
-                    $maxPrice = $catalog;
-                }
-            }
+    /**
+     * Resolve the unit price the customer originally paid.
+     * Prefer exact sale line via sale_item_imei; else unique price on linked sale.
+     *
+     * @param list<string> $imeis
+     * @param float|null   $fallback only for edit of legacy lines when sale link is gone
+     */
+    public function resolveSaleReturnUnitPrice(
+        int $itemId,
+        array $imeis = [],
+        ?int $saleId = null,
+        ?float $fallback = null
+    ): float {
+        $nameRow  = $this->db->fetchOne('SELECT name FROM items WHERE id = ?', [$itemId]);
+        $itemName = (string) ($nameRow['name'] ?? ('item #' . $itemId));
 
-            if ($maxPrice !== null && $posted > $maxPrice + 0.001) {
-                throw new Exception(
-                    "Return price for \"{$itemName}\" (" . number_format($posted, 3) .
-                    ") exceeds sold/catalog price (" . number_format($maxPrice, 3) . ")."
-                );
+        $cleanImeis = [];
+        foreach ($imeis as $imei) {
+            $imei = trim((string) $imei);
+            if ($imei !== '') {
+                $cleanImeis[] = $imei;
             }
         }
+
+        if (!empty($cleanImeis)) {
+            return $this->soldUnitPriceFromImeis($cleanImeis, $itemId, $itemName);
+        }
+
+        if ($saleId !== null && $saleId > 0) {
+            return $this->soldUnitPriceFromSale($saleId, $itemId, $itemName);
+        }
+
+        if ($fallback !== null && $fallback > 0) {
+            return round($fallback, 3);
+        }
+
+        throw new Exception(
+            "Cannot determine sold price for \"{$itemName}\". Scan the IMEI or link the original sale invoice."
+        );
+    }
+
+    /** @param list<string> $imeis */
+    private function soldUnitPriceFromImeis(array $imeis, int $itemId, string $itemName): float {
+        $prices = [];
+        foreach ($imeis as $imei) {
+            $line = $this->db->fetchOne(
+                "SELECT si.unit_price
+                 FROM imei_records ir
+                 JOIN sale_item_imei sii ON sii.imei_id = ir.id
+                 JOIN sale_items si ON si.id = sii.sale_item_id
+                 WHERE ir.imei = ? AND ir.item_id = ?
+                   AND (ir.sale_id IS NULL OR si.sale_id = ir.sale_id)
+                 ORDER BY sii.id DESC
+                 LIMIT 1",
+                [$imei, $itemId]
+            );
+            if (!$line) {
+                // Fallback when sale_item_imei link is missing (legacy data)
+                $line = $this->db->fetchOne(
+                    "SELECT si.unit_price
+                     FROM imei_records ir
+                     JOIN sale_items si ON si.sale_id = ir.sale_id AND si.item_id = ir.item_id
+                     WHERE ir.imei = ? AND ir.item_id = ? AND ir.status = 'sold' AND ir.sale_id IS NOT NULL
+                     ORDER BY si.id DESC
+                     LIMIT 1",
+                    [$imei, $itemId]
+                );
+            }
+            if (!$line || $line['unit_price'] === null) {
+                throw new Exception("No sold price found for IMEI {$imei} (\"{$itemName}\").");
+            }
+            $p = round((float) $line['unit_price'], 3);
+            if ($p <= 0) {
+                throw new Exception("Sold price for IMEI {$imei} is zero — cannot return.");
+            }
+            $prices[] = $p;
+        }
+
+        $unique = array_values(array_unique($prices));
+        if (count($unique) > 1) {
+            throw new Exception(
+                "\"{$itemName}\" was sold at different prices on the scanned IMEIs. Return them on separate lines."
+            );
+        }
+        return $unique[0];
+    }
+
+    private function soldUnitPriceFromSale(int $saleId, int $itemId, string $itemName): float {
+        $rows = $this->db->fetchAll(
+            'SELECT DISTINCT ROUND(unit_price, 3) AS unit_price
+             FROM sale_items
+             WHERE sale_id = ? AND item_id = ?',
+            [$saleId, $itemId]
+        );
+        if (empty($rows)) {
+            throw new Exception("\"{$itemName}\" was not on the linked sale invoice.");
+        }
+        $prices = [];
+        foreach ($rows as $row) {
+            $prices[] = round((float) $row['unit_price'], 3);
+        }
+        $prices = array_values(array_unique($prices));
+        if (count($prices) > 1) {
+            throw new Exception(
+                "\"{$itemName}\" has multiple sold prices on this invoice. Scan IMEIs so each unit uses its sold price."
+            );
+        }
+        if ($prices[0] <= 0) {
+            throw new Exception("Sold price for \"{$itemName}\" is zero — cannot return.");
+        }
+        return $prices[0];
     }
 
     public function create(array $data): array {
@@ -278,6 +505,7 @@ class SaleReturn extends BaseModel {
                          FROM return_items ri
                          JOIN returns r ON r.id = ri.return_id
                          WHERE r.ref_id = ? AND r.type = 'sale_return' AND r.status = 'approved'
+                           AND NOT {$this->sqlImeiResoldAfterReturnRef('r')}
                          GROUP BY ri.item_id
                      ) ret ON ret.item_id = si.item_id
                      WHERE si.sale_id = ?
@@ -301,11 +529,12 @@ class SaleReturn extends BaseModel {
                 }
             }
 
-            foreach ($data['items'] as $item) {
-                $subtotal += (float)$item['unit_price'] * (int)$item['quantity'];
-            }
+            // Overwrite client prices with original sold prices before totaling.
+            $data['items'] = $this->applySoldReturnPrices($data);
 
-            $this->assertSaleReturnPrices($data);
+            foreach ($data['items'] as $item) {
+                $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+            }
 
             $saleRefId = !empty($data['ref_id']) ? (int) $data['ref_id'] : 0;
 
@@ -333,12 +562,8 @@ class SaleReturn extends BaseModel {
                     [$returnId, $item['item_id'], $item['quantity'], $item['unit_price'], $lineTotal]
                 );
 
-                // Restore stock (INSERT if row doesn't exist)
-                $this->db->execute(
-                    "INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE quantity = quantity + ?",
-                    [$item['item_id'], $data['warehouse_id'], $item['quantity'], $item['quantity']]
-                );
+                // Restore stock under row lock (same discipline as purchase return / void).
+                $this->lockAndIncrementStock((int) $item['item_id'], (int) $data['warehouse_id'], (int) $item['quantity']);
 
                 // Handle IMEIs — explicit scan path
                 if (!empty($item['imeis'])) {
@@ -381,7 +606,11 @@ class SaleReturn extends BaseModel {
                             $checkSaleId = $headerRefId > 0 ? $headerRefId : ($imeiSaleId > 0 ? $imeiSaleId : null);
                             $markSaleId  = $headerRefId > 0 ? $headerRefId : ($imeiSaleId > 0 ? $imeiSaleId : null);
 
-                            $alreadyReturned = $this->isImeiAlreadyReturned((int) $imeiRow['id'], $checkSaleId);
+                            $alreadyReturned = $this->isImeiAlreadyReturned(
+                                (int) $imeiRow['id'],
+                                $checkSaleId,
+                                (int) $data['warehouse_id']
+                            );
                             if ($alreadyReturned) {
                                 throw new Exception(
                                     "IMEI {$imei} was already returned in " .
@@ -403,7 +632,7 @@ class SaleReturn extends BaseModel {
                             );
                         } else {
                             throw new Exception(
-                                "IMEI {$imei} is not a sold unit in the system. Scan a serial that was sold to this customer."
+                                "IMEI {$imei} is not a sold unit in the system. Scan a serial that was sold from this branch."
                             );
                         }
                     }
@@ -576,7 +805,7 @@ class SaleReturn extends BaseModel {
                         if (!empty($imeiRow['sale_id'])) {
                             throw new Exception("IMEI {$imei} has already been sold.");
                         }
-                        $dup = $this->isImeiAlreadyReturnedToSupplier((int) $imeiRow['id'], $refId);
+                        $dup = $this->isImeiAlreadyReturnedToSupplier((int) $imeiRow['id'], $refId, $warehouseId);
                         if ($dup) {
                             throw new Exception(
                                 "IMEI {$imei} was already returned in {$dup['return_no']} on {$dup['date']}."
@@ -609,7 +838,7 @@ class SaleReturn extends BaseModel {
                     $linked = 0;
                     foreach ($imeiRows as $imeiRow) {
                         $imeiId = (int) $imeiRow['id'];
-                        $dup    = $this->isImeiAlreadyReturnedToSupplier($imeiId, $refId);
+                        $dup    = $this->isImeiAlreadyReturnedToSupplier($imeiId, $refId, $warehouseId);
                         if ($dup) {
                             continue;
                         }
@@ -756,6 +985,12 @@ class SaleReturn extends BaseModel {
                 $saleIdForImei = $refSaleId > 0
                     ? $refSaleId
                     : $this->parseReturnSourceSaleIdFromNotes($notes);
+                if ($saleIdForImei === null || $saleIdForImei <= 0) {
+                    throw new Exception(
+                        'Cannot void return — IMEI ' . ($imeiRow['imei'] ?? '') .
+                        ' has no source sale to restore (multi-invoice return missing return_src_sale note).'
+                    );
+                }
                 $restoredNotes = $this->stripReturnSourceSaleNote($notes);
                 $aff = $this->db->execute(
                     "UPDATE imei_records
@@ -771,36 +1006,18 @@ class SaleReturn extends BaseModel {
             }
         }
 
-        $linked   = count($imeiRows);
+        $linked    = count($imeiRows);
         $remainder = $qty - $linked;
         if ($remainder > 0) {
             $itemMeta = $this->db->fetchOne('SELECT has_imei FROM items WHERE id = ?', [$itemId]);
-            if ((int) ($itemMeta['has_imei'] ?? 0) === 1 && $refSaleId > 0) {
-                $candidates = $this->db->fetchAll(
-                    "SELECT id FROM imei_records
-                     WHERE item_id = ? AND warehouse_id = ? AND status = 'in_stock'
-                       AND (sale_id IS NULL OR sale_id = 0)
-                     ORDER BY id DESC
-                     LIMIT ?",
-                    [$itemId, $warehouseId, $remainder]
+            // Serial-tracked lines must reverse only the linked IMEIs — never re-bind arbitrary stock.
+            if ((int) ($itemMeta['has_imei'] ?? 0) === 1) {
+                throw new Exception(
+                    'Cannot void return — IMEI links incomplete for this line ' .
+                    "({$linked} linked, {$qty} qty). Re-scan or fix return_item_imei before voiding."
                 );
-                if (count($candidates) < $remainder) {
-                    throw new Exception(
-                        'Cannot void return — not enough matching in-stock IMEIs to reverse (items may have been sold again).'
-                    );
-                }
-                foreach ($candidates as $candidate) {
-                    $aff = $this->db->execute(
-                        "UPDATE imei_records
-                         SET status = 'sold', sale_id = ?, warehouse_id = ?
-                         WHERE id = ? AND status = 'in_stock'",
-                        [$refSaleId, $warehouseId, (int) $candidate['id']]
-                    );
-                    if ($aff === 0) {
-                        throw new Exception('Cannot void return — an IMEI could not be restored to sold state.');
-                    }
-                }
             }
+            // Non-IMEI accessories: stock qty reverse below is enough.
         }
 
         $affected = $this->db->execute(
@@ -853,7 +1070,16 @@ class SaleReturn extends BaseModel {
 
         $linked    = count($imeiRows);
         $remainder = $qty - $linked;
-        if ($remainder > 0 && $returnNo !== '') {
+        $itemMeta  = $this->db->fetchOne('SELECT has_imei FROM items WHERE id = ?', [$itemId]);
+        $hasImei   = (int) ($itemMeta['has_imei'] ?? 0) === 1;
+
+        if ($remainder > 0 && $hasImei) {
+            // Prefer linked rows; notes fallback only when return_item_imei was incomplete historically.
+            if ($returnNo === '') {
+                throw new Exception(
+                    'Cannot void return — IMEI links incomplete and return number is missing.'
+                );
+            }
             $noteLike = '%Returned to supplier ' . $returnNo . '%';
             $candidates = $this->db->fetchAll(
                 "SELECT id FROM imei_records
@@ -875,12 +1101,10 @@ class SaleReturn extends BaseModel {
             }
             $remainder -= count($candidates);
             if ($remainder > 0) {
-                $itemMeta = $this->db->fetchOne('SELECT has_imei FROM items WHERE id = ?', [$itemId]);
-                if ((int) ($itemMeta['has_imei'] ?? 0) === 1) {
-                    throw new Exception(
-                        'Cannot void return — not enough transferred IMEIs matched this purchase return.'
-                    );
-                }
+                throw new Exception(
+                    'Cannot void return — not enough transferred IMEIs matched this purchase return ' .
+                    "(need {$remainder} more). Prefer void only when return_item_imei links are complete."
+                );
             }
         }
 
@@ -888,6 +1112,40 @@ class SaleReturn extends BaseModel {
             'INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?, ?, ?)
              ON DUPLICATE KEY UPDATE quantity = quantity + ?',
             [$itemId, $warehouseId, $qty, $qty]
+        );
+    }
+
+    /**
+     * Lock stock row then increase qty (sale return create). Creates the row if missing.
+     */
+    private function lockAndIncrementStock(int $itemId, int $warehouseId, int $qty): void {
+        if ($itemId <= 0 || $warehouseId <= 0 || $qty <= 0) {
+            return;
+        }
+        $row = $this->db->fetchOne(
+            'SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE',
+            [$itemId, $warehouseId]
+        );
+        if (!$row) {
+            try {
+                $this->db->execute(
+                    'INSERT INTO stock (item_id, warehouse_id, quantity) VALUES (?, ?, 0)',
+                    [$itemId, $warehouseId]
+                );
+            } catch (Exception $e) {
+                // Concurrent insert — row now exists.
+            }
+            $row = $this->db->fetchOne(
+                'SELECT id FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE',
+                [$itemId, $warehouseId]
+            );
+            if (!$row) {
+                throw new Exception('Could not lock stock row for return restore.');
+            }
+        }
+        $this->db->execute(
+            'UPDATE stock SET quantity = quantity + ? WHERE id = ?',
+            [$qty, (int) $row['id']]
         );
     }
 }

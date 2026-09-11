@@ -44,8 +44,7 @@ class FieldStatementController extends BaseController {
         $closingBal = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
 
         // Get company info
-        $company = $this->db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
-        $companyName = $company['value'] ?? 'Iqbal Sons';
+        $companyName = self::getSettings()['company_name'] ?? PDF_COMPANY_NAME;
 
         $companyPhone = $this->db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_phone'");
         $companyPhoneVal = $companyPhone['value'] ?? '';
@@ -78,7 +77,7 @@ class FieldStatementController extends BaseController {
         if (!$party) { echo json_encode(['error' => 'Invalid token']); return; }
 
         $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-        $saleSql = "SELECT s.invoice_no, s.date, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
+        $saleSql = "SELECT s.invoice_no, s.date, s.created_at, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
              FROM sales s WHERE s.invoice_no = ? AND s.party_id = ? AND s.status != 'cancelled'";
         $saleParams = [$refNo, $party['id']];
         if ($statementWhId > 0) {
@@ -101,6 +100,9 @@ class FieldStatementController extends BaseController {
         }
         $items = $db->fetchAll($itemsSql, $itemsParams);
 
+        if (is_array($sale)) {
+            $sale['when_label'] = Party::statementWhenLabel($sale['date'] ?? '', $sale['created_at'] ?? '');
+        }
         echo json_encode([
             'invoice' => $sale,
             'items'   => $items,

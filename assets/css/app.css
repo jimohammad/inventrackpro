@@ -334,11 +334,11 @@
         }
         .form-label { color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
 
-        /* JetBrains Mono for all code/number elements */
+        /* Keep code/number elements on the same system UI font (no webfont swap). */
         code, pre, kbd,
         [style*="font-family:monospace"],
         [style*="font-family: monospace"],
-        .font-monospace { font-family: 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace !important; }
+        .font-monospace { font-family: inherit !important; }
 
         /* Inter font refinements */
         h1, h2, h3, h4, h5, h6, .page-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -0.02em; }

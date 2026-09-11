@@ -13,17 +13,269 @@ function money($val) {
     </div>
 </div>
 
-<?php if (!empty($mandoobInvDash) && (($mandoobInvDash['overdue'] ?? 0) > 0 || ($mandoobInvDash['due_soon'] ?? 0) > 0)): ?>
-<div class="alert alert-warning border-0 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4" role="status">
-    <div>
-        <i class="bi bi-truck-front me-2"></i>
-        <strong>Mandoob Inventory:</strong>
-        <?= (int) ($mandoobInvDash['overdue'] ?? 0) ?> overdue,
-        <?= (int) ($mandoobInvDash['due_soon'] ?? 0) ?> due within 7 days.
+<?php
+$dashNotifs = [];
+if (!empty($mandoobInvDash) && (($mandoobInvDash['overdue'] ?? 0) > 0 || ($mandoobInvDash['due_soon'] ?? 0) > 0)) {
+    $miOverdue = (int) ($mandoobInvDash['overdue'] ?? 0);
+    $miSoon = (int) ($mandoobInvDash['due_soon'] ?? 0);
+    $dashNotifs[] = [
+        'tone' => $miOverdue > 0 ? 'danger' : 'warning',
+        'icon' => 'bi-truck-front',
+        'title' => 'Mandoob Inventory',
+        'chips' => [
+            ['label' => 'Overdue', 'value' => $miOverdue, 'hot' => $miOverdue > 0],
+            ['label' => 'Due in 7 days', 'value' => $miSoon, 'hot' => false],
+        ],
+        'href' => Auth::can('mandoob_inventory', 'view') ? '?page=mandoob_inventory' : null,
+        'action' => 'Open schedule',
+    ];
+}
+if (!empty($serviceOverdueDash) && ($serviceOverdueDash['count'] ?? 0) > 0) {
+    $svCount = (int) $serviceOverdueDash['count'];
+    $dashNotifs[] = [
+        'tone' => 'danger',
+        'icon' => 'bi-tools',
+        'title' => 'Service overdue',
+        'chips' => [
+            ['label' => 'Devices', 'value' => $svCount, 'hot' => true],
+        ],
+        'href' => '?page=service&overdue=1',
+        'action' => 'View devices',
+    ];
+}
+if (!empty($employeeResidenceDash) && (($employeeResidenceDash['expired'] ?? 0) > 0 || ($employeeResidenceDash['due_soon'] ?? 0) > 0)) {
+    $erExpired = (int) ($employeeResidenceDash['expired'] ?? 0);
+    $erSoon = (int) ($employeeResidenceDash['due_soon'] ?? 0);
+    $dashNotifs[] = [
+        'tone' => $erExpired > 0 ? 'danger' : 'warning',
+        'icon' => 'bi-person-badge',
+        'title' => 'Employee residence',
+        'chips' => [
+            ['label' => 'Expired', 'value' => $erExpired, 'hot' => $erExpired > 0],
+            ['label' => 'Due in 30 days', 'value' => $erSoon, 'hot' => false],
+        ],
+        'href' => Auth::can('employees', 'view') ? '?page=employees' : null,
+        'action' => 'Open employees',
+    ];
+}
+if (!empty($tradeLicenseDash) && (($tradeLicenseDash['expired'] ?? 0) > 0 || ($tradeLicenseDash['due_soon'] ?? 0) > 0)) {
+    $tlExpired = (int) ($tradeLicenseDash['expired'] ?? 0);
+    $tlSoon = (int) ($tradeLicenseDash['due_soon'] ?? 0);
+    $dashNotifs[] = [
+        'tone' => $tlExpired > 0 ? 'danger' : 'warning',
+        'icon' => 'bi-file-earmark-text',
+        'title' => 'Supplier trade license',
+        'chips' => [
+            ['label' => 'Expired', 'value' => $tlExpired, 'hot' => $tlExpired > 0],
+            ['label' => 'Due in 7 days', 'value' => $tlSoon, 'hot' => false],
+        ],
+        'href' => Auth::can('suppliers', 'view') ? '?page=parties&type=supplier' : null,
+        'action' => 'Open suppliers',
+    ];
+}
+$notifTone = [
+    'warning' => [
+        'stripe' => '#f59e0b',
+        'wash'   => 'linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(245,158,11,0.03) 55%, transparent 100%)',
+        'iconBg' => 'rgba(245,158,11,0.14)',
+        'iconFg' => '#b45309',
+    ],
+    'danger' => [
+        'stripe' => '#ef4444',
+        'wash'   => 'linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(239,68,68,0.03) 55%, transparent 100%)',
+        'iconBg' => 'rgba(239,68,68,0.14)',
+        'iconFg' => '#b91c1c',
+    ],
+    'info' => [
+        'stripe' => '#3b82f6',
+        'wash'   => 'linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(59,130,246,0.03) 55%, transparent 100%)',
+        'iconBg' => 'rgba(59,130,246,0.14)',
+        'iconFg' => '#1d4ed8',
+    ],
+];
+?>
+<?php if (!empty($dashNotifs)): ?>
+<style>
+.dash-notif {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 0.85rem;
+}
+.dash-notif__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px 4px;
+}
+.dash-notif__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.dash-notif__title i {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(245,158,11,0.14);
+    color: #d97706;
+    font-size: 0.72rem;
+}
+.dash-notif__count {
+    font-size: 0.64rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(245,158,11,0.14);
+    color: #b45309;
+}
+.dash-notif__grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 10px 10px;
+}
+.dash-notif__item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 280px;
+    max-width: min(100%, 480px);
+    padding: 7px 10px 7px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.dash-notif__item::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    border-radius: 8px 0 0 8px;
+    background: var(--notif-stripe);
+}
+.dash-notif__item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+    border-color: color-mix(in srgb, var(--notif-stripe) 35%, var(--border-color));
+}
+.dash-notif__icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+}
+.dash-notif__main {
+    min-width: 0;
+    flex: 1;
+}
+.dash-notif__name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+.dash-notif__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+}
+.dash-notif__chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(148, 163, 184, 0.12);
+}
+.dash-notif__chip strong {
+    font-size: 0.7rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-main);
+}
+.dash-notif__chip.is-hot {
+    background: rgba(239,68,68,0.12);
+    color: #991b1b;
+}
+.dash-notif__chip.is-hot strong { color: #b91c1c; }
+.dash-notif__action {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-decoration: none;
+    color: #fff;
+    background: #1e293b;
+    flex-shrink: 0;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+.dash-notif__action:hover {
+    background: #0f172a;
+    color: #fff;
+}
+.dash-notif__action i { font-size: 0.65rem; }
+</style>
+<div class="dash-notif" role="region" aria-label="Notifications">
+    <div class="dash-notif__head">
+        <span class="dash-notif__title"><i class="bi bi-bell"></i>Notifications</span>
+        <span class="dash-notif__count"><?= count($dashNotifs) ?> active</span>
     </div>
-    <?php if (Auth::can('mandoob_inventory', 'view')): ?>
-    <a class="btn btn-sm btn-dark" href="?page=mandoob_inventory">Open schedule</a>
-    <?php endif; ?>
+    <div class="dash-notif__grid">
+        <?php foreach ($dashNotifs as $n):
+            $tone = $notifTone[$n['tone']] ?? $notifTone['info'];
+        ?>
+        <div class="dash-notif__item" style="--notif-stripe:<?= $tone['stripe'] ?>;background:<?= $tone['wash'] ?>;">
+            <span class="dash-notif__icon" style="background:<?= $tone['iconBg'] ?>;color:<?= $tone['iconFg'] ?>;">
+                <i class="bi <?= htmlspecialchars($n['icon']) ?>"></i>
+            </span>
+            <div class="dash-notif__main">
+                <div class="dash-notif__name"><?= htmlspecialchars($n['title']) ?></div>
+                <?php if (!empty($n['chips'])): ?>
+                <div class="dash-notif__chips">
+                    <?php foreach ($n['chips'] as $chip): ?>
+                    <span class="dash-notif__chip<?= !empty($chip['hot']) ? ' is-hot' : '' ?>">
+                        <strong><?= (int) $chip['value'] ?></strong>
+                        <?= htmlspecialchars($chip['label']) ?>
+                    </span>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php if (!empty($n['href'])): ?>
+            <a class="dash-notif__action" href="<?= htmlspecialchars($n['href']) ?>">
+                <?= htmlspecialchars($n['action']) ?>
+                <i class="bi bi-arrow-right"></i>
+            </a>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -84,32 +336,29 @@ function money($val) {
         </a>
     </div>
 
-    <!-- Receivables (net they owe you — any party type) -->
+    <!-- Cash by User (today's receipts grouped by app user who recorded them) -->
     <div class="col-6 col-md-2">
-        <a href="?page=parties&type=all" class="dash-link">
+        <a href="?page=payments" class="dash-link">
         <div class="dash-card">
-            <div class="dc-stripe" style="background:#f59e0b;"></div>
+            <div class="dc-stripe" style="background:#e11d48;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
-                <div class="dc-icon" style="background:rgba(245,158,11,0.12);"><i class="bi bi-clock-history" style="color:#f59e0b;"></i></div>
-                <div class="dc-label">Receivables</div>
+                <div class="dc-icon" style="background:rgba(225,29,72,0.12);"><i class="bi bi-person-check" style="color:#e11d48;"></i></div>
+                <div class="dc-label">Cash by User</div>
             </div>
-            <div class="dc-value" style="padding-left:6px;color:#f59e0b;"><?= money($pendingReceivables['total']) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-people me-1"></i><?= (int)$pendingReceivables['count'] ?> parties owing you</div>
-        </div>
-        </a>
-    </div>
-
-    <!-- Payables (net you owe — any party type) -->
-    <div class="col-6 col-md-2">
-        <a href="?page=parties&type=all" class="dash-link">
-        <div class="dash-card">
-            <div class="dc-stripe" style="background:#ef4444;"></div>
-            <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
-                <div class="dc-icon" style="background:rgba(239,68,68,0.12);"><i class="bi bi-credit-card" style="color:#ef4444;"></i></div>
-                <div class="dc-label">Payables</div>
+            <div class="dc-value" style="padding-left:6px;color:#e11d48;"><?= money($myReceived['total'] ?? 0) ?></div>
+            <div class="dc-sub" style="padding-left:6px;">
+                <?php
+                $cashUsers = $myReceived['users'] ?? [];
+                if ($cashUsers === []):
+                ?>
+                <i class="bi bi-person me-1"></i>No Main Cash today
+                <?php else: ?>
+                <?php foreach ($cashUsers as $cu): ?>
+                <div><i class="bi bi-person me-1"></i><?= htmlspecialchars($cu['name']) ?> · <?= money($cu['total']) ?></div>
+                <?php endforeach; ?>
+                <div>Main Cash · <?= (int)($myReceived['count'] ?? 0) ?> payments · <?= (int)($myReceived['user_count'] ?? count($cashUsers)) ?> users</div>
+                <?php endif; ?>
             </div>
-            <div class="dc-value" style="padding-left:6px;color:#ef4444;"><?= money($pendingPayables['total']) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-truck me-1"></i><?= (int)$pendingPayables['count'] ?> parties you owe</div>
         </div>
         </a>
     </div>
@@ -118,28 +367,48 @@ function money($val) {
     <div class="col-6 col-md-2">
         <a href="?page=stock" class="dash-link">
         <div class="dash-card">
-            <div class="dc-stripe" style="background:#8b5cf6;"></div>
+            <div class="dc-stripe" style="background:#0d9488;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
-                <div class="dc-icon" style="background:rgba(139,92,246,0.12);"><i class="bi bi-boxes" style="color:#8b5cf6;"></i></div>
+                <div class="dc-icon" style="background:rgba(13,148,136,0.12);"><i class="bi bi-boxes" style="color:#0d9488;"></i></div>
                 <div class="dc-label">Stock Value</div>
             </div>
-            <div class="dc-value" style="padding-left:6px;color:#8b5cf6;"><?= money($stockValue['total'] ?? 0) ?></div>
+            <div class="dc-value" style="padding-left:6px;color:#0d9488;"><?= money($stockValue['total'] ?? 0) ?></div>
             <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-box-seam me-1"></i><?= number_format($stockValue['units'] ?? 0) ?> units</div>
         </div>
         </a>
     </div>
 
-    <!-- Pending POs -->
+    <!-- Cash already sent to suppliers — goods not in (not a receivable) -->
     <div class="col-6 col-md-2">
-        <a href="?page=purchaseorders" class="dash-link">
+        <a href="?page=purchaseorders&status=paid&all_dates=1" class="dash-link">
         <div class="dash-card">
             <div class="dc-stripe" style="background:#3b82f6;"></div>
             <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
                 <div class="dc-icon" style="background:rgba(59,130,246,0.12);"><i class="bi bi-file-earmark-text" style="color:#3b82f6;"></i></div>
-                <div class="dc-label">Pending POs</div>
+                <div class="dc-label">Awaiting Goods</div>
             </div>
             <div class="dc-value" style="padding-left:6px;color:#3b82f6;"><?= money($pendingPOs['total'] ?? 0) ?></div>
-            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-box-arrow-up-right me-1"></i><?= $pendingPOs['count'] ?? 0 ?> awaiting</div>
+            <div class="dc-sub" style="padding-left:6px;">
+                <i class="bi bi-cash-stack me-1"></i><?= (int) ($pendingPOs['count'] ?? 0) ?> paid · not refundable
+                <?php if ((int) ($pendingPOs['unpaid_draft_count'] ?? 0) > 0): ?>
+                <div><i class="bi bi-pencil-square me-1"></i><?= (int) $pendingPOs['unpaid_draft_count'] ?> unpaid drafts</div>
+                <?php endif; ?>
+            </div>
+        </div>
+        </a>
+    </div>
+
+    <!-- Trade receivables — customers/both; supplier advances excluded -->
+    <div class="col-6 col-md-2">
+        <a href="?page=parties&type=customer&balance=due" class="dash-link">
+        <div class="dash-card">
+            <div class="dc-stripe" style="background:#f59e0b;"></div>
+            <div class="d-flex align-items-center gap-2 mb-1" style="padding-left:6px;">
+                <div class="dc-icon" style="background:rgba(245,158,11,0.12);"><i class="bi bi-clock-history" style="color:#f59e0b;"></i></div>
+                <div class="dc-label">Receivables</div>
+            </div>
+            <div class="dc-value" style="padding-left:6px;color:#f59e0b;"><?= money($pendingReceivables['total'] ?? 0) ?></div>
+            <div class="dc-sub" style="padding-left:6px;"><i class="bi bi-people me-1"></i><?= (int) ($pendingReceivables['count'] ?? 0) ?> customers owing you</div>
         </div>
         </a>
     </div>

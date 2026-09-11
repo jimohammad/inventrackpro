@@ -1,6 +1,10 @@
 <!-- Edit Payment -->
+<?php
+    $accountsReturnUrl = $accountsReturnUrl ?? '';
+    $cancelUrl = $accountsReturnUrl !== '' ? $accountsReturnUrl : ('?page=payments&action=detail&id=' . (int)$editPayment['id']);
+?>
 <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="?page=payments&action=detail&id=<?= $editPayment['id'] ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+    <a href="<?= htmlspecialchars($cancelUrl) ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
     <h1 class="page-title mb-0">Edit Payment: <?= $editPayment['payment_no'] ?></h1>
 </div>
 
@@ -44,6 +48,9 @@
                     <?= Auth::csrfField() ?>
                     <input type="hidden" name="id" value="<?= $editPayment['id'] ?>">
                     <input type="hidden" name="party_id" id="partyIdSubmit" value="<?= $editPayment['party_id'] ?>">
+                    <?php if (!empty($returnAccountId)): ?>
+                    <input type="hidden" name="return_account_id" value="<?= (int)$returnAccountId ?>">
+                    <?php endif; ?>
 
                     <!-- Amount -->
                     <div class="mb-3">
@@ -85,11 +92,12 @@
 
                     <!-- Buttons -->
                     <div class="d-flex gap-2 justify-content-end">
-                        <a href="?page=payments&action=detail&id=<?= $editPayment['id'] ?>" class="btn btn-outline-secondary">Cancel</a>
+                        <a href="<?= htmlspecialchars($cancelUrl) ?>" class="btn btn-outline-secondary">Cancel</a>
                         <button type="submit" class="btn btn-primary pin-protect">
                             <i class="bi bi-check-lg me-1"></i> Save Changes
                         </button>
-                        <button type="submit" class="btn btn-outline-primary pin-protect" onclick="document.getElementById('printAfterSave').value='1'">
+                        <button type="submit" class="btn btn-outline-primary pin-protect" onclick="document.getElementById('printAfterSave').value='1'"
+                            title="Prints with your Default Print (A5 or Thermal) from the profile menu">
                             <i class="bi bi-printer me-1"></i> Save & Print
                         </button>
                     </div>

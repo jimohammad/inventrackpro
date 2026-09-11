@@ -183,12 +183,29 @@ $stages = ServiceController::stages();
         <div class="sv-stat-icon" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.35);"><i class="bi bi-bag-check"></i></div>
         <div><div class="sv-stat-value"><?= $counts['delivered'] ?? 0 ?></div><div class="sv-stat-label">Delivered</div></div>
     </a>
+    <a href="?page=service&overdue=1" class="sv-stat" style="<?= ($filters['overdue'] ?? '') === '1' ? 'border-color:#dc2626;box-shadow:0 4px 14px rgba(220,38,38,.18);' : '' ?>">
+        <div class="sv-stat-icon" style="background:linear-gradient(135deg,#dc2626,#f87171);color:#fff;box-shadow:0 3px 10px rgba(220,38,38,.35);"><i class="bi bi-exclamation-triangle"></i></div>
+        <div><div class="sv-stat-value"><?= (int)($counts['overdue'] ?? 0) ?></div><div class="sv-stat-label">Overdue 7d+</div></div>
+    </a>
 </div>
+
+<?php if (($filters['overdue'] ?? '') === '1'): ?>
+<div class="alert alert-danger border-0 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3" role="status">
+    <div>
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Showing devices still <strong>Pending</strong> or <strong>In Progress</strong> for more than 1 week.
+    </div>
+    <a class="btn btn-sm btn-outline-dark" href="?page=service">Clear filter</a>
+</div>
+<?php endif; ?>
 
 <!-- Filters -->
 <div class="sv-filters">
     <form method="GET">
         <input type="hidden" name="page" value="service">
+        <?php if (($filters['overdue'] ?? '') === '1'): ?>
+        <input type="hidden" name="overdue" value="1">
+        <?php endif; ?>
         <div class="f-field" style="flex:2;min-width:220px;">
             <label><i class="bi bi-search me-1"></i> Search</label>
             <input type="text" name="search" value="<?= htmlspecialchars($filters['search']) ?>" placeholder="Service #, IMEI, customer, model...">
@@ -220,7 +237,7 @@ $stages = ServiceController::stages();
         <?php if (empty($records)): ?>
         <div style="text-align:center;padding:40px;color:var(--text-muted);">
             <i class="bi bi-inbox" style="font-size:2.5rem;opacity:.3;"></i>
-            <p style="margin-top:10px;">No service records yet</p>
+            <p style="margin-top:10px;"><?= ($filters['overdue'] ?? '') === '1' ? 'No overdue unrepaired devices' : 'No service records yet' ?></p>
         </div>
         <?php else: ?>
         <table class="sv-tbl">
@@ -243,11 +260,17 @@ $stages = ServiceController::stages();
                     $customer = $r['party_name'] ?: $r['customer_name'];
                     $trackTok = trim((string)($r['tracking_token'] ?? ''));
                     $trackUrl = $trackTok !== '' ? app_service_track_url($trackTok) : '';
+                    $receivedTs = strtotime($r['received_date'] ?: $r['created_at']);
+                    $daysWaiting = $receivedTs ? (int) floor((time() - $receivedTs) / 86400) : 0;
+                    $isOverdueUnrepaired = in_array($r['status'], ['Pending', 'In Progress'], true) && $daysWaiting >= 7;
                 ?>
-                <tr>
+                <tr<?= $isOverdueUnrepaired ? ' style="background:rgba(220,38,38,.04);"' : '' ?>>
                     <td><a href="?page=service&action=detail&id=<?= $r['id'] ?>"><?= htmlspecialchars($r['service_no']) ?></a></td>
                     <td style="color:var(--text-muted);font-size:.8rem;">
-                        <?= date('d M Y', strtotime($r['received_date'] ?: $r['created_at'])) ?>
+                        <?= date('d M Y', $receivedTs) ?>
+                        <?php if ($isOverdueUnrepaired): ?>
+                        <div class="sv-received-sub" style="color:#dc2626;font-weight:700;"><?= $daysWaiting ?> days</div>
+                        <?php endif; ?>
                     </td>
                     <td>
                         <?php if (!empty($r['delivered_date'])): ?>
@@ -276,6 +299,7 @@ $stages = ServiceController::stages();
                         <?php endif; ?>
                     </td>
                     <td class="sv-actions">
+                        <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
                         <button type="button"
                             class="sv-act track svc-copy-track"
                             data-track-url="<?= htmlspecialchars($trackUrl, ENT_QUOTES, 'UTF-8') ?>"
@@ -285,7 +309,6 @@ $stages = ServiceController::stages();
                             <i class="bi bi-link-45deg"></i>
                         </button>
                         <a href="?page=service&action=thermalReceipt&amp;id=<?= (int) $r['id'] ?>&amp;autoprint=1" class="sv-act view" style="background:rgba(5,150,105,.12);color:#059669;" title="Thermal customer receipt"><i class="bi bi-receipt-cutoff"></i></a>
-                        <a href="?page=service&action=detail&id=<?= $r['id'] ?>" class="sv-act view" title="View"><i class="bi bi-eye"></i></a>
                         <?php if (Auth::can('service', 'edit')): ?>
                         <a href="?page=service&action=edit&id=<?= $r['id'] ?>" class="sv-act edit pin-protect" title="Edit"><i class="bi bi-pencil"></i></a>
                         <?php endif; ?>

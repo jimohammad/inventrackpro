@@ -2,42 +2,76 @@
 
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Item.php';
+require_once __DIR__ . '/../models/IMEI.php';
 require_once __DIR__ . '/../models/Party.php';
 require_once __DIR__ . '/../models/Purchase.php';
+require_once __DIR__ . '/../services/SaleInvoiceFile.php';
 
 class PurchaseController extends BaseController {
 
     private Purchase $purchaseModel;
+    private IMEI $imeiModel;
 
     public function __construct() {
         parent::__construct();
         $this->purchaseModel = new Purchase();
+        $this->imeiModel     = new IMEI();
     }
 
     public function index(): void {
         Auth::authorize('purchases', 'view');
 
+        $search = $this->inputSearch('search', '', 'get');
+        $item   = $this->input('item', '', 'get');
+        $status = $this->input('status', '', 'get');
+        $hasEntity = ($item !== '') || ($search !== '');
+
         $dateRange = ListPage::resolveDateFiltersFromGet(2);
+        // Item / supplier (search) looks at all dates unless the user set a range.
+        if ($hasEntity && !empty($dateRange['dates_defaulted'])) {
+            $dateRange = [
+                'from_date'       => '',
+                'to_date'         => '',
+                'all_dates'       => true,
+                'dates_defaulted' => false,
+            ];
+        }
+        $fromDate = (string) $dateRange['from_date'];
+        $toDate   = (string) $dateRange['to_date'];
+        if ($fromDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate)) {
+            $fromDate = '';
+        }
+        if ($toDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate)) {
+            $toDate = '';
+        }
 
         $filters = [
-            'search'    => $this->inputSearch('search', '', 'get'),
-            'item'      => $this->input('item', '', 'get'),
-            'status'    => $this->input('status', '', 'get'),
-            'from_date' => $dateRange['from_date'],
-            'to_date'   => $dateRange['to_date'],
-            'all_dates' => $dateRange['all_dates'],
+            'search'    => $search,
+            'item'      => $item,
+            'status'    => $status,
+            'from_date' => $fromDate,
+            'to_date'   => $toDate,
+            'all_dates' => ($fromDate === '' && $toDate === ''),
         ];
 
-        $allItems = Database::getInstance()->fetchAll(
-            "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name ASC"
-        );
-
-        $listPage       = $this->purchaseModel->getIndexList($filters, Auth::warehouseId());
+        $listPage       = $this->purchaseModel->getIndexList($filters, Auth::warehouseId(), Purchase::INDEX_LIST_LIMIT);
         $purchases      = $listPage['items'];
         $listTruncated  = $listPage['truncated'];
         $listLimit      = $listPage['limit'];
         $datesDefaulted = $dateRange['dates_defaulted'];
         $stats     = $this->purchaseModel->getMonthStats(Auth::warehouseId());
+
+        $filterItem = null;
+        if (ctype_digit((string) $item) && (int) $item > 0) {
+            $itemRow = (new Item())->find((int) $item);
+            if ($itemRow) {
+                $filterItem = [
+                    'id'   => (int) $itemRow['id'],
+                    'name' => (string) ($itemRow['name'] ?? ''),
+                    'sku'  => (string) ($itemRow['sku'] ?? ''),
+                ];
+            }
+        }
 
         $pageTitle = 'Purchases';
         $page      = 'purchases';
@@ -51,11 +85,6 @@ class PurchaseController extends BaseController {
     public function create(): void {
         Auth::authorize('purchases', 'add');
 
-        $itemModel  = new Item();
-        $partyModel = new Party();
-
-        $warehouses = self::getWarehouses();
-        $accounts   = self::getAccounts();
         $nextInv    = $this->purchaseModel->nextInvoiceNo();
         $pageTitle  = 'New Purchase';
         $page       = 'purchases';
@@ -105,7 +134,10 @@ class PurchaseController extends BaseController {
 
             $imeis = [];
             if (!empty($row['imeis'])) {
-                $imeis = array_filter(array_map('trim', explode("\n", $row['imeis'])));
+                $imeis = array_values(array_unique(array_filter(array_map(
+                    static fn($v) => ImeiFormat::normalize((string) $v),
+                    explode("\n", (string) $row['imeis'])
+                ))));
             }
             $items[] = [
                 'item_id'    => (int)   $row['item_id'],
@@ -123,19 +155,20 @@ class PurchaseController extends BaseController {
 
         $partyId = $this->inputInt('party_id');
         if ($partyId <= 0) {
-            $this->flash('error', 'Please select a supplier.');
+            $this->flash('error', 'Please select a supplier or customer.');
             $this->redirect('?page=purchases&action=create');
             return;
         }
 
-        $scanImeiLater = !empty($_POST['scan_imei_later']);
-
-        // Validate IMEI counts for IMEI-tracked items (skipped when user opts to scan later on the invoice).
+        // Serials are optional on new purchase; scan from the invoice after save.
+        // If any IMEIs were entered on this form, still reject bad format.
+        Item::ensureSerialKindColumn();
+        $pendingImeiScan = false;
         $itemIds = array_values(array_unique(array_map(static fn($i) => (int) $i['item_id'], $items)));
         if (!empty($itemIds)) {
             $ph = implode(',', array_fill(0, count($itemIds), '?'));
             $rows = $db->fetchAll(
-                "SELECT id, name, has_imei, imei_optional
+                "SELECT id, name, has_imei, COALESCE(serial_kind, 'phone') AS serial_kind
                  FROM items
                  WHERE id IN ({$ph})",
                 $itemIds
@@ -152,14 +185,19 @@ class PurchaseController extends BaseController {
                     $this->redirect('?page=purchases&action=create');
                     return;
                 }
-                if (!$scanImeiLater && !empty($info['has_imei']) && empty($info['imei_optional'])) {
+                if (!empty($info['has_imei'])) {
                     $qty = (int) ($it['quantity'] ?? 0);
                     $cnt = is_array($it['imeis'] ?? null) ? count($it['imeis']) : 0;
-                    if ($qty > 0 && $cnt !== $qty) {
-                        $name = (string) ($info['name'] ?? ('Item #' . (int) $it['item_id']));
-                        $this->flash('error', "Item \"{$name}\": IMEI count must match quantity ({$qty}), or tick \"Scan IMEIs later\" to save now and scan from the purchase page.");
-                        $this->redirect('?page=purchases&action=create');
-                        return;
+                    if ($qty > $cnt) {
+                        $pendingImeiScan = true;
+                    }
+                    foreach ($it['imeis'] ?? [] as $imei) {
+                        $formatErr = $this->purchaseImeiFormatError((string) $imei, $info);
+                        if ($formatErr !== null) {
+                            $this->flash('error', 'Item "' . ($info['name'] ?? '') . '": ' . $formatErr . ' (' . $imei . ')');
+                            $this->redirect('?page=purchases&action=create');
+                            return;
+                        }
                     }
                 }
             }
@@ -167,38 +205,25 @@ class PurchaseController extends BaseController {
 
         $invoiceNo = $this->purchaseModel->nextInvoiceNo();
         $subtotal  = array_sum(array_map(fn($i) => $i['unit_price'] * $i['quantity'], $items));
-        // C3 fix: clamp negative discount — a negative value would inflate grand_total above subtotal.
-        $discount  = max(0.0, $this->inputFloat('discount'));
-        $tax       = 0;
-        $grandTotal = $subtotal - $discount;
-        $paid       = $this->inputFloat('paid_amount');
-
-        // C1 fix: reject overpayment so 20 KWD doesn't silently vanish via max(0, balance) below.
-        if ($paid > $grandTotal + 0.001) {
-            $this->flash('error',
-                'Paid amount (' . number_format($paid, 3) . ') exceeds grand total (' . number_format($grandTotal, 3) . '). '
-                . 'Reduce the payment or add it later via the Payments page.'
-            );
-            $this->redirect('?page=purchases&action=create');
-            return;
-        }
-
-        $balance    = $grandTotal - $paid;
+        // New purchase has no invoice discount or on-invoice payment — pay later via Payment Out.
+        $discount   = 0.0;
+        $tax        = 0;
+        $grandTotal = $subtotal;
+        $paid       = 0.0;
+        $balance    = $grandTotal;
         $warehouseId = Auth::warehouseId();
-
-        $status = $balance < 0.001 ? 'paid' : ($paid > 0 ? 'partial' : 'confirmed');
+        $status     = $balance < 0.001 ? 'paid' : 'confirmed';
 
         // Duplicate-PO guard: if this supplier already has an unconverted PO for the same total in
-        // this warehouse, the user is almost certainly re-keying a PO that should have been
-        // converted via "Convert to Purchase Invoice". Without this guard, BOTH the PO payment
-        // ('purchase_order') and this Purchase payment ('purchase') get inserted and the bank
-        // account is debited twice.
+        // this warehouse, the user is almost certainly re-keying a PO that should be received via
+        // Import Logistics. Without this guard, BOTH the PO payment ('purchase_order') and this
+        // Purchase payment ('purchase') get inserted and the bank account is debited twice.
         $openPo = $this->purchaseModel->findBlockingOpenPurchaseOrder($partyId, $warehouseId, $grandTotal);
         if ($openPo) {
             $this->flash('error',
                 'Blocked to prevent a duplicate payment: this supplier already has an open Purchase Order '
-                . $openPo['po_no'] . ' for ' . number_format((float)$openPo['subtotal_kwd'] + (float)($openPo['other_charges_kwd'] ?? 0), DECIMAL_PLACES)
-                . ' KWD that has not been converted yet. Open that PO and click "Convert to Purchase Invoice" '
+                . $openPo['po_no'] . ' for ' . number_format((float)$openPo['subtotal_kwd'] + (float)($openPo['other_charges_kwd'] ?? 0) + (float)($openPo['adjustment_kwd'] ?? 0), DECIMAL_PLACES)
+                . ' KWD that has not been converted yet. Receive that PO via Import Logistics '
                 . 'instead — creating a fresh Purchase here would record the same payment twice and '
                 . 'double-deduct the bank account.'
             );
@@ -224,13 +249,13 @@ class PurchaseController extends BaseController {
                 $this->input('notes'),
                 Auth::id(),
                 $items,
-                $this->inputInt('account_id') ?: 1,
-                $this->input('payment_method') ?: 'cash'
+                1,
+                'cash'
             );
 
             $this->logActivity('create_purchase', 'purchases', $purchaseId, $invoiceNo);
             self::clearDashboardCache((int) $warehouseId);
-            if ($scanImeiLater && $this->purchaseModel->countImeiScannableItems($purchaseId) > 0) {
+            if ($pendingImeiScan) {
                 $this->flash(
                     'success',
                     "Purchase {$invoiceNo} saved. Open the invoice and click Scan IMEIs when you are ready to enter serial numbers."
@@ -254,6 +279,233 @@ class PurchaseController extends BaseController {
             $this->flash('error', 'Failed: ' . $e->getMessage());
             $this->redirect('?page=purchases&action=create');
         }
+    }
+
+    public static function clearInvoiceImportSession(): void {
+        unset($_SESSION['invoice_import']);
+    }
+
+    /** Upload a sales-invoice JSON from another shop, then preview as a purchase. */
+    public function importInvoice(): void {
+        Auth::authorize('purchases', 'add');
+
+        if ($this->isPost()) {
+            $this->loadInvoiceImportFile();
+        }
+
+        $pack = $_SESSION['invoice_import'] ?? null;
+        $step = 'upload';
+        $resolved = null;
+        $duplicate = null;
+        $importNonce = '';
+
+        if (is_array($pack) && !empty($pack['raw'])) {
+            try {
+                $payload  = SaleInvoiceFile::parse((string) $pack['raw']);
+                $resolved = SaleInvoiceFile::resolveForWarehouse($payload, Database::getInstance());
+                $step     = 'preview';
+                $importNonce = (string) ($pack['nonce'] ?? '');
+                $whId = (int) Auth::warehouseId();
+                $duplicate = $this->purchaseModel->findDuplicateImported(
+                    (string) ($resolved['source_invoice_no'] ?? ''),
+                    $whId
+                );
+            } catch (RuntimeException $e) {
+                self::clearInvoiceImportSession();
+                $this->flash('error', $e->getMessage());
+                $this->redirect('?page=purchases&action=importInvoice');
+                return;
+            }
+        }
+
+        $pageTitle = 'Import invoice';
+        $page      = 'purchases';
+        ob_start();
+        include __DIR__ . '/../views/purchases/import_invoice.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function importInvoiceClear(): void {
+        Auth::authorize('purchases', 'add');
+        self::clearInvoiceImportSession();
+        $this->redirect('?page=purchases&action=importInvoice');
+    }
+
+    public function importInvoiceStore(): void {
+        Auth::authorize('purchases', 'add');
+        if (!$this->isPost()) {
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $pack = $_SESSION['invoice_import'] ?? null;
+        if (!is_array($pack) || empty($pack['raw'])) {
+            $this->flash('error', 'Upload the invoice file again.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $postedNonce = trim((string) ($_POST['import_nonce'] ?? ''));
+        $sessNonce   = (string) ($pack['nonce'] ?? '');
+        if ($sessNonce === '' || !hash_equals($sessNonce, $postedNonce)) {
+            $this->flash('warning', 'This import form expired. Upload the file again.');
+            self::clearInvoiceImportSession();
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        try {
+            $payload  = SaleInvoiceFile::parse((string) $pack['raw']);
+            $resolved = SaleInvoiceFile::resolveForWarehouse($payload, Database::getInstance());
+        } catch (RuntimeException $e) {
+            self::clearInvoiceImportSession();
+            $this->flash('error', $e->getMessage());
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        if (empty($resolved['ok'])) {
+            $this->flash('error', $resolved['errors'][0] ?? 'This file cannot be imported until every line matches a catalog SKU.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $partyId = $this->inputInt('party_id');
+        if ($partyId <= 0) {
+            $this->flash('error', 'Please select a supplier.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $db = Database::getInstance();
+        $party = $db->fetchOne(
+            "SELECT id, name FROM parties WHERE id = ? AND is_active = 1",
+            [$partyId]
+        );
+        if (!$party) {
+            $this->flash('error', 'Supplier not found.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $warehouseId = (int) Auth::warehouseId();
+        $sourceNo    = (string) ($resolved['source_invoice_no'] ?? '');
+        $duplicate   = $this->purchaseModel->findDuplicateImported($sourceNo, $warehouseId);
+        $override    = $this->inputInt('confirm_duplicate', 0) === 1;
+        if ($duplicate && !$override) {
+            $this->flash('error', 'This invoice number was already imported as '
+                . ($duplicate['invoice_no'] ?? '') . '. Tick “Import anyway” to create another purchase.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $items      = SaleInvoiceFile::toPurchaseItems($resolved);
+        $subtotal   = (float) $resolved['subtotal'];
+        $discount   = (float) $resolved['discount'];
+        $grandTotal = (float) $resolved['grand_total'];
+        $paid       = 0.0;
+        $balance    = $grandTotal;
+        $status     = $balance < 0.001 ? 'paid' : 'confirmed';
+
+        $openPo = $this->purchaseModel->findBlockingOpenPurchaseOrder($partyId, $warehouseId, $grandTotal);
+        if ($openPo) {
+            $this->flash('error',
+                'Blocked to prevent a duplicate payment: this supplier already has an open Purchase Order '
+                . $openPo['po_no'] . ' for ' . number_format((float)$openPo['subtotal_kwd'] + (float)($openPo['other_charges_kwd'] ?? 0) + (float)($openPo['adjustment_kwd'] ?? 0), DECIMAL_PLACES)
+                . ' KWD that has not been converted yet. Receive that PO via Import Logistics instead.'
+            );
+            $this->redirect('?page=purchaseorders&action=show&id=' . (int)$openPo['id']);
+            return;
+        }
+
+        $purchaseDate = $this->input('date') ?: date('Y-m-d');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $purchaseDate)) {
+            $purchaseDate = date('Y-m-d');
+        }
+
+        try {
+            $invoiceNo  = $this->purchaseModel->nextInvoiceNo();
+            $purchaseId = $this->purchaseModel->createFullPurchase(
+                $invoiceNo,
+                $sourceNo !== '' ? $sourceNo : null,
+                $partyId,
+                $warehouseId,
+                $purchaseDate,
+                $subtotal,
+                $discount,
+                0.0,
+                $grandTotal,
+                $paid,
+                $balance,
+                $status,
+                SaleInvoiceFile::importNotes($resolved),
+                Auth::id(),
+                $items,
+                1,
+                'cash'
+            );
+
+            $this->logActivity('import_sale_invoice', 'purchases', $purchaseId,
+                $invoiceNo . ' from ' . $sourceNo);
+            self::clearDashboardCache($warehouseId);
+            self::clearInvoiceImportSession();
+            $this->flash('success', "Purchase {$invoiceNo} imported from {$sourceNo}.");
+            $this->redirect('?page=purchases&action=detail&id=' . $purchaseId);
+        } catch (Throwable $e) {
+            $this->flash('error', 'Failed: ' . $e->getMessage());
+            $this->redirect('?page=purchases&action=importInvoice');
+        }
+    }
+
+    private function loadInvoiceImportFile(): void {
+        $file = $_FILES['invoice_file'] ?? null;
+        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            $this->flash('error', 'Choose an invoice JSON file.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+        if ((int) ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $this->flash('error', 'Could not upload the file. Try again.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $tmp = (string) ($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            $this->flash('error', 'Could not read the uploaded file.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $size = (int) ($file['size'] ?? 0);
+        if ($size <= 0 || $size > 2 * 1024 * 1024) {
+            $this->flash('error', 'Invoice file must be a JSON file under 2 MB.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $raw = file_get_contents($tmp);
+        if ($raw === false) {
+            $this->flash('error', 'Could not read the uploaded file.');
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        try {
+            SaleInvoiceFile::parse($raw);
+        } catch (RuntimeException $e) {
+            $this->flash('error', $e->getMessage());
+            $this->redirect('?page=purchases&action=importInvoice');
+            return;
+        }
+
+        $_SESSION['invoice_import'] = [
+            'raw'      => $raw,
+            'filename' => (string) ($file['name'] ?? 'invoice.iqbal.json'),
+            'nonce'    => bin2hex(random_bytes(16)),
+        ];
+        $this->redirect('?page=purchases&action=importInvoice');
     }
 
     public function detail(): void {
@@ -288,6 +540,23 @@ class PurchaseController extends BaseController {
         }
 
         $db = Database::getInstance();
+        require_once __DIR__ . '/../services/StockQuantityService.php';
+        $lineStockSnapshots = StockQuantityService::purchaseLineStockSnapshot(
+            $db,
+            $id,
+            (int) $purchase['warehouse_id']
+        );
+        $stockByItemId = [];
+        foreach ($lineStockSnapshots as $snap) {
+            $stockByItemId[(int) $snap['item_id']] = $snap;
+        }
+        foreach ($purchase['items'] as &$lineItem) {
+            $snap = $stockByItemId[(int) ($lineItem['item_id'] ?? 0)] ?? null;
+            $lineItem['stock_qty'] = (int) ($snap['stock_qty'] ?? 0);
+            $lineItem['imei_scanned'] = (int) ($snap['imei_scanned'] ?? 0);
+        }
+        unset($lineItem);
+        $stockMissingFromList = StockQuantityService::purchaseLooksMissingFromStock($lineStockSnapshots);
         $importShipment = $db->fetchOne(
             "SELECT s.id, s.shipment_no, s.received_date, s.status
              FROM shipment_purchases sp
@@ -325,6 +594,15 @@ class PurchaseController extends BaseController {
         $accounts  = self::getAccounts();
         $pageTitle = 'Purchase: ' . $purchase['invoice_no'];
         $page      = 'purchases';
+
+        $linkedReturns = [];
+        if (Auth::can('returns', 'view') || Auth::can('purchases', 'view')) {
+            require_once __DIR__ . '/../models/Return.php';
+            $linkedReturns = (new SaleReturn())->getLinkedToPurchase(
+                $id,
+                (int) ($purchase['warehouse_id'] ?? Auth::warehouseId() ?: 0)
+            );
+        }
 
         ob_start();
         include __DIR__ . '/../views/purchases/view.php';
@@ -426,6 +704,69 @@ class PurchaseController extends BaseController {
             }
             $this->redirect('?page=purchases&action=detail&id=' . $id);
         }
+    }
+
+    /**
+     * Rebuild warehouse stock qty for items on this purchase from documents.
+     * Does not require IMEI scans — arrivals belong on Stock List immediately.
+     */
+    public function repairStock(): void {
+        Auth::authorize('purchases', 'edit');
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=purchases');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=purchases');
+            return;
+        }
+
+        $id = $this->inputInt('id');
+        if ($id <= 0) {
+            $this->flash('error', 'Invalid purchase.');
+            $this->redirect('?page=purchases');
+            return;
+        }
+
+        $purchase = $this->purchaseModel->findHeaderForView($id);
+        if (!$purchase) {
+            $this->flash('error', 'Purchase not found.');
+            $this->redirect('?page=purchases');
+            return;
+        }
+        if ((int) $purchase['warehouse_id'] !== Auth::warehouseId()) {
+            $this->flash('error', 'This purchase belongs to a different warehouse.');
+            $this->redirect('?page=purchases');
+            return;
+        }
+
+        require_once __DIR__ . '/../services/StockQuantityService.php';
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $result = StockQuantityService::rebuildForPurchase($db, $id);
+            $db->commit();
+            $this->logActivity(
+                'repair_purchase_stock',
+                'purchases',
+                $id,
+                'Rebuilt stock for ' . (int) $result['rebuilt'] . ' item(s); '
+                . (int) $result['changed'] . ' changed'
+            );
+            self::clearDashboardCache(Auth::warehouseId());
+            $this->flash(
+                'success',
+                'Stock rebuilt from documents for ' . (int) $result['rebuilt']
+                . ' item(s) (' . (int) $result['changed'] . ' updated). '
+                . 'Quantities now show on Stock List — IMEI scan is separate.'
+            );
+        } catch (Exception $e) {
+            $db->rollback();
+            $this->flash('error', 'Stock rebuild failed: ' . $e->getMessage());
+        }
+
+        $this->redirect('?page=purchases&action=detail&id=' . $id);
     }
 
     public function edit(): void {
@@ -647,6 +988,7 @@ class PurchaseController extends BaseController {
             }
 
             $newItems = $_POST['new_items'] ?? [];
+            Item::ensureSerialKindColumn();
             foreach ($newItems as $row) {
                 $itemId   = (int) ($row['item_id'] ?? 0);
                 $newQty   = max(1, (int) ($row['quantity'] ?? 1));
@@ -656,9 +998,43 @@ class PurchaseController extends BaseController {
                     continue;
                 }
 
+                $itemMeta = $db->fetchOne(
+                    "SELECT id, name, has_imei, COALESCE(serial_kind, 'phone') AS serial_kind FROM items WHERE id = ?",
+                    [$itemId]
+                );
+                if (!$itemMeta) {
+                    throw new Exception('Item not found for new line.');
+                }
+
                 $imeis = [];
                 if (!empty($row['imeis'])) {
-                    $imeis = array_values(array_unique(array_filter(array_map('trim', explode("\n", $row['imeis'])))));
+                    $imeis = array_values(array_unique(array_filter(array_map(
+                        static function ($v) {
+                            return ImeiFormat::normalize((string) $v);
+                        },
+                        preg_split('/[\r\n,;\s]+/', (string) $row['imeis']) ?: []
+                    ))));
+                }
+
+                if (!empty($itemMeta['has_imei']) && !empty($imeis) && count($imeis) !== $newQty) {
+                    throw new Exception(
+                        'Item "' . $itemMeta['name'] . '": entered ' . count($imeis)
+                        . ' IMEI(s) but quantity is ' . $newQty . '.'
+                    );
+                }
+
+                foreach ($imeis as $imei) {
+                    $formatErr = $this->purchaseImeiFormatError($imei, $itemMeta);
+                    if ($formatErr) {
+                        throw new Exception('Item "' . $itemMeta['name'] . '": ' . $formatErr . ' (' . $imei . ')');
+                    }
+                    $exists = $db->fetchOne("SELECT id, purchase_id FROM imei_records WHERE imei = ?", [$imei]);
+                    if ($exists) {
+                        throw new Exception(
+                            'IMEI ' . $imei . ' already exists'
+                            . (!empty($exists['purchase_id']) ? ' on another purchase' : '') . '.'
+                        );
+                    }
                 }
 
                 $db->insert(
@@ -684,17 +1060,11 @@ class PurchaseController extends BaseController {
                 }
 
                 foreach ($imeis as $imei) {
-                    if ($imei === '') {
-                        continue;
-                    }
-                    $exists = $db->fetchOne("SELECT id FROM imei_records WHERE imei = ?", [$imei]);
-                    if (!$exists) {
-                        $db->insert(
-                            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status)
-                             VALUES (?,?,?,?,'in_stock')",
-                            [$imei, $itemId, $warehouseId, $id]
-                        );
-                    }
+                    $db->insert(
+                        "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status)
+                         VALUES (?,?,?,?,'in_stock')",
+                        [$imei, $itemId, $warehouseId, $id]
+                    );
                 }
 
                 $newSubtotal += $newTotal;
@@ -811,54 +1181,79 @@ class PurchaseController extends BaseController {
         if (!$purchaseId || !$itemId || !$imei) {
             echo json_encode(['ok' => false, 'msg' => 'Missing data.']); return;
         }
-        $imei = strtoupper($imei);
+        Item::ensureSerialKindColumn();
+        $imei = ImeiFormat::normalize($imei);
 
         $db = Database::getInstance();
+        $whId = Auth::warehouseId();
+
+        $purchase = $db->fetchOne(
+            "SELECT warehouse_id FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$purchaseId, $whId]
+        );
+        if (!$purchase) {
+            echo json_encode(['ok' => false, 'msg' => 'Purchase not found in this branch.']); return;
+        }
+        $warehouseId = (int) $purchase['warehouse_id'];
 
         $itemRow = $db->fetchOne(
-            "SELECT i.name AS item_name
+            "SELECT i.name AS item_name, COALESCE(i.serial_kind, 'phone') AS serial_kind,
+                    COALESCE(c.name, '') AS category_name, pi.quantity
              FROM purchase_items pi
              JOIN items i ON i.id = pi.item_id
+             LEFT JOIN categories c ON c.id = i.category_id
              WHERE pi.purchase_id = ? AND pi.item_id = ?",
             [$purchaseId, $itemId]
         );
         if (!$itemRow) {
             echo json_encode(['ok' => false, 'msg' => 'Item not in this purchase.']); return;
         }
-        $formatErr = $this->purchaseImeiFormatError($imei, (string) $itemRow['item_name']);
+        $formatErr = $this->purchaseImeiFormatError($imei, $itemRow);
         if ($formatErr !== null) {
             echo json_encode(['ok' => false, 'msg' => $formatErr]); return;
         }
 
-        // Check duplicate globally
-        $existing = $db->fetchOne("SELECT id, item_id, purchase_id FROM imei_records WHERE imei = ?", [$imei]);
-        if ($existing) {
-            if ($existing['purchase_id'] == $purchaseId && $existing['item_id'] == $itemId) {
-                echo json_encode(['ok' => false, 'msg' => 'Already scanned in this purchase.']); return;
-            }
-            echo json_encode(['ok' => false, 'msg' => 'IMEI exists in another record (id=' . $existing['id'] . ').']); return;
+        $qty = (int) $itemRow['quantity'];
+        $already = (int) $db->fetchOne(
+            "SELECT COUNT(*) AS c FROM imei_records WHERE purchase_id=? AND item_id=?",
+            [$purchaseId, $itemId]
+        )['c'];
+        if ($already >= $qty) {
+            echo json_encode(['ok' => false, 'msg' => 'All IMEIs already scanned for this line.']); return;
         }
 
-        // Get warehouse from purchase
-        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
-        $warehouseId = $purchase['warehouse_id'] ?? null;
+        $result = ['ok' => false];
+        $db->beginTransaction();
+        try {
+            $result = $this->imeiModel->attachToPurchase($imei, $itemId, $warehouseId, $purchaseId);
+            if (empty($result['ok'])) {
+                $db->rollback();
+                echo json_encode(['ok' => false, 'msg' => $result['msg'] ?? 'Could not save IMEI.']); return;
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('imeiScanAdd error: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Database error. Please retry.']); return;
+        }
 
-        $db->insert(
-            "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status) VALUES (?,?,?,?,'in_stock')",
-            [$imei, $itemId, $warehouseId, $purchaseId]
-        );
-
-        $scanned = (int)$db->fetchOne(
+        $scanned = (int) $db->fetchOne(
             "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id=? AND item_id=?",
             [$purchaseId, $itemId]
         )['c'];
 
-        $qty = (int)$db->fetchOne(
-            "SELECT quantity FROM purchase_items WHERE purchase_id=? AND item_id=?",
-            [$purchaseId, $itemId]
-        )['quantity'];
+        $msg = !empty($result['restocked'])
+            ? 'Re-stocked (previously ' . ($result['previous_status'] ?? 'sold') . ')'
+            : null;
 
-        echo json_encode(['ok' => true, 'imei' => $imei, 'scanned' => $scanned, 'qty' => $qty]);
+        echo json_encode([
+            'ok'        => true,
+            'imei'      => $imei,
+            'scanned'   => $scanned,
+            'qty'       => $qty,
+            'restocked' => !empty($result['restocked']),
+            'msg'       => $msg,
+        ]);
     }
 
     // AJAX: bulk-save many IMEIs from paste with duplicate validation
@@ -876,17 +1271,25 @@ class PurchaseController extends BaseController {
             echo json_encode(['ok' => false, 'msg' => 'Missing data.']); return;
         }
 
+        Item::ensureSerialKindColumn();
         $db = Database::getInstance();
 
-        $purchase = $db->fetchOne("SELECT warehouse_id FROM purchases WHERE id = ?", [$purchaseId]);
-        if (!$purchase) { echo json_encode(['ok' => false, 'msg' => 'Purchase not found.']); return; }
-        $warehouseId = $purchase['warehouse_id'] ?? null;
+        $whId = Auth::warehouseId();
+        $purchase = $db->fetchOne(
+            "SELECT warehouse_id FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$purchaseId, $whId]
+        );
+        if (!$purchase) { echo json_encode(['ok' => false, 'msg' => 'Purchase not found in this branch.']); return; }
+        $warehouseId = (int) $purchase['warehouse_id'];
 
         $item = $db->fetchOne(
             "SELECT pi.quantity, i.name AS item_name,
+                    COALESCE(i.serial_kind, 'phone') AS serial_kind,
+                    COALESCE(c.name, '') AS category_name,
                     (SELECT COUNT(*) FROM imei_records WHERE purchase_id=? AND item_id=?) AS scanned
              FROM purchase_items pi
              JOIN items i ON i.id = pi.item_id
+             LEFT JOIN categories c ON c.id = i.category_id
              WHERE pi.purchase_id=? AND pi.item_id=?",
             [$purchaseId, $itemId, $purchaseId, $itemId]
         );
@@ -895,7 +1298,7 @@ class PurchaseController extends BaseController {
         $qty       = (int) $item['quantity'];
         $scanned   = (int) $item['scanned'];
         $remaining = max(0, $qty - $scanned);
-        $itemName  = (string) ($item['item_name'] ?? '');
+        $preview   = $this->inputInt('preview', 0) === 1;
 
         // Parse — split on newlines, commas, semicolons, whitespace fences
         $tokens  = preg_split('/[\r\n,;\s]+/', $raw);
@@ -904,9 +1307,9 @@ class PurchaseController extends BaseController {
         $seen    = [];
 
         foreach ($tokens as $tok) {
-            $imei = strtoupper(trim((string) $tok));
+            $imei = ImeiFormat::normalize((string) $tok);
             if ($imei === '') continue;
-            $formatErr = $this->purchaseImeiFormatError($imei, $itemName);
+            $formatErr = $this->purchaseImeiFormatError($imei, $item);
             if ($formatErr !== null) {
                 $skipped[] = ['imei' => $imei, 'reason' => $formatErr];
                 continue;
@@ -926,45 +1329,52 @@ class PurchaseController extends BaseController {
                 'skipped' => $skipped,
                 'scanned' => $scanned,
                 'qty'     => $qty,
+                'preview' => $preview,
                 'msg'     => 'No valid IMEIs to import.',
             ]);
             return;
         }
 
-        // Bulk-fetch existing records for all candidates (single query)
-        $placeholders = implode(',', array_fill(0, count($clean), '?'));
-        $existingRows = $db->fetchAll(
-            "SELECT imei, item_id, purchase_id FROM imei_records WHERE imei IN ($placeholders)",
-            $clean
-        );
-        $existingMap = [];
-        foreach ($existingRows as $row) {
-            $existingMap[$row['imei']] = $row;
+        $savedCount = 0;
+
+        if ($preview) {
+            foreach ($clean as $imei) {
+                if ($remaining <= 0) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Exceeds remaining quantity'];
+                    continue;
+                }
+                $block = $this->imeiModel->attachToPurchaseBlockReason($imei, $itemId, $purchaseId);
+                if ($block !== null) {
+                    $skipped[] = ['imei' => $imei, 'reason' => $block];
+                    continue;
+                }
+                $savedCount++;
+                $remaining--;
+            }
+            echo json_encode([
+                'ok'      => true,
+                'saved'   => $savedCount,
+                'skipped' => $skipped,
+                'scanned' => $scanned,
+                'qty'     => $qty,
+                'preview' => true,
+            ]);
+            return;
         }
 
-        $savedCount = 0;
         $db->beginTransaction();
         try {
             foreach ($clean as $imei) {
-                if (isset($existingMap[$imei])) {
-                    $ex = $existingMap[$imei];
-                    if ((int)$ex['purchase_id'] === $purchaseId && (int)$ex['item_id'] === $itemId) {
-                        $skipped[] = ['imei' => $imei, 'reason' => 'Already scanned in this purchase'];
-                    } else {
-                        $skipped[] = ['imei' => $imei, 'reason' => 'Exists in another record'];
-                    }
-                    continue;
-                }
-
                 if ($remaining <= 0) {
                     $skipped[] = ['imei' => $imei, 'reason' => 'Exceeds remaining quantity'];
                     continue;
                 }
 
-                $db->insert(
-                    "INSERT INTO imei_records (imei, item_id, warehouse_id, purchase_id, status) VALUES (?,?,?,?,'in_stock')",
-                    [$imei, $itemId, $warehouseId, $purchaseId]
-                );
+                $result = $this->imeiModel->attachToPurchase($imei, $itemId, $warehouseId, $purchaseId);
+                if (empty($result['ok'])) {
+                    $skipped[] = ['imei' => $imei, 'reason' => $result['msg'] ?? 'Could not save'];
+                    continue;
+                }
                 $savedCount++;
                 $remaining--;
             }
@@ -992,6 +1402,7 @@ class PurchaseController extends BaseController {
             'skipped' => $skipped,
             'scanned' => $totalScanned,
             'qty'     => $qty,
+            'preview' => false,
         ]);
     }
 
@@ -1057,12 +1468,12 @@ class PurchaseController extends BaseController {
             $seen   = [];
             $imeis  = [];
             foreach ($tokens as $tok) {
-                $imei = strtoupper(trim((string) $tok));
+                $imei = ImeiFormat::normalize((string) $tok);
                 if ($imei === '') {
                     continue;
                 }
-                if (!preg_match('/^\d{15,18}$/', $imei)) {
-                    $skipped[] = ['imei' => $imei, 'reason' => 'Must be 15–18 digits'];
+                if (!ImeiFormat::isPlausible($imei)) {
+                    $skipped[] = ['imei' => $imei, 'reason' => 'Not a phone IMEI or tablet serial'];
                     continue;
                 }
                 if (isset($seen[$imei])) {
@@ -1120,11 +1531,17 @@ class PurchaseController extends BaseController {
         $deletedCount = 0;
         $db->beginTransaction();
         try {
-            $idPlaceholders = implode(',', array_fill(0, count($toDelete), '?'));
-            $deletedCount = $db->execute(
-                "DELETE FROM imei_records WHERE id IN ($idPlaceholders) AND status = 'in_stock'",
-                $toDelete
-            );
+            foreach ($toDelete as $imeiId) {
+                $detach = $this->imeiModel->detachFromPurchase((int) $imeiId, $purchaseId);
+                if (!empty($detach['ok'])) {
+                    $deletedCount++;
+                } else {
+                    $skipped[] = [
+                        'imei'   => (string) ($db->fetchOne("SELECT imei FROM imei_records WHERE id = ?", [(int) $imeiId])['imei'] ?? $imeiId),
+                        'reason' => $detach['msg'] ?? 'Could not remove',
+                    ];
+                }
+            }
             $db->commit();
         } catch (Exception $e) {
             $db->rollback();
@@ -1169,13 +1586,34 @@ class PurchaseController extends BaseController {
         }
 
         $db = Database::getInstance();
+        $whId = Auth::warehouseId();
+        $purchase = $db->fetchOne(
+            "SELECT id FROM purchases WHERE id = ? AND warehouse_id = ?",
+            [$purchaseId, $whId]
+        );
+        if (!$purchase) {
+            echo json_encode(['ok' => false, 'msg' => 'Purchase not found in this branch.']); return;
+        }
+
         $row = $db->fetchOne(
             "SELECT id FROM imei_records WHERE imei=? AND purchase_id=? AND item_id=?",
-            [$imei, $purchaseId, $itemId]
+            [strtoupper($imei), $purchaseId, $itemId]
         );
         if (!$row) { echo json_encode(['ok' => false, 'msg' => 'IMEI not found.']); return; }
 
-        $db->execute("DELETE FROM imei_records WHERE id=?", [$row['id']]);
+        $db->beginTransaction();
+        try {
+            $detach = $this->imeiModel->detachFromPurchase((int) $row['id'], $purchaseId);
+            if (empty($detach['ok'])) {
+                $db->rollback();
+                echo json_encode(['ok' => false, 'msg' => $detach['msg'] ?? 'Could not remove IMEI.']); return;
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollback();
+            error_log('imeiScanDelete error: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Database error. Please retry.']); return;
+        }
 
         $scanned = (int)$db->fetchOne(
             "SELECT COUNT(*) as c FROM imei_records WHERE purchase_id=? AND item_id=?",
@@ -1201,21 +1639,11 @@ class PurchaseController extends BaseController {
         echo json_encode($rows);
     }
 
-    /** @return string|null Error message when IMEI format is invalid for the item type. */
-    private function purchaseImeiFormatError(string $imei, string $itemName): ?string {
-        if (!preg_match('/^\d+$/', $imei)) {
-            return 'IMEI must contain digits only.';
-        }
-        $name = strtolower($itemName);
-        if (strpos($name, 'h40') !== false) {
-            if (!preg_match('/^\d{13}$/', $imei)) {
-                return 'IMEI must be exactly 13 digits for H40.';
-            }
-            return null;
-        }
-        if (!preg_match('/^\d{15,18}$/', $imei)) {
-            return 'IMEI must be 15–18 digits.';
-        }
-        return null;
+    /** @param array<string, mixed> $itemMeta name/item_name, serial_kind, category_name */
+    private function purchaseImeiFormatError(string $imei, array $itemMeta): ?string {
+        Item::ensureSerialKindColumn();
+        $name = (string) ($itemMeta['name'] ?? $itemMeta['item_name'] ?? '');
+        $kind = ImeiFormat::kindFromItem($itemMeta, $name, (string) ($itemMeta['category_name'] ?? ''));
+        return ImeiFormat::error($imei, $kind, $name);
     }
 }

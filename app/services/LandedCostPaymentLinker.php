@@ -35,7 +35,31 @@ class LandedCostPaymentLinker {
      * @param list<int> $chargeIds shipment_item_charges.id values
      */
     public static function linkPartnerBulkPayment(Database $db, int $paymentId, array $chargeIds): int {
+        return self::linkBulkPayment($db, 'shipment_partner', $paymentId, $chargeIds);
+    }
+
+    /**
+     * One settlement payment clearing many freight/packing charge lines (same party + shipment + leg).
+     *
+     * @param list<int> $chargeIds shipment_item_charges.id values
+     */
+    public static function linkFreightBulkPayment(Database $db, string $refType, int $paymentId, array $chargeIds): int {
+        if (!isset(self::REF_TO_COLUMN[$refType]) || $refType === 'shipment_partner') {
+            return 0;
+        }
+        return self::linkBulkPayment($db, $refType, $paymentId, $chargeIds);
+    }
+
+    /**
+     * @param list<int> $chargeIds shipment_item_charges.id values
+     */
+    private static function linkBulkPayment(Database $db, string $refType, int $paymentId, array $chargeIds): int {
         if ($paymentId <= 0 || $chargeIds === []) {
+            return 0;
+        }
+
+        $column = self::REF_TO_COLUMN[$refType] ?? null;
+        if (!$column) {
             return 0;
         }
 
@@ -48,10 +72,10 @@ class LandedCostPaymentLinker {
                 continue;
             }
             $db->execute(
-                'UPDATE shipment_item_charges SET partner_payment_id = ? WHERE id = ? AND partner_payment_id IS NULL',
+                "UPDATE shipment_item_charges SET {$column} = ? WHERE id = ? AND {$column} IS NULL",
                 [$paymentId, $chargeId]
             );
-            ImportPayableAccrualService::markPaidByCharge($db, 'shipment_partner', $chargeId, $paymentId);
+            ImportPayableAccrualService::markPaidByCharge($db, $refType, $chargeId, $paymentId);
             $linked++;
         }
 
@@ -65,7 +89,33 @@ class LandedCostPaymentLinker {
      * @param list<int> $chargeIds shipment_item_charges.id values
      */
     public static function linkExistingPartnerPayment(Database $db, int $paymentId, array $chargeIds): int {
+        return self::linkExistingPayment($db, 'shipment_partner', $paymentId, $chargeIds);
+    }
+
+    /**
+     * Mark open freight/packing accruals paid by an existing payment (no new cash movement).
+     *
+     * @param list<int> $chargeIds shipment_item_charges.id values
+     */
+    public static function linkExistingFreightPayment(Database $db, string $refType, int $paymentId, array $chargeIds): int {
+        if (!isset(self::REF_TO_COLUMN[$refType]) || $refType === 'shipment_partner') {
+            return 0;
+        }
+        return self::linkExistingPayment($db, $refType, $paymentId, $chargeIds);
+    }
+
+    /**
+     * Force-link charge lines to an existing payment (overwrites NULL payment columns).
+     *
+     * @param list<int> $chargeIds shipment_item_charges.id values
+     */
+    public static function linkExistingPayment(Database $db, string $refType, int $paymentId, array $chargeIds): int {
         if ($paymentId <= 0 || $chargeIds === []) {
+            return 0;
+        }
+
+        $column = self::REF_TO_COLUMN[$refType] ?? null;
+        if (!$column) {
             return 0;
         }
 
@@ -78,42 +128,47 @@ class LandedCostPaymentLinker {
                 continue;
             }
             $db->execute(
-                'UPDATE shipment_item_charges SET partner_payment_id = ? WHERE id = ?',
+                "UPDATE shipment_item_charges SET {$column} = ? WHERE id = ?",
                 [$paymentId, $chargeId]
             );
-            ImportPayableAccrualService::markPaidByCharge($db, 'shipment_partner', $chargeId, $paymentId);
+            ImportPayableAccrualService::markPaidByCharge($db, $refType, $chargeId, $paymentId);
             $linked++;
         }
 
         return $linked;
     }
 
-    /** Undo a partner settlement — reopen accruals and clear charge payment links. */
-    public static function reopenPartnerPayment(Database $db, int $paymentId): int {
+    /** Undo a settlement payment — reopen accruals and clear all charge payment links. */
+    public static function reopenPaymentLinks(Database $db, int $paymentId): int {
         if ($paymentId <= 0) {
             return 0;
         }
 
         $rows = $db->fetchAll(
             "SELECT id FROM import_payable_accruals
-             WHERE payment_id = ? AND leg = 'partner' AND status = 'paid'",
+             WHERE payment_id = ? AND status = 'paid'",
             [$paymentId]
         );
-        if ($rows === []) {
-            return 0;
-        }
 
         $db->execute(
             "UPDATE import_payable_accruals
              SET status = 'open', payment_id = NULL
-             WHERE payment_id = ? AND leg = 'partner' AND status = 'paid'",
-            [$paymentId]
-        );
-        $db->execute(
-            'UPDATE shipment_item_charges SET partner_payment_id = NULL WHERE partner_payment_id = ?',
+             WHERE payment_id = ? AND status = 'paid'",
             [$paymentId]
         );
 
+        foreach (self::REF_TO_COLUMN as $column) {
+            $db->execute(
+                "UPDATE shipment_item_charges SET {$column} = NULL WHERE {$column} = ?",
+                [$paymentId]
+            );
+        }
+
         return count($rows);
+    }
+
+    /** @deprecated Use reopenPaymentLinks — partner-only reopen left for older call sites. */
+    public static function reopenPartnerPayment(Database $db, int $paymentId): int {
+        return self::reopenPaymentLinks($db, $paymentId);
     }
 }

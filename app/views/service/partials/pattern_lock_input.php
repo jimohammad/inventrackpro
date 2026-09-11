@@ -42,7 +42,7 @@ $gridId = 'svcPatternLockGrid';
 }
 .svc-pattern-clear {
     padding: 6px 14px;
-    border-radius: 8px;
+    border-radius: 0;
     border: 1.5px solid var(--border-color);
     background: var(--bg-main);
     color: var(--text-muted);

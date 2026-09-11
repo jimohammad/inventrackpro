@@ -64,7 +64,7 @@ if ($action === 'invoiceDetail') {
     if (!$party) { echo json_encode(['error' => 'Invalid token']); exit; }
     
     $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-    $saleSql = "SELECT invoice_no, date, subtotal, discount, grand_total, paid_amount, balance, status
+    $saleSql = "SELECT invoice_no, date, created_at, subtotal, discount, grand_total, paid_amount, balance, status
          FROM sales WHERE invoice_no = ? AND party_id = ? AND status != 'cancelled'";
     $saleParams = [$refNo, $party['id']];
     if ($statementWhId > 0) {
@@ -86,6 +86,9 @@ if ($action === 'invoiceDetail') {
     }
     $items = $db->fetchAll($itemsSql, $itemsParams);
     
+    if (is_array($sale)) {
+        $sale['when_label'] = Party::statementWhenLabel($sale['date'] ?? '', $sale['created_at'] ?? '');
+    }
     echo json_encode(['invoice' => $sale, 'items' => $items]);
     exit;
 }
@@ -103,7 +106,8 @@ $openingBal    = $partyModel->computeStatementOpeningBalance((int) $party['id'],
 $closingBal    = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
 
 $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
-$companyName = $company['value'] ?? 'Iqbal Sons';
+$companyName = $company['value'] ?? (defined('PDF_COMPANY_NAME') ? PDF_COMPANY_NAME : 'Iqbal Electronics Co. LLC');
+$companyName = trim((string) preg_replace('/\bW\.?L\.?L\.?\b/i', 'LLC', $companyName));
 $companyPhone = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_phone'");
 $companyPhoneVal = $companyPhone['value'] ?? '';
 ?>
@@ -130,6 +134,8 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
         .stmt-table { width:100%; background:#fff; border-radius:10px; border:1px solid #e2e8f0; overflow:hidden; }
         .stmt-table th { font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; color:#64748b; background:#f8fafc; padding:10px 12px; border-bottom:2px solid #e2e8f0; }
         .stmt-table td { padding:8px 12px; border-bottom:1px solid #f1f5f9; font-size:0.82rem; }
+        .stmt-when { white-space:nowrap; }
+        .stmt-when .stmt-time { display:block; font-size:0.72rem; color:#64748b; font-weight:500; margin-top:1px; }
         .stmt-table tr:last-child td { border-bottom:none; }
         .stmt-table tr:hover td { background:#f8faff; }
         .stmt-table tfoot td { background:#f0f4ff; font-weight:700; border-top:2px solid #c7d2fe; }
@@ -220,9 +226,15 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
                     'Discount' => 'badge-discount',
                 ];
                 $badgeClass = $badgeMap[$t['type']] ?? 'badge-payment';
+                $when = Party::statementWhenParts($t['date'] ?? '', $t['created_at'] ?? '');
             ?>
             <tr>
-                <td><?= date('d M Y', strtotime($t['date'])) ?></td>
+                <td class="stmt-when">
+                    <?= htmlspecialchars($when['day']) ?>
+                    <?php if ($when['time'] !== ''): ?>
+                    <span class="stmt-time"><?= htmlspecialchars($when['time']) ?></span>
+                    <?php endif; ?>
+                </td>
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;">
                     <?php if ($t['type'] === 'Sale'): ?>
@@ -298,7 +310,7 @@ function showInvoice(refNo) {
         .then(function(data) {
             if (data.error) { document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + escapeHtml(data.error) + '</div>'; return; }
             var inv = data.invoice, items = data.items;
-            document.getElementById('invDate').textContent = inv.date;
+            document.getElementById('invDate').textContent = inv.when_label || inv.date;
             var c = '<?= APP_CURRENCY ?>';
             var html = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
             html += '<thead><tr style="background:#f8fafc;"><th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#64748b;">ITEM</th><th style="padding:8px 10px;text-align:center;font-size:0.7rem;color:#64748b;">QTY</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">PRICE</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">TOTAL</th></tr></thead><tbody>';

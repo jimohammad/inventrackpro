@@ -206,6 +206,13 @@ final class NetWorthService {
 
                AND po.paid_kwd > 0
 
+               AND NOT EXISTS (
+                    SELECT 1 FROM payments py
+                    WHERE py.status = 'active'
+                      AND py.ref_type = 'purchase_order'
+                      AND py.ref_id = po.id
+               )
+
              GROUP BY po.party_id
 
              HAVING amount > 0.001
@@ -426,7 +433,8 @@ final class NetWorthService {
 
         $stockVal    = self::stockValueAsOf($db, $asOfDate, $warehouseId);
 
-        // Cash is net of PO payments out; prepaid supplier advances are a separate current asset.
+        // Cash is net of PO payments out. Posted advances sit on the supplier ledger (receivable debit).
+        // This prepaid line is only legacy paid_kwd with no matching PAY row.
         $totalAssets      = round($totalCash + $partySplit['total_receivable'] + $stockVal + $totalPoAdv, 3);
         $totalLiabilities = $partySplit['total_payable'];
 

@@ -276,7 +276,6 @@ $currencyColors = [
 
 .por-po-main { min-width: 0; }
 .por-po-no {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.88rem;
     font-weight: 800;
     color: var(--por-indigo);
@@ -561,7 +560,8 @@ $currencyColors = [
             $items        = $itemsByPo[$poId] ?? [];
             $st           = $statusConfig[$o['status']] ?? $statusConfig['draft'];
             $otherCharges = (float) ($o['other_charges_kwd'] ?? 0);
-            $kwdTotal     = (float) $o['subtotal_kwd'] + $otherCharges;
+            $adjustment   = (float) ($o['adjustment_kwd'] ?? 0);
+            $kwdTotal     = (float) $o['subtotal_kwd'] + $otherCharges + $adjustment;
             $cur          = (string) ($o['currency'] ?? 'KWD');
         ?>
         <div class="por-po" data-po-id="<?= $poId ?>">
@@ -647,6 +647,12 @@ $currencyColors = [
                                 <td class="num"><?= number_format($otherCharges, DECIMAL_PLACES) ?> KWD</td>
                             </tr>
                             <?php endif; ?>
+                            <?php if (abs($adjustment) > 0.0005): ?>
+                            <tr>
+                                <td colspan="6">Bank Adjustment</td>
+                                <td class="num"><?= ($adjustment > 0 ? '+' : '') . number_format($adjustment, DECIMAL_PLACES) ?> KWD</td>
+                            </tr>
+                            <?php endif; ?>
                             <tr>
                                 <td colspan="4"><strong>PO Total</strong></td>
                                 <td class="num" style="color:#f59e0b;"><strong><?= number_format((float) $o['subtotal_foreign'], DECIMAL_PLACES) ?> <?= htmlspecialchars($cur) ?></strong></td>
@@ -679,7 +685,7 @@ $currencyColors = [
         </thead>
         <tbody>
         <?php foreach ($orders as $o):
-            $kwdTotal = (float) $o['subtotal_kwd'] + (float) ($o['other_charges_kwd'] ?? 0);
+            $kwdTotal = (float) $o['subtotal_kwd'] + (float) ($o['other_charges_kwd'] ?? 0) + (float) ($o['adjustment_kwd'] ?? 0);
             $st = $statusConfig[$o['status']]['label'] ?? ucfirst((string) $o['status']);
         ?>
         <tr>

@@ -1,40 +1,51 @@
 <style>
 .sale-wrap{display:flex;flex-direction:column;gap:0;}
-.sale-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#1e3a5f,#2d5a9e);border-radius:12px 12px 0 0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
+.sale-topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#1e3a5f;border-radius:0;position:sticky;top:58px;z-index:90;box-shadow:0 2px 10px rgba(30,58,95,0.3);}
 .sale-topbar .sale-title{font-size:1.05rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;}
-.warehouse-select{padding:5px 12px;border-radius:8px;font-size:0.8rem;font-weight:600;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;cursor:pointer;outline:none;}
-.warehouse-select option{background:#1e3a5f;color:#fff;}
-.customer-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
+.warehouse-select{padding:5px 12px;border-radius:8px;font-size:0.8rem;font-weight:600;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;cursor:default;outline:none;}
+.customer-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:none;}
 .customer-search-wrap{position:relative;flex:1;min-width:220px;max-width:340px;}
 .customer-search-wrap .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6366f1;font-size:1rem;z-index:2;pointer-events:none;}
 .customer-search-wrap input{width:100%;padding:11px 12px 11px 40px;min-height:44px;border:2px solid #e0e7ff;border-radius:10px;font-size:1.02rem;font-weight:600;color:#1a1a2e;background:#fafbff;transition:all 0.2s;outline:none;}
 .customer-search-wrap input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .customer-search-wrap input.selected{border-color:#10b981;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);color:#065f46;font-weight:600;}
-.inv-meta{display:flex;gap:20px;align-items:center;margin-left:auto;flex-wrap:wrap;}
-.inv-meta-item{display:flex;flex-direction:column;align-items:flex-end;font-size:0.75rem;}
-.inv-meta-item .label{color:#94a3b8;margin-bottom:2px;font-weight:500;}
-.inv-meta-item .value{font-weight:700;color:#1e293b;font-size:0.85rem;}
-.inv-meta-item input,.inv-meta-item select{border:1.5px solid #e5e7eb;border-radius:7px;padding:4px 8px;font-size:0.8rem;color:#1e293b;background:#f8fafc;outline:none;font-weight:600;}
-.inv-meta-item input:focus,.inv-meta-item select:focus{border-color:#6366f1;}
+.invoice-search-wrap{max-width:280px;}
+.invoice-search-wrap .search-icon{color:#b45309;}
+.ret-meta{display:flex;gap:10px;align-items:stretch;margin-left:auto;flex-wrap:wrap;justify-content:flex-end;}
+.sale-chip{height:44px;min-height:44px;min-width:148px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 14px;border-radius:10px;background:#f8fafc;border:1.5px solid #e2e8f0;text-align:right;}
+.sale-chip-label{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;line-height:1.1;}
+.sale-chip-value{font-size:0.82rem;font-weight:800;color:#4338ca;letter-spacing:0.03em;line-height:1.25;font-family:ui-monospace,monospace;}
+.sale-chip-date{padding:3px 12px 3px 10px;min-width:150px;}
+.sale-chip-date input[type="date"]{width:100%;border:none;background:transparent;outline:none;padding:0;height:auto;min-height:0;font-size:0.82rem;font-weight:700;color:#334155;color-scheme:light;text-align:right;}
 .items-card{border:1px solid #e5e7eb;border-top:none;background:#fff;overflow:hidden;}
 .items-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(135deg,#f8faff,#f0f4ff);border-bottom:1px solid #e0e7ff;}
 .items-card-header span{font-size:0.8rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:6px;}
-table.items-tbl{width:100%;border-collapse:collapse;font-size:0.83rem;}
-table.items-tbl th{padding:9px 10px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
-table.items-tbl td{border-bottom:1px solid #cbd5e1;padding:5px 6px;vertical-align:middle;}
+table.items-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:0.94rem;}
+table.items-tbl th{padding:10px 12px;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.45px;color:#64748b;background:#f1f5f9;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
+table.items-tbl td{border-bottom:1px solid #e2e8f0;padding:10px 8px;vertical-align:middle;}
 table.items-tbl tbody tr{background:#fff;transition:background 0.1s;}
 table.items-tbl tbody tr:hover{background:#f8faff;}
-table.items-tbl input,table.items-tbl select{border:none;outline:none;background:transparent;width:100%;font-size:0.83rem;color:#1e293b;padding:3px;}
-table.items-tbl input:focus{background:#eff6ff;border-radius:4px;}
 table.items-tbl tfoot tr{background:#f8f9ff;}
-.col-num{width:36px;text-align:center;color:#94a3b8;}
+table.items-tbl tfoot td{font-size:0.94rem;}
+.col-num{width:44px;text-align:center;color:#94a3b8;font-size:0.88rem;font-weight:600;}
 .col-item{min-width:220px;}
-.col-imei{width:50px;text-align:center;}
-.col-qty{width:75px;text-align:center;}
-.col-price{width:120px;text-align:right;}
-.col-amt{width:120px;text-align:right;font-weight:700;}
-.col-act{width:36px;text-align:center;}
-.imei-btn{background:linear-gradient(135deg,#eff6ff,#e0e7ff);border:1px solid #c7d2fe;color:#6366f1;border-radius:7px;padding:4px 8px;font-size:0.75rem;cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-weight:600;transition:all 0.15s;white-space:nowrap;}
+.col-imei{width:56px;text-align:center;}
+.col-qty{width:88px;text-align:center;}
+.col-price{width:132px;text-align:right;}
+.col-amt{width:140px;text-align:right;font-weight:700;}
+.col-act{width:44px;text-align:center;}
+.sale-cell-input{display:block;width:100%;box-sizing:border-box;border:1.5px solid #dbe2f0;border-radius:8px;background:#fafbff;outline:none;font-size:0.92rem;font-weight:600;color:#1e293b;padding:8px 10px;line-height:1.3;transition:border-color 0.15s,box-shadow 0.15s,background 0.15s;}
+.sale-cell-input::placeholder{color:#94a3b8;font-weight:500;font-size:0.85rem;}
+.sale-cell-input:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,0.12);}
+.sale-cell-input.item-search{font-weight:500;padding-left:12px;}
+.sale-cell-input.qty{text-align:center;font-variant-numeric:tabular-nums;}
+.sale-cell-input.unit{text-align:right;color:#b45309;background:#fffbeb;border-color:#fde68a;font-variant-numeric:tabular-nums;}
+.sale-cell-input.unit:focus{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,0.15);background:#fff;}
+.sale-cell-input.total{text-align:right;color:#4338ca;background:#eef2ff;border-color:#c7d2fe;font-weight:700;font-variant-numeric:tabular-nums;}
+.sale-row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;line-height:1;padding:0;transition:color 0.15s,background 0.15s;}
+.sale-row-remove:hover{color:#dc2626;background:#fef2f2;}
+.imei-btn{background:linear-gradient(135deg,#eff6ff,#e0e7ff);border:1.5px solid #c7d2fe;color:#6366f1;border-radius:8px;min-width:38px;height:38px;padding:0 8px;font-size:0.85rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-weight:700;transition:all 0.15s;white-space:nowrap;box-sizing:border-box;vertical-align:middle;}
+.imei-btn i{font-size:1.15rem;line-height:1;}
 .imei-btn:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe);transform:translateY(-1px);box-shadow:0 2px 6px rgba(99,102,241,0.2);}
 .imei-btn.has-imei{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-color:#6ee7b7;color:#059669;}
 
@@ -46,27 +57,31 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .ret-scan-input:focus{border-color:#059669;background:#fff;box-shadow:0 0 0 3px rgba(5,150,105,0.12);}
 .ret-scan-input::placeholder{font-family:inherit;font-size:0.82rem;letter-spacing:normal;color:#94a3b8;}
 @media (max-width: 640px){.ret-scan-wrap{min-width:0;max-width:100%;flex:1 1 100%;}}
-.add-row-strip{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;cursor:pointer;border-top:2px dashed #c7d2fe;color:#94a3b8;font-size:0.82rem;font-weight:600;transition:all 0.15s;background:#fff;}
-.add-row-strip:hover{background:#f5f7ff;color:#6366f1;border-top-color:#6366f1;}
-.add-row-strip .plus-c{width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.12);display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;color:#6366f1;flex-shrink:0;}
-.sale-bottom{display:flex;gap:0;border:1px solid #e5e7eb;border-top:none;background:#fff;border-radius:0 0 12px 12px;overflow:hidden;flex-wrap:wrap;}
-.sale-bottom-left{flex:1;min-width:260px;padding:16px 20px;border-right:1px solid #f1f5f9;}
-.sale-totals{min-width:300px;padding:16px 20px;background:linear-gradient(135deg,#f8faff,#f5f7ff);}
-.totals-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e8edf5;font-size:0.85rem;color:#64748b;}
-.totals-row:last-child{border-bottom:none;}
-.totals-row.grand{font-size:1.05rem;font-weight:800;color:#1e293b;border-top:2px solid #c7d2fe;padding-top:10px;margin-top:4px;border-bottom:none;}
-.totals-row.grand span:last-child{color:#6366f1;}
+.sale-bottom{display:flex;justify-content:flex-end;border:1px solid #e5e7eb;border-top:none;background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%);padding:12px 20px 14px;}
+.sale-totals{width:min(100%,340px);margin-left:auto;}
+.gt-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px 18px 12px 16px;background:linear-gradient(135deg,#064e3b 0%,#047857 55%,#059669 100%);border-radius:12px;box-shadow:0 6px 18px rgba(5,150,105,0.22),inset 0 1px 0 rgba(255,255,255,0.14);position:relative;overflow:hidden;transition:box-shadow 0.2s ease;}
+.gt-card::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:#6ee7b7;}
+.gt-card.has-amount{box-shadow:0 8px 22px rgba(5,150,105,0.32),inset 0 1px 0 rgba(255,255,255,0.16);}
+.gt-meta{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding-left:8px;min-width:0;text-align:left;}
+.gt-label{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.7);line-height:1.2;}
+.gt-qty{font-size:0.78rem;font-weight:600;color:#a7f3d0;letter-spacing:0.01em;}
+.gt-amount{display:flex;align-items:baseline;justify-content:flex-end;gap:8px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.gt-currency{font-size:0.78rem;font-weight:700;color:#6ee7b7;letter-spacing:0.04em;}
+#returnTotal{font-size:1.5rem;font-weight:800;color:#fff;letter-spacing:-0.03em;line-height:1;}
 .save-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px;background:#fff;border:1px solid #e5e7eb;border-top:2px solid #e0e7ff;border-radius:0 0 12px 12px;position:sticky;bottom:0;z-index:90;box-shadow:0 -4px 12px rgba(0,0,0,0.06);margin-top:-1px;}
-.btn-cancel-sale{padding:8px 20px;border-radius:8px;font-size:0.88rem;border:1.5px solid #e5e7eb;color:#64748b;background:#fff;cursor:pointer;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;}
-.btn-save-sale{padding:8px 28px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
+.save-actions{display:flex;align-items:center;gap:10px;width:min(100%,340px);}
+@media(max-width:700px){.sale-bottom{padding:10px 12px 12px;}.sale-totals,.save-actions{width:100%;}.gt-card{width:100%;}#returnTotal{font-size:1.28rem;}.ret-meta{margin-left:0;width:100%;}.sale-chip{flex:1;}.invoice-search-wrap{max-width:100%;flex:1 1 100%;}}
+.btn-cancel-sale{padding:8px 20px;border-radius:8px;font-size:0.88rem;border:1.5px solid #e5e7eb;color:#64748b;background:#fff;cursor:pointer;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
+.btn-save-sale{flex:1;padding:8px 12px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,0.4);transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:6px;}
 .btn-save-sale:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(59,130,246,0.5);}
-.btn-print-sale{padding:8px 22px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#059669,#047857);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(5,150,105,0.35);transition:all 0.15s;display:flex;align-items:center;gap:6px;}
+.btn-print-sale{flex:1;padding:8px 12px;border-radius:8px;font-size:0.9rem;font-weight:700;background:linear-gradient(135deg,#059669,#047857);border:none;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(5,150,105,0.35);transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:6px;}
 .btn-print-sale:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(5,150,105,0.45);}
 .autocomplete-box{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:300px;overflow-y:auto;margin-top:4px;}
-.autocomplete-box.item-dropdown{position:fixed;margin-top:0;min-width:380px;width:auto;right:auto;}
+.autocomplete-box.item-dropdown{position:fixed;margin-top:0;min-width:380px;width:auto;right:auto;max-width:90vw;z-index:10050;}
 .autocomplete-item{padding:9px 14px;cursor:pointer;font-size:0.83rem;border-bottom:1px solid #f8fafc;color:#1e293b;transition:background 0.1s;}
 .autocomplete-item:last-child{border-bottom:none;}
 .autocomplete-item:hover{background:#f8faff;}
+.autocomplete-item.active,.autocomplete-item.active:hover{background:#eff6ff;box-shadow:inset 3px 0 0 #6366f1;outline:none;}
 /* IMEI Modal */
 .imei-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
 .imei-modal-overlay.show{display:flex;}
@@ -74,19 +89,18 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
 .imei-modal-title{font-size:1rem;font-weight:700;margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-start;}
 .imei-modal-title .close-x{background:none;border:none;font-size:1.4rem;color:#94a3b8;cursor:pointer;line-height:1;padding:0;}
 .imei-input-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
-.imei-input-row input{flex:1;border:2px solid #e0e7ff;border-radius:8px;padding:9px 12px;font-size:0.9rem;color:#1e293b;font-family:'JetBrains Mono',monospace;letter-spacing:1px;outline:none;}
+.imei-input-row input{flex:1;border:2px solid #e0e7ff;border-radius:8px;padding:9px 12px;font-size:0.9rem;color:#1e293b;letter-spacing:1px;outline:none;}
 .imei-input-row input:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,0.1);}
 .imei-confirm-btn{background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;border-radius:8px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 .imei-msg{font-size:0.78rem;padding:4px 8px;border-radius:6px;margin:4px 0 8px;min-height:24px;}
 .imei-msg.ok{background:#d1fae5;color:#065f46;}
 .imei-msg.err{background:#fee2e2;color:#991b1b;}
-.imei-tag{display:inline-flex;align-items:center;gap:5px;background:#eff6ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 10px;margin:3px;font-size:0.78rem;color:#3730a3;font-family:'JetBrains Mono',monospace;}
+.imei-tag{display:inline-flex;align-items:center;gap:5px;background:#eff6ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 10px;margin:3px;font-size:0.78rem;color:#3730a3;}
 .imei-tag .remove{cursor:pointer;color:#94a3b8;}
 .imei-tag .remove:hover{color:#ef4444;}
 .imei-modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
 .btn-close-modal{background:#f1f5f9;border:1.5px solid #e2e8f0;color:#64748b;padding:7px 18px;border-radius:8px;cursor:pointer;font-weight:500;}
 .btn-save-modal{background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;padding:7px 22px;border-radius:8px;font-weight:700;cursor:pointer;}
-/* Load from invoice box */
 
 </style>
 
@@ -120,25 +134,32 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
         <?php endif; ?>
     </div>
 
-    <!-- ② CUSTOMER + META -->
+    <!-- ② SUPPLIER + INVOICE + META -->
     <div class="customer-bar">
-        <div class="customer-search-wrap">
+        <div class="customer-search-wrap" id="retPartySearchWrap">
             <i class="bi bi-person-circle search-icon"></i>
-            <input type="text" id="retPartySearch" placeholder="Search supplier..." autocomplete="off">
+            <input type="text" id="retPartySearch" placeholder="Search supplier or customer..." autocomplete="off">
             <div class="autocomplete-box" id="retPartyDrop" style="display:none;"></div>
             <input type="hidden" name="party_id" id="retPartyId" required>
             <input type="hidden" name="ref_id" id="refIdInput">
         </div>
         <div id="retPartyBalBadge" style="display:none;padding:6px 14px;border-radius:8px;font-size:0.82rem;font-weight:700;white-space:nowrap;"></div>
 
-        <div class="customer-search-wrap" style="min-width:200px;max-width:280px;">
-            <i class="bi bi-receipt search-icon" style="color:#b45309;"></i>
+        <div class="customer-search-wrap invoice-search-wrap" id="retInvoiceSearchWrap">
+            <i class="bi bi-receipt search-icon"></i>
             <input type="text" id="invoiceSearch" placeholder="Link purchase invoice (required)..." autocomplete="off" required>
             <div class="autocomplete-box" id="invoiceDrop" style="display:none;"></div>
         </div>
-        <div class="customer-search-wrap" style="max-width:220px;margin-left:auto;">
-            <i class="bi bi-calendar3 search-icon" style="color:#f59e0b;"></i>
-            <input type="date" name="date" value="<?= date('Y-m-d') ?>" style="padding-left:36px;">
+
+        <div class="ret-meta">
+            <div class="sale-chip" title="Next return number — assigned on save">
+                <span class="sale-chip-label">Return No</span>
+                <span class="sale-chip-value"><?= htmlspecialchars($nextReturnNo ?? '') ?></span>
+            </div>
+            <div class="sale-chip sale-chip-date">
+                <label class="sale-chip-label" for="retDateInput">Date</label>
+                <input type="date" name="date" id="retDateInput" value="<?= date('Y-m-d') ?>">
+            </div>
         </div>
     </div>
 
@@ -185,22 +206,20 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
                 </tfoot>
             </table>
         </div>
-        <div class="add-row-strip" onclick="addReturnRow()">
-            <span class="plus-c">+</span> Add Item Row
-        </div>
     </div>
 
     <!-- ④ BOTTOM -->
     <div class="sale-bottom">
-        <div class="sale-bottom-left" style="display:flex;align-items:center;">
-            <p class="mb-0" style="color:#94a3b8;font-size:0.82rem;font-style:italic;">
-                <i class="bi bi-info-circle me-1"></i> Stock is removed from the branch and returned to the supplier. Link a purchase invoice first.
-            </p>
-        </div>
         <div class="sale-totals">
-            <div class="totals-row grand">
-                <span>Return Total</span>
-                <span id="returnTotal">0.000</span>
+            <div class="gt-card" id="refundCard">
+                <div class="gt-meta">
+                    <span class="gt-label">Return Total</span>
+                    <span class="gt-qty" id="gtQtyHint">0 pcs</span>
+                </div>
+                <div class="gt-amount">
+                    <span class="gt-currency"><?= defined('APP_CURRENCY') ? APP_CURRENCY : 'KWD' ?></span>
+                    <span id="returnTotal">0.000</span>
+                </div>
             </div>
         </div>
     </div>
@@ -208,12 +227,14 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
     <!-- ⑤ SAVE BAR -->
     <div class="save-bar">
         <a href="?page=returns" class="btn-cancel-sale">Cancel</a>
-        <button type="submit" class="btn-save-sale" onclick="document.getElementById('retPrintMode').value='0'">
-            <i class="bi bi-check-lg"></i> Save Purchase Return
-        </button>
-        <button type="submit" class="btn-print-sale" onclick="document.getElementById('retPrintMode').value='1'">
-            <i class="bi bi-printer"></i> Print & Save
-        </button>
+        <div class="save-actions">
+            <button type="submit" class="btn-save-sale" onclick="document.getElementById('retPrintMode').value='0'">
+                <i class="bi bi-check-lg"></i> Save Return
+            </button>
+            <button type="submit" class="btn-print-sale" onclick="document.getElementById('retPrintMode').value='1'">
+                <i class="bi bi-printer"></i> Save &amp; Print
+            </button>
+        </div>
     </div>
 
 </div>
@@ -234,7 +255,7 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
             <span id="retImeiCount" style="font-size:0.8rem;"></span>
         </div>
         <div class="imei-input-row">
-            <input type="text" id="retImeiScanInput" placeholder="Scan or type IMEI (15-18 digits)..." maxlength="18"
+            <input type="text" id="retImeiScanInput" placeholder="Scan or type IMEI / tablet serial..." maxlength="20"
                    onkeydown="if(event.key==='Enter'){event.preventDefault();confirmRetImei();}">
             <button type="button" class="imei-confirm-btn" onclick="confirmRetImei()">
                 <i class="bi bi-check-lg"></i>
@@ -278,7 +299,7 @@ function restorePurchaseReturnDraft() {
     retImeiData = {};
     returnRowCount = 0;
 
-    const dateEl = document.querySelector('input[name="date"]');
+    const dateEl = document.getElementById('retDateInput') || document.querySelector('input[name="date"]');
     if (dateEl && purchaseReturnDraft.date) {
         dateEl.value = purchaseReturnDraft.date;
     }
@@ -288,6 +309,7 @@ function restorePurchaseReturnDraft() {
         const inv = document.getElementById('invoiceSearch');
         if (inv) {
             inv.value = purchaseReturnDraft.ref_invoice || '';
+            inv.classList.add('selected');
             inv.style.borderColor = '#10b981';
             inv.style.background = '#f0fdf4';
         }
@@ -341,9 +363,9 @@ function addReturnRow(item = null) {
     const tr = document.createElement('tr');
     tr.id = rid; tr.dataset.rowId = rid;
     tr.innerHTML = `
-        <td class="col-num" style="text-align:center;color:#cbd5e1;">${returnRowCount}</td>
+        <td class="col-num">${returnRowCount}</td>
         <td class="col-item" style="position:relative;">
-            <input type="text" class="ret-item-search" placeholder="Search item..." autocomplete="off"
+            <input type="text" class="sale-cell-input item-search ret-item-search" placeholder="Search item by name or SKU…" autocomplete="off"
                    id="rSearch_${rid}" value="${item ? item.item_name : ''}" oninput="searchReturnItem(this,'${rid}')">
             <input type="hidden" name="items[${returnRowCount}][item_id]" id="rItemId_${rid}" value="${item ? item.item_id : ''}">
             <div class="autocomplete-box item-dropdown" id="rDrop_${rid}" style="display:none;"></div>
@@ -355,19 +377,19 @@ function addReturnRow(item = null) {
             </button>
         </td>
         <td class="col-qty">
-            <input type="number" name="items[${returnRowCount}][quantity]" id="rQty_${rid}"
-                   value="${item ? item.quantity : 1}" min="1" style="text-align:center;" oninput="calcReturnRow('${rid}')">
+            <input type="number" class="sale-cell-input qty" name="items[${returnRowCount}][quantity]" id="rQty_${rid}"
+                   value="${item ? item.quantity : 1}" min="1" oninput="calcReturnRow('${rid}')">
         </td>
         <td class="col-price">
-            <input type="number" name="items[${returnRowCount}][unit_price]" id="rPrice_${rid}"
-                   step="0.001" placeholder="0.000" style="text-align:right;"
+            <input type="number" class="sale-cell-input unit" name="items[${returnRowCount}][unit_price]" id="rPrice_${rid}"
+                   step="0.001" placeholder="0.000"
                    value="${item ? item.unit_price : ''}" oninput="calcReturnRow('${rid}')">
         </td>
-        <td class="col-amt" id="rAmt_${rid}" style="text-align:right;padding-right:8px;color:#6366f1;">0.000</td>
+        <td class="col-amt">
+            <span class="sale-cell-input total" id="rAmt_${rid}">0.000</span>
+        </td>
         <td class="col-act">
-            <button type="button" onclick="removeReturnRow('${rid}')"
-                style="background:none;border:none;color:#c7d2fe;cursor:pointer;font-size:1.1rem;"
-                onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#c7d2fe'">×</button>
+            <button type="button" class="sale-row-remove" onclick="removeReturnRow('${rid}')" title="Remove row" aria-label="Remove row">×</button>
         </td>
     `;
     document.getElementById('returnItemsBody').appendChild(tr);
@@ -400,6 +422,10 @@ function calcReturnTotal() {
     document.getElementById('retSubFoot').textContent   = total.toFixed(3);
     document.getElementById('retQtyFoot').textContent   = totalQty;
     document.getElementById('retQtyBadge').textContent  = totalQty + ' item' + (totalQty !== 1 ? 's' : '');
+    const gtQty = document.getElementById('gtQtyHint');
+    if (gtQty) gtQty.textContent = totalQty + ' pc' + (totalQty !== 1 ? 's' : '');
+    const gtCard = document.getElementById('refundCard');
+    if (gtCard) gtCard.classList.toggle('has-amount', total > 0.0005);
 }
 
 // ── ITEM SEARCH ──
@@ -407,10 +433,22 @@ const returnItemStore = {};
 let retSearchTimers = {};
 
 function positionDropdown(input, drop) {
+    if (!input || !drop) return;
+    if (drop.parentNode !== document.body) {
+        document.body.appendChild(drop);
+    }
     const rect = input.getBoundingClientRect();
-    drop.style.top = (rect.bottom + 4) + 'px';
-    drop.style.left = rect.left + 'px';
-    drop.style.minWidth = Math.max(380, rect.width) + 'px';
+    const minW = Math.max(380, rect.width);
+    const maxH = 300;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const openUp = spaceBelow < Math.min(maxH, 160) && spaceAbove > spaceBelow;
+    drop.style.minWidth = minW + 'px';
+    drop.style.maxHeight = Math.min(maxH, openUp ? spaceAbove : Math.max(spaceBelow, 120)) + 'px';
+    drop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - minW - 8)) + 'px';
+    drop.style.top = openUp
+        ? Math.max(8, rect.top - Math.min(maxH, spaceAbove) - 4) + 'px'
+        : (rect.bottom + 4) + 'px';
 }
 
 function searchReturnItem(input, rid) {
@@ -444,9 +482,12 @@ function searchReturnItem(input, rid) {
 }
 
 function getRetImeiRule(row) {
-    var name = (window.retRowItemNameMap && window.retRowItemNameMap[row]) || '';
-    if (name.indexOf('h40') !== -1) return { min: 13, max: 13, label: '13' };
-    return { min: 15, max: 18, label: '15-18' };
+    return IqbalImei.rule(
+        (window.retRowSerialKindMap && window.retRowSerialKindMap[row]) || '',
+        (window.retRowItemNameMap && window.retRowItemNameMap[row]) || '',
+        '',
+        { phoneMin: 15, phoneMax: 18 }
+    );
 }
 
 function selectReturnItem(rid, item) {
@@ -455,7 +496,9 @@ function selectReturnItem(rid, item) {
     document.getElementById('rPrice_'  + rid).value = parseFloat(item.sale_price).toFixed(3);
     document.getElementById('rDrop_'   + rid).style.display = 'none';
     if (!window.retRowItemNameMap) window.retRowItemNameMap = {};
+    if (!window.retRowSerialKindMap) window.retRowSerialKindMap = {};
     window.retRowItemNameMap[rid] = (item.name || '').toLowerCase();
+    window.retRowSerialKindMap[rid] = item.serial_kind || 'phone';
     // Reset any highlight from quick-scan unknown IMEI
     const searchEl = document.getElementById('rSearch_' + rid);
     searchEl.style.borderColor = '';
@@ -474,11 +517,21 @@ function selectReturnItem(rid, item) {
 }
 
 document.addEventListener('click', e => {
-    if (!e.target.closest('.col-item')) document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
-    if (!e.target.closest('.customer-search-wrap')) document.getElementById('retPartyDrop').style.display = 'none';
+    if (!e.target.closest('.col-item') && !e.target.closest('.autocomplete-box.item-dropdown')) {
+        document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
+    }
+    if (!e.target.closest('#retPartySearchWrap')) {
+        const partyDrop = document.getElementById('retPartyDrop');
+        if (partyDrop) partyDrop.style.display = 'none';
+    }
 });
 window.addEventListener('scroll', () => {
-    document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => d.style.display = 'none');
+    document.querySelectorAll('.autocomplete-box.item-dropdown').forEach(d => {
+        if (d.style.display === 'none') return;
+        const rid = (d.id || '').replace('rDrop_', '');
+        const searchEl = document.getElementById('rSearch_' + rid);
+        if (searchEl) positionDropdown(searchEl, d);
+    });
 }, true);
 
 // ── CUSTOMER SEARCH ──
@@ -493,7 +546,7 @@ document.getElementById('retPartySearch').addEventListener('input', function() {
     const drop = document.getElementById('retPartyDrop');
     if (q.length < 1) { drop.style.display = 'none'; return; }
     retPartyTimer = setTimeout(() => {
-        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}&type=supplier`)
+        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}&type=purchase`)
             .then(r => r.json())
             .then(parties => {
                 if (!parties.length) { drop.style.display = 'none'; return; }
@@ -591,6 +644,7 @@ function searchInvoice(q) {
                         if (invEl) {
                             const strong = this.querySelector('strong');
                             invEl.value = strong ? strong.textContent : '';
+                            invEl.classList.add('selected');
                             invEl.style.borderColor = '#10b981';
                             invEl.style.background  = '#f0fdf4';
                         }
@@ -634,11 +688,11 @@ function getAllRetImeis(excludeRow) {
 
 function confirmRetImei() {
     const input = document.getElementById('retImeiScanInput');
-    const imei  = input.value.trim();
+    const imei  = IqbalImei.normalize(input.value);
     if (!imei) return;
     const rule = getRetImeiRule(retCurrentRow);
-    if (!/^\d+$/.test(imei) || imei.length < rule.min || imei.length > rule.max) {
-        showRetImeiMsg('IMEI must be ' + rule.label + ' digits.', 'err'); input.select(); return;
+    if (!rule.test(imei)) {
+        showRetImeiMsg('Need ' + rule.label + '.', 'err'); input.select(); return;
     }
     if (retActiveImeis.includes(imei)) { showRetImeiMsg('Already added.', 'err'); input.select(); return; }
     if (getAllRetImeis(retCurrentRow).includes(imei)) { showRetImeiMsg('IMEI used in another row.', 'err'); input.select(); return; }
@@ -730,7 +784,7 @@ const quickScanMsg   = document.getElementById('quickScanMsg');
 let quickScanInputTimer = null;
 
 function normalizeReturnScanImei(raw) {
-    return String(raw || '').replace(/[\r\n\t]/g, '').trim();
+    return (window.IqbalImei && IqbalImei.normalize) ? IqbalImei.normalize(raw) : String(raw || '').toUpperCase().replace(/[\r\n\t\s]/g, '');
 }
 
 function findFirstEmptyReturnRow() {
@@ -830,7 +884,7 @@ quickScanInput.addEventListener('keydown', function(e) {
 quickScanInput.addEventListener('input', function() {
     if (quickScanInputTimer) clearTimeout(quickScanInputTimer);
     const val = normalizeReturnScanImei(this.value);
-    if (/^\d{13}$/.test(val) || /^\d{15,18}$/.test(val)) {
+    if (IqbalImei.shouldAutoConfirmAny(val)) {
         quickScanInputTimer = setTimeout(() => processQuickScan(), 120);
     }
 });
@@ -875,7 +929,9 @@ function fillReturnRowFromScan(targetRid, data) {
     itemEl.value = data.item_id;
     priceEl.value = parseFloat(data.unit_price || 0).toFixed(3);
     if (!window.retRowItemNameMap) window.retRowItemNameMap = {};
+    if (!window.retRowSerialKindMap) window.retRowSerialKindMap = {};
     window.retRowItemNameMap[targetRid] = (data.item_name || '').toLowerCase();
+    window.retRowSerialKindMap[targetRid] = data.serial_kind || 'phone';
     retImeiData[targetRid] = [data.imei];
     imeiEl.value = data.imei;
     qtyEl.value = 1;
@@ -905,8 +961,8 @@ function processQuickScan() {
     if (!imei) return;
     if (quickScanBusy) return;
 
-    if (!/^\d{13}$/.test(imei) && !/^\d{15,18}$/.test(imei)) {
-        showScanMsg('✗ IMEI must be 13 digits (H40) or 15–18 digits (phones).', 'err');
+    if (!IqbalImei.isPlausible(imei)) {
+        showScanMsg('✗ Need a phone IMEI (13 or 15–18 digits) or tablet serial (11–20 letters/numbers).', 'err');
         quickScanInput.value = '';
         quickScanInput.focus();
         return;
@@ -1010,6 +1066,7 @@ function applyPurchaseReturnPrefill() {
     const inv = document.getElementById('invoiceSearch');
     if (inv) {
         inv.value = p.invoice_no;
+        inv.classList.add('selected');
         inv.style.borderColor = '#10b981';
         inv.style.background = '#f0fdf4';
     }

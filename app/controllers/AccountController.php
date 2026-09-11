@@ -6,17 +6,16 @@ require_once __DIR__ . '/../services/AccountBalanceService.php';
 class AccountController extends BaseController {
 
     public function index(): void {
-        Auth::authorize('settings', 'view');
+        Auth::authorizeAny(['settings', 'payments', 'rpt_account_stmt'], 'view');
 
         $db       = Database::getInstance();
-        $accounts = $db->fetchAll("SELECT * FROM accounts WHERE is_active = 1 ORDER BY name");
-        foreach ($accounts as &$accRow) {
-            $accRow['normalized_type'] = parent::normalizeAccountType(
-                (string) ($accRow['type'] ?? ''),
-                (string) ($accRow['name'] ?? '')
-            );
-        }
-        unset($accRow);
+        require_once __DIR__ . '/../services/AccountLedgerLoader.php';
+        AccountLedgerLoader::ensureTable($db);
+        AccountLedgerLoader::seedIfEmpty($db);
+        AccountLedgerLoader::retireCashCustodyModule($db);
+        AccountLedgerLoader::renameKnetWarbaAccount($db);
+        self::clearAccountsCache();
+        $accounts = self::getAccounts();
 
         $transferDefaultFromId = defined('TRANSFER_DEFAULT_FROM_ACCOUNT_ID')
             ? (int) TRANSFER_DEFAULT_FROM_ACCOUNT_ID : 0;
@@ -76,6 +75,28 @@ class AccountController extends BaseController {
             }
         }
 
+        $editingAdjustment = null;
+        $editTxnType = strtolower(trim($this->input('edit_txn', '', 'get')));
+        $editTxnId   = $this->inputInt('txn_id', 0, 'get');
+        if ($editTxnType === 'adjustment' && $editTxnId > 0) {
+            $adjReturn = $selectedAccountId > 0 ? '&account_id=' . $selectedAccountId : '';
+            if (!Auth::isAdmin()) {
+                $this->flash('error', 'Admin access required to edit transactions.');
+                $this->redirect('?page=accounts' . $adjReturn);
+            }
+            $editingAdjustment = $db->fetchOne(
+                "SELECT aba.*, a.name as account_name
+                 FROM account_balance_adjustments aba
+                 JOIN accounts a ON a.id = aba.account_id
+                 WHERE aba.id = ?",
+                [$editTxnId]
+            );
+            if (!$editingAdjustment) {
+                $this->flash('error', 'Adjustment not found.');
+                $this->redirect('?page=accounts' . $adjReturn);
+            }
+        }
+
         if ($selectedAccountId) {
             $selectedAccount = $db->fetchOne("SELECT * FROM accounts WHERE id = ?", [$selectedAccountId]);
             if ($selectedAccount) {
@@ -87,7 +108,8 @@ class AccountController extends BaseController {
                             CASE WHEN p.payment_type = 'out' THEN -p.amount ELSE p.amount END as amount,
                             CONCAT(UPPER(p.ref_type), ' / ', UPPER(p.payment_type)) as note,
                             COALESCE(pa.name, '—') as party,
-                            NULL as invoice_ref
+                            NULL as invoice_ref,
+                            p.ref_type as pay_ref_type
                      FROM payments p
                      LEFT JOIN parties pa ON pa.id = p.party_id
                      WHERE p.account_id = ? AND {$payLedgerWhere}
@@ -101,7 +123,8 @@ class AccountController extends BaseController {
                     "SELECT 'expense' as txn_type, e.id, e.expense_no as ref_no,
                             e.date, e.amount, e.description as note,
                             COALESCE(ec.name, '—') as party,
-                            NULL as invoice_ref
+                            NULL as invoice_ref,
+                            NULL as pay_ref_type
                      FROM expenses e
                      LEFT JOIN expense_categories ec ON ec.id = e.category_id
                      WHERE e.account_id = ?
@@ -117,7 +140,8 @@ class AccountController extends BaseController {
                             CASE WHEN t.from_account_id = ? THEN -t.amount ELSE t.amount END as amount,
                             t.notes as note,
                             CASE WHEN t.from_account_id = ? THEN ta.name ELSE fa.name END as party,
-                            NULL as invoice_ref
+                            NULL as invoice_ref,
+                            NULL as pay_ref_type
                      FROM account_transfers t
                      JOIN accounts fa ON fa.id = t.from_account_id
                      JOIN accounts ta ON ta.id = t.to_account_id
@@ -135,7 +159,8 @@ class AccountController extends BaseController {
                             -po.paid_kwd as amount,
                             CONCAT(po.currency, ' @ ', po.exchange_rate) as note,
                             p.name as party,
-                            NULL as invoice_ref
+                            NULL as invoice_ref,
+                            NULL as pay_ref_type
                      FROM purchase_orders po
                      JOIN parties p ON p.id = po.party_id
                      WHERE po.account_id = ? AND {$poLedgerWhere}
@@ -151,7 +176,8 @@ class AccountController extends BaseController {
                             CASE WHEN aba.direction = 'add' THEN aba.amount ELSE -aba.amount END as amount,
                             TRIM(CONCAT(UPPER(aba.direction), CASE WHEN aba.reason IS NOT NULL AND aba.reason != '' THEN CONCAT(' — ', aba.reason) ELSE '' END)) as note,
                             'Manual adjustment' as party,
-                            NULL as invoice_ref
+                            NULL as invoice_ref,
+                            NULL as pay_ref_type
                      FROM account_balance_adjustments aba
                      WHERE aba.account_id = ?
                      ORDER BY aba.date DESC, aba.id DESC
@@ -259,7 +285,7 @@ class AccountController extends BaseController {
                 . ' (out ' . number_format($ledger['payments_out'], 3) . ')'
                 . ', PO unlinked -' . number_format($ledger['po_unlinked_out'], 3);
             if (!empty($voided)) {
-                $msg .= ' | voided duplicates: ' . implode('; ', array_slice($voided, 0, 3));
+                $msg .= ' | cleanup: ' . implode('; ', array_slice($voided, 0, 3));
             }
             $this->flash('success', $msg);
         } catch (Exception $e) {
@@ -293,14 +319,42 @@ class AccountController extends BaseController {
         $opening = round($this->inputFloat('opening_balance'), DECIMAL_PLACES);
 
         $db = Database::getInstance();
-        $db->insert(
-            "INSERT INTO accounts (name, type, gl_code, opening_balance, current_balance)
-             VALUES (?,?,?,?,?)",
-            [$name, $type, $gl, $opening, $opening]
-        );
-
-        $this->flash('success', 'Account created.');
+        try {
+            $this->insertAccountRow($db, $name, $type, $gl, $opening);
+            self::clearAccountsCache();
+            $this->flash('success', 'Account created.');
+        } catch (Throwable $e) {
+            error_log('[ERP] Account store: ' . $e->getMessage());
+            $this->flash('error', 'Could not create account. Please check server logs or database migrations.');
+        }
         $this->redirect('?page=accounts');
+    }
+
+    /**
+     * Insert one account row; tries simpler SQL if optional columns are missing on older DBs.
+     */
+    private function insertAccountRow(Database $db, string $name, string $type, ?string $gl, float $opening): void {
+        $attempts = [
+            ['INSERT INTO accounts (name, type, gl_code, opening_balance, current_balance, is_active) VALUES (?,?,?,?,?,1)', [$name, $type, $gl, $opening, $opening]],
+            ['INSERT INTO accounts (name, type, gl_code, opening_balance, current_balance) VALUES (?,?,?,?,?)', [$name, $type, $gl, $opening, $opening]],
+            ['INSERT INTO accounts (name, type, opening_balance, current_balance, is_active) VALUES (?,?,?,?,1)', [$name, $type, $opening, $opening]],
+            ['INSERT INTO accounts (name, type, opening_balance, current_balance) VALUES (?,?,?,?)', [$name, $type, $opening, $opening]],
+            ['INSERT INTO accounts (name, type, current_balance, is_active) VALUES (?,?,?,1)', [$name, $type, $opening]],
+            ['INSERT INTO accounts (name, type, current_balance) VALUES (?,?,?)', [$name, $type, $opening]],
+        ];
+
+        foreach ($attempts as [$sql, $params]) {
+            try {
+                $db->insert($sql, $params);
+                return;
+            } catch (PDOException $e) {
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1054) {
+                    throw $e;
+                }
+            }
+        }
+
+        throw new RuntimeException('accounts table schema mismatch');
     }
 
     public function transfer(): void {
@@ -495,6 +549,133 @@ class AccountController extends BaseController {
         $this->redirect('?page=accounts' . $redirectSuffix);
     }
 
+    /**
+     * Admin-only: edit a manual balance adjustment (account, direction, amount, date, reason).
+     * Reverses the old posting on current_balance, then applies the new one.
+     */
+    public function updateAdjustment(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=accounts');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=accounts');
+            return;
+        }
+
+        $id              = $this->inputInt('id');
+        $accountId       = $this->inputInt('account_id');
+        $amount          = $this->inputFloat('amount');
+        $type            = $this->input('adjust_type');
+        $reason          = trim($this->input('reason'));
+        $adjDateRaw      = trim($this->input('adj_date'));
+        $returnAccountId = $this->inputInt('return_account_id');
+
+        $redirectSuffix = $returnAccountId > 0
+            ? '&account_id=' . $returnAccountId
+            : ($accountId > 0 ? '&account_id=' . $accountId : '');
+
+        if ($id <= 0 || $accountId <= 0 || $amount <= 0 || ($type !== 'add' && $type !== 'subtract')) {
+            $this->flash('error', 'Invalid adjustment details.');
+            $this->redirect('?page=accounts' . $redirectSuffix);
+            return;
+        }
+
+        $adjDate    = preg_match('/^\d{4}-\d{2}-\d{2}$/', $adjDateRaw) ? $adjDateRaw : date('Y-m-d');
+        $reasonTrim = $reason !== '' ? $reason : null;
+
+        $db = Database::getInstance();
+        $db->beginTransaction();
+        try {
+            $old = $db->fetchOne("SELECT * FROM account_balance_adjustments WHERE id = ? FOR UPDATE", [$id]);
+            if (!$old) {
+                throw new Exception('Adjustment not found.');
+            }
+
+            $accIds = array_values(array_unique(array_filter([
+                (int) $old['account_id'],
+                $accountId,
+            ])));
+            sort($accIds, SORT_NUMERIC);
+            foreach ($accIds as $aid) {
+                $locked = $db->fetchOne("SELECT id FROM accounts WHERE id = ? FOR UPDATE", [$aid]);
+                if (!$locked) {
+                    throw new Exception('Account not found.');
+                }
+            }
+
+            $oldAmt = round((float) $old['amount'], DECIMAL_PLACES);
+            $newAmt = round($amount, DECIMAL_PLACES);
+            $oldDir = (string) $old['direction'];
+            $oldAcc = (int) $old['account_id'];
+            $same   = $oldAcc === $accountId && $oldDir === $type && $oldAmt === $newAmt;
+
+            if ($same) {
+                $db->execute(
+                    "UPDATE account_balance_adjustments SET date = ?, reason = ? WHERE id = ?",
+                    [$adjDate, $reasonTrim, $id]
+                );
+                $db->commit();
+                $this->logActivity(
+                    'edit_account_adjustment',
+                    'account_balance_adjustments',
+                    $id,
+                    "Updated date/reason for ADJ-" . str_pad((string) $id, 6, '0', STR_PAD_LEFT)
+                );
+                $this->flash('success', 'Adjustment updated.');
+                $this->redirect('?page=accounts' . $redirectSuffix);
+                return;
+            }
+
+            if ($oldDir === 'add') {
+                $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$oldAmt, $oldAcc]);
+            } else {
+                $db->execute("UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?", [$oldAmt, $oldAcc]);
+            }
+
+            $acc = $db->fetchOne("SELECT id, name, current_balance FROM accounts WHERE id = ?", [$accountId]);
+            if (!$acc) {
+                throw new Exception('Account not found.');
+            }
+            if ($type === 'subtract' && (float) $acc['current_balance'] < $newAmt) {
+                throw new Exception(
+                    "Insufficient balance in {$acc['name']}. Available: " .
+                    number_format((float) $acc['current_balance'], DECIMAL_PLACES)
+                );
+            }
+
+            if ($type === 'add') {
+                $db->execute("UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?", [$newAmt, $accountId]);
+            } else {
+                $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$newAmt, $accountId]);
+            }
+
+            $db->execute(
+                "UPDATE account_balance_adjustments SET account_id = ?, direction = ?, amount = ?, reason = ?, date = ? WHERE id = ?",
+                [$accountId, $type, $newAmt, $reasonTrim, $adjDate, $id]
+            );
+
+            $db->commit();
+            $this->logActivity(
+                'edit_account_adjustment',
+                'account_balance_adjustments',
+                $id,
+                "Updated ADJ-" . str_pad((string) $id, 6, '0', STR_PAD_LEFT)
+                . " ({$oldDir} {$oldAmt} → {$type} {$newAmt})"
+            );
+            $this->flash('success', 'Adjustment updated.');
+        } catch (Exception $e) {
+            $db->rollback();
+            $msg = $e->getMessage();
+            error_log('updateAdjustment failed for id ' . $id . ': ' . $msg);
+            $known = ($msg === 'Adjustment not found.' || $msg === 'Account not found.' || str_starts_with($msg, 'Insufficient'));
+            $this->flash('error', $known ? $msg : 'Update failed. Please try again or check server logs.');
+        }
+
+        $this->redirect('?page=accounts' . $redirectSuffix);
+    }
+
     public function adjust(): void {
         Auth::authorize('settings', 'edit');
         if (!$this->isPost()) { $this->redirect('?page=accounts'); return; }
@@ -651,6 +832,7 @@ class AccountController extends BaseController {
             return;
         }
 
+        self::clearAccountsCache();
         $this->flash('success', "Account \"{$account['name']}\" deleted.");
         $this->redirect('?page=accounts');
     }

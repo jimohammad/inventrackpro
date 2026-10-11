@@ -51,6 +51,7 @@
 - **Retail customer price floor:** Catalog `items.sale_price` is wholesale. For `parties.customer_kind = retail`, New Sale / Edit / Add Item auto-fill **wholesale + 0.500** if the list is under 40 KWD, or **+ 1.000** if 40 KWD or more. Staff may increase; every sale path (create / edit / add-item / API) **rejects** a unit price or discount below that floor. `sales_price_override` and admin cannot sell a retail customer at the wholesale list. Wholesale customers keep the existing salesman clamp / admin free-price rules.
 - **Stock List quantity does not depend on IMEI scans.** PO convert / purchase receive updates `stock.quantity` immediately; scanning IMEIs only fills serial registry for sell/warranty.
 - **Customer pricelist PDF (one A4):** Stock List → **Pricelist PDF**. Same look as public `/pricelist` (category pills, item cards, NFC, In Stock / Low Stock, KWD price). Active items with `quantity > 0` on the session branch. No qty numbers, IMEI, or cost. Built for ~25 SKUs on one page. `StockController::pricelistPrint`, view `inventory/pricelist_print.php`.
+- **Available stock PDF (one A4, no prices):** Stock List → **Stock list PDF**. Same catalog as Pricelist PDF (in-stock active items, session branch, In Stock / Low Stock, NFC) but **no sale prices**, qty numbers, IMEI, or cost. `StockController::stocklistPrint`, same view with `$showPrices = false`.
 - **New purchase:** serials are not required at invoice create. Save the purchase, then scan from the invoice **Scan IMEIs** page. The create form no longer has a “Scan IMEIs later” checkbox.
 - Stock List IMEI column compares `stock.quantity` vs count of `imei_records` with status `in_stock`/`returned`:
   - **pending** = Qty > IMEIs (units on hand not yet scanned). Stock List links pending to IMEI Audit.
@@ -61,7 +62,8 @@
 - **Physically missing pending units (admin):** IMEI Audit shows **Write off N missing units** when book qty is higher than scanned IMEIs. That inserts `stock_adjustments.quantity_delta` (negative) and rebuilds `stock.quantity` to the IMEI count. Rebuild stock then keeps the write-off. Use a **purchase return** instead if the supplier still owes the phones. Do **not** Register Missing IMEIs for units that are not on the shelf.
 - **Physical count write-off (admin, any SKU):** Stock List — click the qty (e.g. buds 124, counted 110) → enter shelf count → write off the difference. Same `stock_adjustments` table. IMEI-tracked items cannot go below scanned serials (use IMEI Audit first if extra IMEIs are still marked available). Accessories (`has_imei = 0`) can be written off to any count from 0 up to book qty. **TEMP off:** `StockQuantityService::TEMP_ALLOW_STOCK_WRITEOFF = false` hides the UI and blocks POST even for admin. Set `true` to restore.
 - Admin **Rebuild stock** on purchase detail recomputes `stock.quantity` from opening + purchases − sales ± returns ± transfers ± `stock_adjustments` (`StockQuantityService`).
-- Reports: `app/views/reports/customer_imei.php`, `app/controllers/IMEIController.php`.
+- Reports: `app/views/reports/customer_imei.php`, `ReportController::customerImei`. Lists serials from `sale_item_imei`, and also `imei_records.sale_id` when the line link is missing. An invoice number still shows that customer's serials when the item or date filter would hide them, and says why. A saved invoice with no scanned serials stays off the list and the page says to scan them.
+- Invoice IMEI barcodes (one sales invoice, Code 128 per IMEI and IMEI 2): `ReportController::invoiceImeiBarcode` / `invoiceImeiBarcodePrint`, views `reports/invoice_imei_barcode.php`, `reports/invoice_imei_barcode_print.php`. Same permission as Customer IMEI (`rpt_customer_imei`). Session branch only. Choose a customer, then that customer's invoice, or type an invoice number. Open from Reports, from each invoice on the Customer IMEI report, or **IMEI barcodes** on the sale. A saved invoice with no scanned serials stays empty and links back so staff can scan. Print is 4 barcodes per row. Numeric IMEIs use Code 128 set C.
 - Customer Return IMEI (party sale returns + serials): `ReportController::returnImei` / `returnImeiPrint` / `returnImeiExport`, views `reports/return_imei.php`, `reports/return_imei_print.php` (permission `rpt_return_imei`). Branch-scoped; cancelled returns excluded; shows original sale invoice when linkable.
 - Bank KYC (period sales + IMEI A4 PDF): `ReportController::bankKyc` / `bankKycPrint`, views `reports/bank_kyc.php`, `reports/bank_kyc_print.php` (permission `rpt_bank_kyc`).
 - Bank PO invoices & TT (uploaded supplier invoices and transfer copies): `ReportController::bankPoDocs` / `bankPoDocsPrint`, views `reports/bank_po_docs.php`, `reports/bank_po_docs_print.php` (same permission `rpt_bank_kyc`).
@@ -78,8 +80,10 @@
 | PO convert stock | `app/services/PurchaseOrderConverter.php` |
 | Stock qty rebuild / missing-unit write-off | `app/services/StockQuantityService.php` (`stock_adjustments`) |
 | Customer pricelist PDF (1× A4) | `StockController::pricelistPrint`, `app/views/inventory/pricelist_print.php` |
+| Available stock PDF (1× A4, no prices) | `StockController::stocklistPrint`, same view (`$showPrices = false`) |
 | Returns | `app/models/Return.php` |
 | IMEI | `app/models/IMEI.php`, `IMEIController.php`, `app/helpers/ImeiFormat.php` |
+| Invoice IMEI barcodes | `ReportController::invoiceImeiBarcodePrint`, `app/helpers/Code128.php` |
 | Shop-to-shop stock | `IntershopTransfer`, `IntershopController`, `api/v1/intershop.php` |
 | Sales invoice JSON → purchase | `SaleInvoiceFile`, `SalesController::exportInvoice`, `PurchaseController::importInvoice` |
 | Sale validation | `app/services/SaleValidator.php` (`normalizeItems`, `normalizeHeaderDiscount`) |
@@ -94,6 +98,7 @@
 
 - Manual: cashier opens a saved invoice → Request edit → admin **Sale edit requests** Approve → cashier sees Edit for 30 min → Save closes unlock; a second Save without a new request is blocked.
 - Manual: Stock List → **Pricelist PDF** → one-page A4 PDF downloads; items match in-stock active SKUs on this branch; PDF has names + sale prices only (no qty/IMEI).
+- Manual: Stock List → **Stock list PDF** → one-page A4 PDF downloads; same items as Pricelist PDF; names + In/Low stock only (no prices, qty, or IMEI).
 - Manual: New sale item search — Stock shows a number; arrows/Enter pick a line.
 - Manual: convert PO / receive purchase → item qty on Stock List before any IMEI scan.
 - Manual: try to save a new sale for an IMEI-tracked item **without** scanning → blocked (client + server). Same for edit add-line and add-item.
@@ -103,6 +108,7 @@
 - Manual: cashier New Sale — posting `discount` or `items[][discount]` equal to the line total must not save below catalog (clamped to 0 extra off catalog; invoice total stays ≥ catalog × qty).
 - Manual: mark a customer **Retail** → New Sale auto-fills list + 0.500 if under 40 KWD, or + 1.000 if 40 KWD+; salesman can raise it; Save at wholesale list is blocked. Wholesale customers still use the list.
 - Public PWA: open `https://iqbal.app/imei` on phone → Install / Add to Home Screen; lookups still hit the network (not stale cache).
+- Manual: Reports → **Invoice IMEI Barcodes** → enter one sales invoice → each IMEI shows a barcode; Print opens a sheet a scanner can read. Sale page **IMEI barcodes** opens the same sheet. An invoice with no scans says so.
 - Manual: Stock List pending (qty > IMEIs, units physically missing) → IMEI Audit → **Write off N missing units** → qty equals IMEI count; Rebuild stock on a purchase of that item does not restore the written-off qty.
 - Manual: Stock List admin click qty (buds 124, counted 110) → physical count 110 → qty 110; rebuild does not restore the 14.
 - SQL: no negative qty (add audit if needed):
@@ -136,6 +142,18 @@ SELECT COUNT(*) FROM items WHERE imei_optional = 1; -- expect 0 after migration
 ```
 
 ## History
+
+- **2026-10-04 (fix):** Edit Return, when a line or serial is removed, puts the IMEI back on the sale stored in `return_src_sale` when the return has no single invoice (`ref_id` empty). Previously those serials were marked sold with a blank sale. Void already used that note; edit now uses the same restore.
+
+- **2026-09-30:** Invoice IMEI Barcodes form: choose a customer, then that customer's invoice numbers. Typing an invoice number still works.
+
+- **2026-09-30:** Invoice IMEI Barcodes — one customer sales invoice prints a Code 128 barcode for each IMEI (and IMEI 2). Reports, Customer IMEI (per invoice), and the sale page. Branch-scoped. Same permission as Customer IMEI.
+
+- **2026-09-29:** Edit Return: click the green IMEI count under a line to open a popup of that line’s serial numbers. Close it with the same badge, the backdrop, the close button, or Escape. A new scan updates the popup when it is open for that line.
+
+- **2026-09-22:** Customer IMEI Report was blank for an invoice that exists (example SAL-000774) when the item filter, date, or a missing `sale_item_imei` row excluded it. Typing the invoice number now lists that customer's serials and names the filter that hid them. Invoices with no scanned IMEIs stay empty and link to the sale so staff can scan.
+
+- **2026-09-12:** Stock List **Stock list PDF** — same one-page A4 catalog as Pricelist PDF, without sale prices. For sharing available items when prices should stay hidden.
 
 - **2026-09-08:** Stock List **Pricelist PDF** — one A4 page matching public `/pricelist` (cards, NFC, In/Low stock badges). Wholesale `sale_price` for in-stock active items (session warehouse). PDF uses `html2pdf()`. For sharing with customers; not an invoice.
 

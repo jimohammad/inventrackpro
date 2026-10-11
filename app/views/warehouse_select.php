@@ -37,7 +37,7 @@
             gap: 1rem;
             background: #1e293b;
             border: 2px solid #334155;
-            border-radius: 14px;
+            border-radius: 0;
             padding: 1.25rem 1.5rem;
             cursor: pointer;
             transition: all 0.18s;
@@ -54,7 +54,7 @@
         .wh-icon {
             width: 52px; height: 52px;
             background: rgba(99,102,241,0.15);
-            border-radius: 12px;
+            border-radius: 0;
             display: flex; align-items: center; justify-content: center;
             font-size: 1.4rem;
             color: #818cf8;
@@ -80,7 +80,7 @@
             margin-bottom: 1.5rem;
             padding: 0.75rem 1rem;
             background: #1e293b;
-            border-radius: 10px;
+            border-radius: 0;
             border: 1px solid #334155;
         }
         .wh-user-name { color: #e2e8f0; font-weight: 600; }

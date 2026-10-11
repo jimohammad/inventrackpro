@@ -130,6 +130,21 @@ abstract class BaseController {
     }
 
     /**
+     * Bank used when paying suppliers/freight. Prefers NBK so Pay does not land on the first ledger row.
+     *
+     * @param list<array<string,mixed>> $accounts
+     */
+    public static function preferredPayAccountId(array $accounts): int {
+        foreach ($accounts as $acc) {
+            $name = trim((string) ($acc['name'] ?? ''));
+            if (stripos($name, 'NBK') !== false || stripos($name, 'National Bank') !== false) {
+                return (int) ($acc['id'] ?? 0);
+            }
+        }
+        return 0;
+    }
+
+    /**
      * Normalize legacy/special account names into behavior types used by payment flows.
      */
     protected static function normalizeAccountType(string $type, string $name = ''): string {

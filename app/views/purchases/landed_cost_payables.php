@@ -2,6 +2,7 @@
 $groups  = $groups ?? [];
 $accounts = $accounts ?? [];
 $canPay  = $canPay ?? false;
+$defaultPayAccountId = BaseController::preferredPayAccountId($accounts);
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -185,7 +186,7 @@ $canPay  = $canPay ?? false;
                 <select name="account_id" class="form-select form-select-sm" required>
                     <option value="">— Select bank —</option>
                     <?php foreach ($accounts as $acc): ?>
-                    <option value="<?= (int) $acc['id'] ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
+                    <option value="<?= (int) $acc['id'] ?>"<?= (int) $acc['id'] === $defaultPayAccountId ? ' selected' : '' ?>><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

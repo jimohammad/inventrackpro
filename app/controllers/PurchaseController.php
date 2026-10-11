@@ -159,6 +159,12 @@ class PurchaseController extends BaseController {
             $this->redirect('?page=purchases&action=create');
             return;
         }
+        $postedParty = $db->fetchOne('SELECT type FROM parties WHERE id = ?', [$partyId]);
+        if (Auth::isSalesFloor() && Auth::isSupplierHiddenType((string) ($postedParty['type'] ?? ''))) {
+            $this->flash('error', 'Please select a customer.');
+            $this->redirect('?page=purchases&action=create');
+            return;
+        }
 
         // Serials are optional on new purchase; scan from the invoice after save.
         // If any IMEIs were entered on this form, still reject bad format.

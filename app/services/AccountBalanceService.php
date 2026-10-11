@@ -170,6 +170,142 @@ class AccountBalanceService {
     }
 
     /**
+     * Ledger balance for every active account, same formula as computeFromLedgerAsOf().
+     * One grouped pass per table instead of repeating those queries per account.
+     *
+     * @return array<int, float> account id => balance
+     */
+    public static function activeAccountBalancesAsOf(
+        Database $db,
+        string $asOfDate = '',
+        ?int $warehouseId = null
+    ): array {
+        $accounts = $db->fetchAll(
+            'SELECT id, opening_balance FROM accounts WHERE is_active = 1'
+        );
+        $parts = [];
+        foreach ($accounts as $acc) {
+            $parts[(int) $acc['id']] = [
+                'opening'         => (float) ($acc['opening_balance'] ?? 0),
+                'payments_net'    => 0.0,
+                'expenses'        => 0.0,
+                'transfers_net'   => 0.0,
+                'adjustments_net' => 0.0,
+                'po_unlinked_out' => 0.0,
+            ];
+        }
+        if ($parts === []) {
+            return [];
+        }
+
+        [$payWhSql, $payWhParams] = self::warehouseSqlAndParams($warehouseId, 'p.warehouse_id');
+        [$payDateSql, $payDateParams] = self::dateLimitSql($asOfDate, 'p.date');
+        $payRows = $db->fetchAll(
+            "SELECT p.account_id,
+                    COALESCE(SUM(CASE WHEN p.payment_type = 'out' THEN -p.amount ELSE p.amount END), 0) AS net
+             FROM payments p
+             WHERE " . self::sqlPaymentLedgerWhere('p') . "
+               {$payWhSql}{$payDateSql}
+             GROUP BY p.account_id",
+            array_merge($payWhParams, $payDateParams)
+        );
+        foreach ($payRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['payments_net'] = (float) ($row['net'] ?? 0);
+            }
+        }
+
+        [$expWhSql, $expWhParams] = self::warehouseSqlAndParams($warehouseId, 'warehouse_id');
+        [$expDateSql, $expDateParams] = self::dateLimitSql($asOfDate, 'date');
+        $expRows = $db->fetchAll(
+            "SELECT account_id, COALESCE(SUM(amount), 0) AS total
+             FROM expenses
+             WHERE 1=1{$expWhSql}{$expDateSql}
+             GROUP BY account_id",
+            array_merge($expWhParams, $expDateParams)
+        );
+        foreach ($expRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['expenses'] = (float) ($row['total'] ?? 0);
+            }
+        }
+
+        [$trDateSql, $trDateParams] = self::dateLimitSql($asOfDate, 'date');
+        $trInRows = $db->fetchAll(
+            "SELECT to_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
+             FROM account_transfers
+             WHERE 1=1{$trDateSql}
+             GROUP BY to_account_id",
+            $trDateParams
+        );
+        $trOutRows = $db->fetchAll(
+            "SELECT from_account_id AS account_id, COALESCE(SUM(amount), 0) AS total
+             FROM account_transfers
+             WHERE 1=1{$trDateSql}
+             GROUP BY from_account_id",
+            $trDateParams
+        );
+        foreach ($trInRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['transfers_net'] += (float) ($row['total'] ?? 0);
+            }
+        }
+        foreach ($trOutRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['transfers_net'] -= (float) ($row['total'] ?? 0);
+            }
+        }
+
+        [$adjDateSql, $adjDateParams] = self::dateLimitSql($asOfDate, 'date');
+        $adjRows = $db->fetchAll(
+            "SELECT account_id,
+                    COALESCE(SUM(CASE WHEN direction = 'add' THEN amount WHEN direction = 'subtract' THEN -amount END), 0) AS net
+             FROM account_balance_adjustments
+             WHERE 1=1{$adjDateSql}
+             GROUP BY account_id",
+            $adjDateParams
+        );
+        foreach ($adjRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['adjustments_net'] = (float) ($row['net'] ?? 0);
+            }
+        }
+
+        [$poWhSql, $poWhParams] = self::warehouseSqlAndParams($warehouseId, 'po.warehouse_id');
+        [$poDateSql, $poDateParams] = self::dateLimitSql($asOfDate, 'po.date');
+        $poRows = $db->fetchAll(
+            "SELECT po.account_id, COALESCE(SUM(po.paid_kwd), 0) AS total
+             FROM purchase_orders po
+             WHERE " . self::sqlUnlinkedPoLedgerWhere() . "
+               {$poWhSql}{$poDateSql}
+             GROUP BY po.account_id",
+            array_merge($poWhParams, $poDateParams)
+        );
+        foreach ($poRows as $row) {
+            $id = (int) ($row['account_id'] ?? 0);
+            if (isset($parts[$id])) {
+                $parts[$id]['po_unlinked_out'] = (float) ($row['total'] ?? 0);
+            }
+        }
+
+        $balances = [];
+        foreach ($parts as $id => $row) {
+            $balances[$id] = round(
+                $row['opening'] + $row['payments_net'] - $row['expenses']
+                + $row['transfers_net'] + $row['adjustments_net'] - $row['po_unlinked_out'],
+                3
+            );
+        }
+
+        return $balances;
+    }
+
+    /**
      * Reconciliation rows for all active accounts (same formula as Recalculate).
      *
      * @return list<array<string, mixed>>

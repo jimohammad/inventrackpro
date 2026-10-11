@@ -45,11 +45,12 @@ class DashboardController extends BaseController {
 
         $whId = Auth::warehouseId();
 
-        // Cache key based on user + warehouse + date
-        $cacheKey  = 'dash_' . Auth::id() . '_' . $whId . '_' . date('Ymd_H');
+        // Stable key so a slightly old file can paint the page, then refresh after the response.
+        $cacheKey  = 'dash_' . Auth::id() . '_' . $whId . '_stats';
         $cacheDir  = self::dashboardCacheDir();
         $cacheFile = $cacheDir . '/' . $cacheKey . '.cache';
-        $cacheLife = 1800; // 30 minutes — heavy receivables/payables recompute
+        $cacheLife = 1800; // 30 minutes — heavy receivables recompute
+        $staleLife = 18 * 3600;
 
         // Force refresh with ?refresh=1
         if (isset($_GET['refresh'])) {
@@ -57,8 +58,33 @@ class DashboardController extends BaseController {
         }
 
         $cached = null;
-        if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheLife) {
-            $cached = json_decode(file_get_contents($cacheFile), true);
+        $cacheAge = null;
+        if (is_file($cacheFile)) {
+            $cacheAge = time() - (int) filemtime($cacheFile);
+            $raw = file_get_contents($cacheFile);
+            $cached = is_string($raw) ? json_decode($raw, true) : null;
+        }
+        if (!is_array($cached)) {
+            $legacyFiles = glob($cacheDir . '/dash_' . (int) Auth::id() . '_' . (int) $whId . '_*.cache') ?: [];
+            usort($legacyFiles, static function (string $a, string $b): int {
+                return filemtime($b) <=> filemtime($a);
+            });
+            foreach ($legacyFiles as $legacyFile) {
+                if ($legacyFile === $cacheFile) {
+                    continue;
+                }
+                $age = time() - (int) filemtime($legacyFile);
+                if ($age > $staleLife) {
+                    continue;
+                }
+                $raw = file_get_contents($legacyFile);
+                $decoded = is_string($raw) ? json_decode($raw, true) : null;
+                if (is_array($decoded)) {
+                    $cached = $decoded;
+                    $cacheAge = $age;
+                    break;
+                }
+            }
         }
 
         // Always-fresh data (not cached) — accounts and today's cash need real-time values
@@ -68,20 +94,32 @@ class DashboardController extends BaseController {
         require_once __DIR__ . '/../services/AccountBalanceService.php';
         $whForCash = $whId > 0 ? (int) $whId : null;
         $cashAsOf = date('Y-m-d');
-        foreach ($accounts as &$accRow) {
-            try {
-                $ledger = AccountBalanceService::computeFromLedgerAsOf(
-                    $db,
-                    (int) $accRow['id'],
-                    $cashAsOf,
-                    $whForCash
-                );
-                $accRow['current_balance'] = $ledger['balance'];
-            } catch (Throwable $e) {
-                error_log('[Dashboard] account ledger rebuild failed id=' . (int) $accRow['id'] . ': ' . $e->getMessage());
+        try {
+            $ledgerBalances = AccountBalanceService::activeAccountBalancesAsOf($db, $cashAsOf, $whForCash);
+            foreach ($accounts as &$accRow) {
+                $accId = (int) $accRow['id'];
+                if (array_key_exists($accId, $ledgerBalances)) {
+                    $accRow['current_balance'] = $ledgerBalances[$accId];
+                }
             }
+            unset($accRow);
+        } catch (Throwable $e) {
+            error_log('[Dashboard] account ledger batch failed: ' . $e->getMessage());
+            foreach ($accounts as &$accRow) {
+                try {
+                    $ledger = AccountBalanceService::computeFromLedgerAsOf(
+                        $db,
+                        (int) $accRow['id'],
+                        $cashAsOf,
+                        $whForCash
+                    );
+                    $accRow['current_balance'] = $ledger['balance'];
+                } catch (Throwable $inner) {
+                    error_log('[Dashboard] account ledger rebuild failed id=' . (int) $accRow['id'] . ': ' . $inner->getMessage());
+                }
+            }
+            unset($accRow);
         }
-        unset($accRow);
         $todayCashFresh = $db->fetchOne(
             "SELECT
                 COALESCE(SUM(py.amount),0) as total_received,
@@ -195,121 +233,31 @@ class DashboardController extends BaseController {
             $cached = null;
         }
 
+        $cacheValid = is_array($cached) && !array_diff($expectedKeys, array_keys($cached));
+        $scheduleCacheRefresh = false;
         $usedCache = false;
-        if ($cached && !array_diff($expectedKeys, array_keys($cached))) {
+        if ($cacheValid && $cacheAge !== null && $cacheAge < $cacheLife) {
             foreach ($expectedKeys as $key) {
                 $$key = $cached[$key];
             }
             $usedCache = true;
+        } elseif (
+            $cacheValid
+            && $cacheAge !== null
+            && $cacheAge < $staleLife
+            && function_exists('fastcgi_finish_request')
+        ) {
+            // Paint last good totals now. Refresh the file after the browser has the page.
+            foreach ($expectedKeys as $key) {
+                $$key = $cached[$key];
+            }
+            $usedCache = true;
+            $scheduleCacheRefresh = true;
         } else {
-            // Stock value — filtered by warehouse
-            $stockValue = $db->fetchOne(
-                "SELECT COALESCE(SUM(s.quantity * i.purchase_price), 0) as total,
-                        COALESCE(SUM(s.quantity), 0) as units
-                 FROM stock s
-                 JOIN items i ON i.id = s.item_id
-                 WHERE s.quantity > 0 AND s.warehouse_id = ?",
-                [$whId]
-            );
-
-            // Trade receivables — customers/both only; open-PO cash stripped (not collectible).
-            $partyModel = new Party();
-            $rpRow      = $partyModel->tradeReceivableTotals($whId > 0 ? (int) $whId : null);
-            $pendingReceivables = [
-                'total' => (float) ($rpRow['rec_total'] ?? 0),
-                'count' => (int) ($rpRow['rec_count'] ?? 0),
-                'kind'  => 'trade',
-            ];
-
-            // This month vs last month — sales, purchases, expenses (warehouse scoped)
-            $salesCompare = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
-                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
-                 FROM sales
-                 WHERE status != 'cancelled' AND warehouse_id = ?",
-                [$whId]
-            );
-            $purchasesCompare = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
-                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
-                 FROM purchases
-                 WHERE status != 'cancelled' AND warehouse_id = ?",
-                [$whId]
-            );
-            $expensesCompare = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
-                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
-                 FROM expenses
-                 WHERE warehouse_id = ?",
-                [$whId]
-            );
-            $receiptsCompare = $db->fetchOne(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
-                    COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
-                        AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
-                 FROM payments
-                 WHERE payment_type = 'in'
-                   AND ref_type != 'discount'
-                   AND status = 'active'
-                   AND warehouse_id = ?",
-                [$whId]
-            );
-            $monthCompare = [
-                'this_label' => date('M Y'),
-                'last_label' => date('M Y', strtotime('first day of last month')),
-                'sales' => [
-                    'this_month' => (float)($salesCompare['this_month'] ?? 0),
-                    'last_month' => (float)($salesCompare['last_month'] ?? 0),
-                ],
-                'purchases' => [
-                    'this_month' => (float)($purchasesCompare['this_month'] ?? 0),
-                    'last_month' => (float)($purchasesCompare['last_month'] ?? 0),
-                ],
-                'expenses' => [
-                    'this_month' => (float)($expensesCompare['this_month'] ?? 0),
-                    'last_month' => (float)($expensesCompare['last_month'] ?? 0),
-                ],
-                'receipts' => [
-                    'this_month' => (float)($receiptsCompare['this_month'] ?? 0),
-                    'last_month' => (float)($receiptsCompare['last_month'] ?? 0),
-                ],
-            ];
-
-            // Recent sales — filtered by warehouse
-            $recentSales = $db->fetchAll(
-                "SELECT s.invoice_no, p.name as party_name, s.grand_total
-                 FROM sales s
-                 JOIN parties p ON p.id = s.party_id
-                 WHERE s.warehouse_id = ?
-                 ORDER BY s.id DESC LIMIT 5",
-                [$whId]
-            );
-
-            // Top items this month — filtered by warehouse
-            $topItems = $db->fetchAll(
-                "SELECT i.name, SUM(si.quantity) as qty_sold, SUM(si.total) as revenue
-                 FROM sale_items si
-                 JOIN items i ON i.id = si.item_id
-                 JOIN sales s ON s.id = si.sale_id
-                 WHERE s.date >= DATE_FORMAT(CURDATE(),'%Y-%m-01') AND s.status != 'cancelled' AND s.warehouse_id = ?
-                 GROUP BY si.item_id, i.name
-                 ORDER BY qty_sold DESC LIMIT 5",
-                [$whId]
-            );
-
-            // Cache results (excluding accounts, todayCash, todaySales, pendingPOs — fetched live above)
-            $toCache = compact(
-                'stockValue',
-                'pendingReceivables','monthCompare',
-                'recentSales','topItems'
-            );
+            $toCache = $this->buildDashboardCachePayload($db, $whId);
+            foreach ($expectedKeys as $key) {
+                $$key = $toCache[$key];
+            }
             @file_put_contents($cacheFile, json_encode($toCache), LOCK_EX);
         }
 
@@ -359,14 +307,11 @@ class DashboardController extends BaseController {
         if (Auth::can('employees', 'view')) {
             try {
                 require_once __DIR__ . '/../models/Employee.php';
-                $empModel = new Employee();
-                if (Employee::ensureSchema($db)) {
-                    $empCounts = $empModel->residenceExpiryCounts((int) $whId);
-                    $employeeResidenceDash = [
-                        'expired'  => (int) ($empCounts['expired'] ?? 0),
-                        'due_soon' => (int) ($empCounts['due_soon'] ?? 0),
-                    ];
-                }
+                $empCounts = (new Employee())->residenceExpiryCounts((int) $whId);
+                $employeeResidenceDash = [
+                    'expired'  => (int) ($empCounts['expired'] ?? 0),
+                    'due_soon' => (int) ($empCounts['due_soon'] ?? 0),
+                ];
             } catch (Throwable $e) {
                 $employeeResidenceDash = null;
             }
@@ -392,13 +337,148 @@ class DashboardController extends BaseController {
 
         $pageTitle = 'Dashboard';
         $page      = 'dashboard';
+        $skipBootHide = true;
         include __DIR__ . '/../views/layout.php';
 
+        $cacheMode = 'miss';
+        if ($scheduleCacheRefresh) {
+            $cacheMode = 'stale';
+        } elseif ($usedCache) {
+            $cacheMode = 'hit';
+        }
         self::logPerf('dashboard.index', $startedAt, 300, [
             'user_id' => Auth::id(),
             'warehouse_id' => $whId,
-            'cache' => $usedCache ? 'hit' : 'miss',
+            'cache' => $cacheMode,
         ]);
+
+        if ($scheduleCacheRefresh) {
+            fastcgi_finish_request();
+            try {
+                $toCache = $this->buildDashboardCachePayload($db, $whId);
+                @file_put_contents($cacheFile, json_encode($toCache), LOCK_EX);
+            } catch (Throwable $e) {
+                error_log('[Dashboard] cache refresh: ' . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Heavy dashboard cards (stock, trade receivables, month compare, recent sales, top items).
+     *
+     * @return array{
+     *   stockValue: array<string, mixed>|false,
+     *   pendingReceivables: array{total: float, count: int, kind: string},
+     *   monthCompare: array<string, mixed>,
+     *   recentSales: list<array<string, mixed>>,
+     *   topItems: list<array<string, mixed>>
+     * }
+     */
+    private function buildDashboardCachePayload(Database $db, $whId): array {
+        $stockValue = $db->fetchOne(
+            "SELECT COALESCE(SUM(s.quantity * i.purchase_price), 0) as total,
+                    COALESCE(SUM(s.quantity), 0) as units
+             FROM stock s
+             JOIN items i ON i.id = s.item_id
+             WHERE s.quantity > 0 AND s.warehouse_id = ?",
+            [$whId]
+        );
+
+        $partyModel = new Party();
+        $rpRow      = $partyModel->tradeReceivableTotals($whId > 0 ? (int) $whId : null);
+        $pendingReceivables = [
+            'total' => (float) ($rpRow['rec_total'] ?? 0),
+            'count' => (int) ($rpRow['rec_count'] ?? 0),
+            'kind'  => 'trade',
+        ];
+
+        $salesCompare = $db->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                    AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
+             FROM sales
+             WHERE status != 'cancelled' AND warehouse_id = ?",
+            [$whId]
+        );
+        $purchasesCompare = $db->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS this_month,
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                    AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN grand_total ELSE 0 END), 0) AS last_month
+             FROM purchases
+             WHERE status != 'cancelled' AND warehouse_id = ?",
+            [$whId]
+        );
+        $expensesCompare = $db->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                    AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
+             FROM expenses
+             WHERE warehouse_id = ?",
+            [$whId]
+        );
+        $receiptsCompare = $db->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS this_month,
+                COALESCE(SUM(CASE WHEN date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                    AND date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN amount ELSE 0 END), 0) AS last_month
+             FROM payments
+             WHERE payment_type = 'in'
+               AND ref_type != 'discount'
+               AND status = 'active'
+               AND warehouse_id = ?",
+            [$whId]
+        );
+        $monthCompare = [
+            'this_label' => date('M Y'),
+            'last_label' => date('M Y', strtotime('first day of last month')),
+            'sales' => [
+                'this_month' => (float)($salesCompare['this_month'] ?? 0),
+                'last_month' => (float)($salesCompare['last_month'] ?? 0),
+            ],
+            'purchases' => [
+                'this_month' => (float)($purchasesCompare['this_month'] ?? 0),
+                'last_month' => (float)($purchasesCompare['last_month'] ?? 0),
+            ],
+            'expenses' => [
+                'this_month' => (float)($expensesCompare['this_month'] ?? 0),
+                'last_month' => (float)($expensesCompare['last_month'] ?? 0),
+            ],
+            'receipts' => [
+                'this_month' => (float)($receiptsCompare['this_month'] ?? 0),
+                'last_month' => (float)($receiptsCompare['last_month'] ?? 0),
+            ],
+        ];
+
+        $recentSales = $db->fetchAll(
+            "SELECT s.invoice_no, p.name as party_name, s.grand_total
+             FROM sales s
+             JOIN parties p ON p.id = s.party_id
+             WHERE s.warehouse_id = ?
+             ORDER BY s.id DESC LIMIT 5",
+            [$whId]
+        );
+
+        $topItems = $db->fetchAll(
+            "SELECT i.name, SUM(si.quantity) as qty_sold, SUM(si.total) as revenue
+             FROM sale_items si
+             JOIN items i ON i.id = si.item_id
+             JOIN sales s ON s.id = si.sale_id
+             WHERE s.date >= DATE_FORMAT(CURDATE(),'%Y-%m-01') AND s.status != 'cancelled' AND s.warehouse_id = ?
+             GROUP BY si.item_id, i.name
+             ORDER BY qty_sold DESC LIMIT 5",
+            [$whId]
+        );
+
+        return compact(
+            'stockValue',
+            'pendingReceivables',
+            'monthCompare',
+            'recentSales',
+            'topItems'
+        );
     }
 
     // Global Search - returns JSON
@@ -461,7 +541,7 @@ class DashboardController extends BaseController {
         }
 
         // Search purchases — warehouse scoped (hidden from salesman / users without purchases)
-        if (Auth::can('purchases', 'view')) {
+        if (Auth::can('purchases', 'view') && !Auth::isSalesFloor()) {
             $purchases = $db->fetchAll(
                 "SELECT id, invoice_no, grand_total, status FROM purchases
                  WHERE warehouse_id = ? AND (invoice_no LIKE ? OR invoice_no LIKE ?) LIMIT 3",
@@ -498,7 +578,7 @@ class DashboardController extends BaseController {
 
         // Search parties (salesman: customers only — never suppliers / freight)
         if (Auth::canAny(['parties', 'customers', 'suppliers'], 'view')) {
-            $partyTypeSql = Auth::can('suppliers', 'view')
+            $partyTypeSql = Auth::canBrowseSuppliers()
                 ? ''
                 : " AND type IN ('customer', 'both')";
             $parties = $db->fetchAll(
@@ -518,12 +598,16 @@ class DashboardController extends BaseController {
 
         // Search returns — so cashiers/salesmen find admin-created credit notes (RET-…)
         if (Auth::can('returns', 'view')) {
+            $salesFloorReturnSql = Auth::isSalesFloor()
+                ? " AND r.type != 'purchase_return' AND (p.type IS NULL OR p.type IN ('customer', 'both'))"
+                : '';
             $returns = $db->fetchAll(
                 "SELECT r.id, r.return_no, r.grand_total, r.status, r.type, p.name AS party_name
                  FROM returns r
                  LEFT JOIN parties p ON p.id = r.party_id
                  WHERE r.warehouse_id = ?
                    AND r.status != 'cancelled'
+                   {$salesFloorReturnSql}
                    AND (r.return_no LIKE ? OR r.return_no LIKE ? OR p.name LIKE ? OR p.name LIKE ?)
                  ORDER BY r.created_at DESC
                  LIMIT 3",

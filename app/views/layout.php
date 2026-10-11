@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" id="htmlRoot" class="iq-boot">
+<html lang="en" id="htmlRoot"<?= empty($skipBootHide) ? ' class="iq-boot"' : '' ?>>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27,6 +27,42 @@
         html.iq-boot body { visibility: hidden; }
         .app-topbar { height: 56px; }
         .main-content { margin-left: 0; }
+        .app-home-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+            max-width: 100%;
+        }
+        .app-home-row--solo { display: flex; margin-bottom: 16px; }
+        .app-home-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            flex-shrink: 0;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%);
+            border: 1px solid #c7d2fe;
+            color: #4f46e5;
+            text-decoration: none;
+            box-shadow: 0 1px 2px rgba(79, 70, 229, 0.08);
+            transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+        }
+        .app-home-btn i { font-size: 1.1rem; line-height: 1; }
+        .app-home-btn:hover {
+            background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+            border-color: #4f46e5;
+            color: #fff;
+            box-shadow: 0 6px 14px rgba(79, 70, 229, 0.28);
+            transform: translateY(-1px);
+        }
+        .app-home-btn:focus-visible {
+            outline: 2px solid #6366f1;
+            outline-offset: 2px;
+        }
+        @media print { .app-home-btn { display: none !important; } }
     </style>
     <noscript><style>html.iq-boot body { visibility: visible; }</style></noscript>
     <script>
@@ -44,6 +80,40 @@
             document.documentElement.classList.remove('iq-boot');
         };
         setTimeout(function () { window.iqbalReveal(); }, 2000);
+
+        // Party boxes search this app only. Chrome otherwise offers saved emails and names.
+        (function () {
+            var sel = '#partySearch, #editPartySearch, #supplierSearch, #retPartySearch, #impSupplierSearch, #customerSearch';
+            function arm(el) {
+                if (!el || el.dataset.iqPartyFill === '1') return;
+                el.dataset.iqPartyFill = '1';
+                el.setAttribute('autocomplete', 'one-time-code');
+                el.setAttribute('autocorrect', 'off');
+                el.setAttribute('autocapitalize', 'off');
+                el.setAttribute('spellcheck', 'false');
+                el.setAttribute('data-1p-ignore', 'true');
+                el.setAttribute('data-lpignore', 'true');
+                el.setAttribute('data-bwignore', 'true');
+                el.setAttribute('data-form-type', 'other');
+                if (!el.getAttribute('role')) el.setAttribute('role', 'combobox');
+                if (!el.getAttribute('aria-autocomplete')) el.setAttribute('aria-autocomplete', 'list');
+                if (el.hasAttribute('readonly') || el.readOnly) return;
+                el.setAttribute('readonly', 'readonly');
+                var unlock = function () {
+                    setTimeout(function () { el.removeAttribute('readonly'); }, 0);
+                };
+                el.addEventListener('focus', unlock);
+                el.addEventListener('pointerdown', unlock);
+                if (document.activeElement === el) unlock();
+            }
+            function scan() {
+                document.querySelectorAll(sel).forEach(arm);
+            }
+            document.addEventListener('DOMContentLoaded', scan);
+            document.addEventListener('focusin', function (e) {
+                if (e.target && e.target.matches && e.target.matches(sel)) arm(e.target);
+            }, true);
+        })();
     </script>
 
     <!-- Preconnect to CDN for faster resource loading -->
@@ -69,7 +139,7 @@
     <link rel="preload" href="assets/js/app.js?v=<?= htmlspecialchars(ASSETS_VER) ?>" as="script">
     <link rel="stylesheet" href="assets/css/layout.css?v=<?= htmlspecialchars(ASSETS_VER) ?>">
 </head>
-<body>
+<body id="app">
 
 <!-- App header: light top navigation -->
 <header class="app-topbar">
@@ -166,7 +236,8 @@
     <?php
         $payNavAction = (string) ($_GET['action'] ?? '');
         $isPayOutNav  = ($page ?? '') === 'payments' && in_array($payNavAction, ['out', 'pay'], true);
-        $isPayInNav   = ($page ?? '') === 'payments' && !$isPayOutNav;
+        $isCollectNav = ($page ?? '') === 'payments' && in_array($payNavAction, ['collect', 'collectStore', 'collectUndo'], true);
+        $isPayInNav   = ($page ?? '') === 'payments' && !$isPayOutNav && !$isCollectNav;
     ?>
     <?php if (Auth::can('payments', 'view')): ?>
     <div class="sidebar-link-wrap">
@@ -177,6 +248,11 @@
         <a href="?page=payments&action=receive" class="quick-add-btn" title="Receive Payment">+</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::isAdmin()): ?>
+    <a href="?page=payments&action=collect" class="sidebar-link <?= !empty($isCollectNav) ? 'active' : '' ?>">
+        <i class="bi bi-person-check"></i> Collect from salesman
+    </a>
     <?php endif; ?>
     <?php if (Auth::can('payments_out', 'view')): ?>
     <div class="sidebar-link-wrap">
@@ -587,6 +663,43 @@
 <main class="main-content">
     <?= $content ?? '' ?>
 </main>
+<?php if (($page ?? '') !== 'dashboard' && Auth::can('dashboard', 'view')): ?>
+<script>
+(function () {
+    var main = document.querySelector('main.main-content');
+    if (!main || main.querySelector('.app-home-btn, .po-home-btn')) return;
+    var selectors = ['.page-title', '.sale-title', '.se-topbar-title', '.dump-title', '.wr-title', '.sv-head h1', 'h1'];
+    var title = null;
+    for (var i = 0; i < selectors.length; i++) {
+        title = main.querySelector(selectors[i]);
+        if (title) break;
+    }
+    var btn = document.createElement('a');
+    btn.href = '?page=dashboard';
+    btn.className = 'app-home-btn';
+    btn.title = 'Dashboard';
+    btn.setAttribute('aria-label', 'Dashboard');
+    btn.innerHTML = '<i class="bi bi-house-door-fill" aria-hidden="true"></i>';
+    if (!title || !title.parentNode) {
+        var solo = document.createElement('div');
+        solo.className = 'app-home-row app-home-row--solo';
+        solo.appendChild(btn);
+        main.insertBefore(solo, main.firstChild);
+        return;
+    }
+    var row = document.createElement('div');
+    row.className = 'app-home-row';
+    var grow = window.getComputedStyle(title).flexGrow;
+    if (grow && grow !== '0') {
+        row.style.flex = '1 1 auto';
+        row.style.minWidth = '0';
+    }
+    title.parentNode.insertBefore(row, title);
+    row.appendChild(btn);
+    row.appendChild(title);
+})();
+</script>
+<?php endif; ?>
 
 <!-- Scripts -->
 <?php if (empty($skipJquery)): ?>

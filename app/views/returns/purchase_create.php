@@ -138,7 +138,7 @@ table.items-tbl tfoot td{font-size:0.94rem;}
     <div class="customer-bar">
         <div class="customer-search-wrap" id="retPartySearchWrap">
             <i class="bi bi-person-circle search-icon"></i>
-            <input type="text" id="retPartySearch" placeholder="Search supplier or customer..." autocomplete="off">
+            <input type="text" id="retPartySearch" placeholder="Search supplier or customer..." autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list">
             <div class="autocomplete-box" id="retPartyDrop" style="display:none;"></div>
             <input type="hidden" name="party_id" id="retPartyId" required>
             <input type="hidden" name="ref_id" id="refIdInput">

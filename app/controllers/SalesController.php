@@ -445,11 +445,11 @@ class SalesController extends BaseController {
                 [$partyId]
             );
             if (!$partyRow || !(int) ($partyRow['is_active'] ?? 0)) {
-                throw new Exception('Customer is inactive or does not exist.');
+                throw new Exception('Party is inactive or does not exist.');
             }
             $ptype = (string) ($partyRow['type'] ?? '');
-            if (!in_array($ptype, ['customer', 'both'], true)) {
-                throw new Exception('Selected party is not a customer.');
+            if (!in_array($ptype, $this->saleInvoicePartyTypes(), true)) {
+                throw new Exception('Selected party is not allowed on a sale invoice.');
             }
             if (!$this->partyModel->isVisibleInCurrentWarehouse($partyId)) {
                 throw new Exception('Customer is not available on this branch.');
@@ -1156,17 +1156,19 @@ class SalesController extends BaseController {
             if ($postedPartyId <= 0) {
                 throw new Exception('Please select a customer.');
             }
+            $partyTypes = $this->saleInvoicePartyTypes();
+            $typePh = implode(',', array_fill(0, count($partyTypes), '?'));
             $newParty = $db->fetchOne(
                 "SELECT id, name, type, is_active, warehouse_id
                  FROM parties
                  WHERE id = ?
                    AND is_active = 1
-                   AND type IN ('customer', 'both')
+                   AND type IN ({$typePh})
                    AND (warehouse_id IS NULL OR warehouse_id = ?)",
-                [$postedPartyId, $warehouseId]
+                array_merge([$postedPartyId], $partyTypes, [$warehouseId])
             );
             if (!$newParty) {
-                throw new Exception('Customer is inactive, not allowed for sales, or belongs to another branch.');
+                throw new Exception('Party is inactive, not allowed for sales, or belongs to another branch.');
             }
             $partyChanged = $postedPartyId !== $oldPartyId;
             if ($partyChanged) {
@@ -1858,8 +1860,9 @@ class SalesController extends BaseController {
 
         // Allow supplier/customer/freight searches from other modules (purchase/returns/sales/payments).
         // payment_out → any ledger party (customer / supplier / both / freight).
+        // payment_in → admin receive from customer or supplier.
         // purchase → customer / supplier / both (buy from customer-only allowed).
-        $allowedTypes = ['all', 'customer', 'supplier', 'both', 'freight_forwarder', 'payment_out', 'purchase'];
+        $allowedTypes = ['all', 'customer', 'supplier', 'both', 'freight_forwarder', 'payment_out', 'payment_in', 'purchase', 'sale'];
         if (!in_array($type, $allowedTypes, true)) {
             $type = 'customer';
         }
@@ -1893,7 +1896,7 @@ class SalesController extends BaseController {
         }
 
         $type = trim((string) ($_GET['type'] ?? 'customer'));
-        $allowedTypes = ['all', 'customer', 'supplier', 'both', 'freight_forwarder', 'payment_out', 'purchase'];
+        $allowedTypes = ['all', 'customer', 'supplier', 'both', 'freight_forwarder', 'payment_out', 'payment_in', 'purchase', 'sale'];
         if (!in_array($type, $allowedTypes, true)) {
             $type = 'customer';
         }
@@ -1992,5 +1995,19 @@ class SalesController extends BaseController {
         );
 
         echo json_encode($items);
+    }
+
+    /**
+     * Party types allowed on a sale invoice.
+     * Admin may also invoice a supplier-only party. Freight stays off sales.
+     *
+     * @return list<string>
+     */
+    private function saleInvoicePartyTypes(): array {
+        $types = ['customer', 'both'];
+        if (Auth::canInvoiceSupplier()) {
+            $types[] = 'supplier';
+        }
+        return $types;
     }
 }

@@ -12,6 +12,12 @@
         color:<?= $isIn ? '#059669' : '#dc2626' ?>;">
         <?= $isIn ? 'Payment In' : 'Payment Out' ?>
     </span>
+    <?php if (!empty($activeCollection)): ?>
+    <span class="badge px-3 py-1" style="border-radius:20px;font-size:0.78rem;font-weight:700;background:#e0e7ff;color:#3730a3;">
+        With admin<?= !empty($activeCollection['admin_name']) ? ' · ' . htmlspecialchars((string) $activeCollection['admin_name']) : '' ?>
+        <?= !empty($activeCollection['collected_at']) ? ' · ' . date('d M Y H:i', strtotime((string) $activeCollection['collected_at'])) : '' ?>
+    </span>
+    <?php endif; ?>
     <div class="ms-auto d-flex flex-wrap gap-2 justify-content-end align-items-center" style="row-gap:8px;">
         <a href="?page=payments&action=print&id=<?= $payment['id'] ?>&autoprint=1" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-printer me-1"></i> Print
@@ -19,12 +25,12 @@
         <a href="?page=payments&action=thermalPrint&id=<?= $payment['id'] ?>&thermal=1&autoprint=1" class="btn btn-sm btn-outline-success">
             <i class="bi bi-receipt me-1"></i> Thermal
         </a>
-        <?php if (Auth::isAdmin() && ($payment['ref_type'] ?? '') !== 'purchase_order' && ($payment['ref_type'] ?? '') !== 'discount'): ?>
+        <?php if (empty($activeCollection) && Auth::isAdmin() && ($payment['ref_type'] ?? '') !== 'discount' && (($payment['ref_type'] ?? '') !== 'purchase_order' || ($payment['po_no'] ?? '') === Payment::UNLOCK_PO_ADVANCE_NO)): ?>
         <a href="?page=payments&action=edit&id=<?= $payment['id'] ?>" class="btn btn-sm btn-outline-warning">
             <i class="bi bi-pencil me-1"></i> Edit
         </a>
         <?php endif; ?>
-        <?php if (Auth::can($paymentsPermModule, 'delete') && ($payment['ref_type'] ?? '') !== 'discount' && ($payment['ref_type'] ?? '') !== 'purchase_order'): ?>
+        <?php if (empty($activeCollection) && Auth::can($paymentsPermModule, 'delete') && ($payment['ref_type'] ?? '') !== 'discount' && ($payment['ref_type'] ?? '') !== 'purchase_order'): ?>
         <form method="POST" action="?page=payments&action=delete" class="js-payment-delete-detail" style="display:inline;">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="id" value="<?= (int)$payment['id'] ?>">

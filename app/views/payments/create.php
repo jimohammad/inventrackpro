@@ -213,12 +213,16 @@
     $isReceive = $mode === 'in';
     $modeTitle = $isReceive ? 'Receive Payment' : 'Make Payment';
     $modeIcon  = $isReceive ? 'bi-arrow-down-circle-fill' : 'bi-arrow-up-circle-fill';
-    $partyLbl  = $isReceive ? 'Customer'  : (($importPayable ?? false) ? 'Partner' : 'Party');
+    $partyLbl  = $isReceive
+        ? (Auth::canReceiveFromSupplier() ? 'Party' : 'Customer')
+        : (($importPayable ?? false) ? 'Partner' : 'Party');
     $accentBg  = $isReceive ? '#059669' : '#dc2626';
     $preselectParty   = $preselectParty ?? null;
     $partySearchType  = $partySearchType ?? ($isReceive ? 'customer' : 'payment_out');
     $partyPlaceholder = $isReceive
-        ? 'Type customer name — Enter to select'
+        ? (Auth::canReceiveFromSupplier()
+            ? 'Type customer or supplier — Enter to select'
+            : 'Type customer name — Enter to select')
         : (($importPayable ?? false)
             ? 'Import partner — pre-selected from payable'
             : 'Type party name — Enter to select');
@@ -226,14 +230,25 @@
     $importPayableContext = $importPayableContext ?? null;
     $paymentsListBase = $isReceive ? '?page=payments' : '?page=payments&action=out';
     $defaultAccountId = 0;
-    foreach ($accounts as $accDefault) {
-        $accName = trim((string) ($accDefault['name'] ?? ''));
-        if (!empty($accDefault['is_default'])) {
-            $defaultAccountId = (int) ($accDefault['id'] ?? 0);
-            break;
+    if (!$isReceive) {
+        foreach ($accounts as $accDefault) {
+            $accName = trim((string) ($accDefault['name'] ?? ''));
+            if (stripos($accName, 'NBK') !== false || stripos($accName, 'National Bank') !== false) {
+                $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+                break;
+            }
         }
-        if ($defaultAccountId <= 0 && strcasecmp($accName, 'Main Cash') === 0) {
-            $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+    }
+    if ($defaultAccountId <= 0) {
+        foreach ($accounts as $accDefault) {
+            $accName = trim((string) ($accDefault['name'] ?? ''));
+            if (!empty($accDefault['is_default'])) {
+                $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+                break;
+            }
+            if ($defaultAccountId <= 0 && strcasecmp($accName, 'Main Cash') === 0) {
+                $defaultAccountId = (int) ($accDefault['id'] ?? 0);
+            }
         }
     }
 ?>
@@ -253,7 +268,7 @@
         </div>
     </div>
 
-    <form method="POST" action="?page=payments&action=store" id="payForm">
+    <form method="POST" action="?page=payments&action=store" id="payForm" autocomplete="off">
         <?= Auth::csrfField() ?>
         <input type="hidden" name="payment_form_nonce" value="<?= htmlspecialchars($paymentFormNonce ?? '') ?>">
         <input type="hidden" name="print_mode"     id="printMode"     value="0">
@@ -297,7 +312,9 @@
                     <input type="text" id="partySearch"
                            class="pf-party-input<?= $preselectParty ? ' selected' : '' ?>"
                            placeholder="<?= htmlspecialchars($partyPlaceholder) ?>"
-                           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                           autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false"
+                           data-1p-ignore="true" data-lpignore="true" data-form-type="other"
+                           role="combobox" aria-autocomplete="list" aria-controls="partyDropdown"
                            value="<?= htmlspecialchars($preselectParty['name'] ?? '') ?>"
                            <?= ($importPayableContext && $preselectParty) ? 'readonly' : '' ?>>
                     <input type="hidden" name="party_id" id="partyIdInput"
@@ -398,6 +415,7 @@ var partyBalance = 0;
 var paymentMode = <?= json_encode($mode) ?>;
 var isPaymentOut = paymentMode === 'out';
 var partySearchType = <?= json_encode($partySearchType) ?>;
+var showPartyTypes = isPaymentOut || partySearchType === 'payment_in';
 var partyStore = { results: [] };
 var partyTimer = null;
 var partyHighlightIdx = -1;
@@ -582,8 +600,8 @@ function renderPartyDropdown(parties, keepHighlight) {
     drop.innerHTML = parties.map(function(p, idx) {
         var meta = [];
         if (p.type === 'freight_forwarder') meta.push('<span style="color:#0284c7;font-weight:600;">Freight forwarder</span>');
-        if (p.type === 'customer' && isPaymentOut) meta.push('<span style="color:#059669;font-weight:600;">Customer</span>');
-        if (p.type === 'supplier' && isPaymentOut) meta.push('<span style="color:#b45309;font-weight:600;">Supplier</span>');
+        if (p.type === 'customer' && showPartyTypes) meta.push('<span style="color:#059669;font-weight:600;">Customer</span>');
+        if (p.type === 'supplier' && showPartyTypes) meta.push('<span style="color:#b45309;font-weight:600;">Supplier</span>');
         var hint = partyBalanceHint(p.balance);
         if (hint) meta.push(hint);
         return '<div class="pf-party-item' + (idx === partyHighlightIdx ? ' active' : '') + '" data-idx="' + idx + '" role="option">'

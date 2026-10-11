@@ -155,7 +155,7 @@ table.items-tbl tbody td.col-num{background:#f8fafc;line-height:48px;}
         <div class="sale-composer-row">
             <div class="sale-field sale-field-primary customer-search-wrap" id="supplierSearchWrap">
                 <i class="bi bi-building search-icon"></i>
-                <input type="text" id="supplierSearch" placeholder="Search supplier or customer..." autocomplete="off" autofocus>
+                <input type="text" id="supplierSearch" placeholder="Search supplier or customer..." autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list" autofocus>
                 <div class="autocomplete-box" id="supplierDrop" style="display:none;"></div>
                 <input type="hidden" name="party_id" id="supplierIdInput" required>
             </div>

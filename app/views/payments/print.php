@@ -162,10 +162,29 @@ body { font-family: 'Segoe UI', Tahoma, 'Noto Naskh Arabic', Arial, sans-serif; 
     .wrap { box-shadow: 0 8px 28px rgba(11,31,54,0.16); background: #fff; }
 }
 @media print {
-    body { background: #fff; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body {
+        width: auto;
+        height: auto;
+        overflow: visible;
+        background: #fff;
+        padding: 0;
+        margin: 0;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
     .no-print { display: none !important; }
-    .wrap { max-width: 100%; width: 100%; padding: 0; margin: 0; box-shadow: none; }
-    @page { size: A5 portrait; margin: 8mm 8mm; }
+    /* Stay on the left of the sheet. width:100% laid the voucher out at the
+       monitor width, so Save as PDF clipped the page to a blank left edge. */
+    .wrap {
+        width: 132mm;
+        max-width: 132mm;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        overflow: visible;
+        background: #fff;
+    }
+    @page { size: A5 portrait; margin: 8mm; }
 }
 
 <?php else: ?>
@@ -289,12 +308,15 @@ body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
+    html, body { width: auto; height: auto; overflow: visible; margin: 0; }
     .no-print { display: none !important; }
     .wrap {
         border: none;
         padding: 0;
-        width: 100%;
-        max-width: 100%;
+        width: 72mm;
+        max-width: 72mm;
+        margin: 0;
+        overflow: visible;
         font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
     }
     .ar { font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif; }
@@ -578,7 +600,6 @@ try {
 <?php endif; ?>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <script>
 (function () {
     var paymentId = <?= (int)$payment['id'] ?>;
@@ -618,19 +639,12 @@ try {
             window.location = '?page=payments&action=print&id=' + paymentId + '&autopdf=1';
             return;
         }
-        var btn = document.getElementById('btnPdf');
-        btn.disabled = true;
-        btn.innerHTML = '<b>Generating...</b>';
-        html2pdf().set({
-            margin: [5, 7, 5, 7],
-            filename: paymentNo + '.pdf',
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true },
-            jsPDF: { unit: 'mm', format: 'a5', orientation: 'portrait' }
-        }).from(document.querySelector('.wrap')).save().then(function () {
-            btn.disabled = false;
-            btn.innerHTML = '<b>⤓ PDF</b>';
-        });
+        // Picture PDFs from html2pdf open as a blank page. The print dialog's
+        // Save as PDF writes real text, which viewers can show.
+        var previousTitle = document.title;
+        document.title = paymentNo;
+        window.print();
+        document.title = previousTitle;
     }
 
     document.getElementById('btnPdf').addEventListener('click', exportPDF);

@@ -164,6 +164,48 @@
     display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;
     font-size: 0.68rem; font-weight: 700; padding: 3px 9px; border-radius: 6px;
     color: #047857; background: rgba(5,150,105,0.1); border: 1px solid rgba(5,150,105,0.22);
+    cursor: pointer; font-family: inherit; line-height: 1.2;
+}
+button.re-imei-badge { appearance: none; -webkit-appearance: none; }
+.re-imei-badge:hover,
+.re-imei-badge[aria-expanded="true"] {
+    background: rgba(5,150,105,0.18); border-color: #059669;
+}
+.re-imei-pop {
+    position: fixed; inset: 0; z-index: 10000;
+    display: none; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(15,23,42,0.45);
+}
+.re-imei-pop.show { display: flex; }
+.re-imei-pop-card {
+    width: 100%; max-width: 420px; max-height: min(80vh, 640px);
+    display: flex; flex-direction: column;
+    background: #fff; border-radius: 14px; overflow: hidden;
+    border: 1px solid #d1fae5;
+    box-shadow: 0 20px 50px rgba(6,78,59,0.22);
+}
+.re-imei-pop-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 16px 16px 12px; background: #ecfdf5; border-bottom: 1px solid #d1fae5;
+}
+.re-imei-pop-kicker {
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #059669;
+}
+.re-imei-pop-title {
+    margin-top: 2px; font-size: 0.95rem; font-weight: 800; color: #064e3b; line-height: 1.3;
+}
+.re-imei-pop-count { margin-top: 2px; font-size: 0.75rem; font-weight: 700; color: #047857; }
+.re-imei-pop-close {
+    width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 8px;
+    background: transparent; color: #64748b; font-size: 1.35rem; line-height: 1; cursor: pointer;
+}
+.re-imei-pop-close:hover { background: #fff; color: #0f172a; }
+.re-imei-pop-list { overflow: auto; padding: 8px 12px 14px; }
+.re-imei-num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86rem; font-weight: 650; color: #065f46;
+    letter-spacing: 0.03em; padding: 7px 8px; border-bottom: 1px solid #f0fdf4;
 }
 
 .re-cell-input {
@@ -342,13 +384,13 @@
                                 <?php if (!empty($item['sku'])): ?>
                                 <div class="re-item-sku"><?= htmlspecialchars((string) $item['sku']) ?></div>
                                 <?php endif; ?>
-                                <?php if ($imeiCount > 0): ?>
-                                <span class="re-imei-badge" id="imeiBadge_row_<?= $item['id'] ?>">
+                                <button type="button" class="re-imei-badge" id="imeiBadge_row_<?= (int)$item['id'] ?>"
+                                        title="Show IMEI numbers" aria-expanded="false"
+                                        <?= $imeiCount > 0 ? '' : 'style="display:none;"' ?>>
+                                    <?php if ($imeiCount > 0): ?>
                                     <i class="bi bi-upc-scan"></i> <?= $imeiCount ?> IMEI<?= $imeiCount !== 1 ? 's' : '' ?>
-                                </span>
-                                <?php else: ?>
-                                <span class="re-imei-badge" id="imeiBadge_row_<?= $item['id'] ?>" style="display:none;"></span>
-                                <?php endif; ?>
+                                    <?php endif; ?>
+                                </button>
                                 <textarea name="items[<?= $item['id'] ?>][imeis]" id="imeiField_row_<?= $item['id'] ?>"
                                           class="re-imei-hidden"><?= htmlspecialchars(implode("\n", $lineImeis)) ?></textarea>
                                 <input type="hidden" name="items[<?= $item['id'] ?>][deleted]" id="del_<?= $item['id'] ?>" value="0">
@@ -393,6 +435,20 @@
 </form>
 </div>
 
+<div class="re-imei-pop" id="reImeiPop" hidden>
+    <div class="re-imei-pop-card" role="dialog" aria-modal="true" aria-labelledby="reImeiPopTitle">
+        <div class="re-imei-pop-head">
+            <div>
+                <div class="re-imei-pop-kicker">IMEI numbers</div>
+                <div class="re-imei-pop-title" id="reImeiPopTitle"></div>
+                <div class="re-imei-pop-count" id="reImeiPopCount"></div>
+            </div>
+            <button type="button" class="re-imei-pop-close" id="reImeiPopClose" aria-label="Close">×</button>
+        </div>
+        <div class="re-imei-pop-list" id="reImeiPopList"></div>
+    </div>
+</div>
+
 <script>
 <?php
 $initImeiData = [];
@@ -412,6 +468,7 @@ var newRowCount    = 0;
 var searchTimers   = {};
 var retImeiData    = <?= json_encode($initImeiData, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
 var retScanBusy    = false;
+var openImeiRowKey = null;
 
 function toggleDelete(id, btn) {
     const tr  = document.getElementById('row_' + id);
@@ -434,13 +491,91 @@ function toggleDelete(id, btn) {
     recalcReturn();
 }
 
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+
+function itemNameForRow(rowKey) {
+    if (rowKey.indexOf('row_') === 0) {
+        const name = document.querySelector('#' + rowKey + ' .re-item-name');
+        if (name && name.textContent.trim()) return name.textContent.trim();
+    }
+    if (rowKey.indexOf('new_') === 0) {
+        const label = document.getElementById('newItemLabel_' + rowKey.replace('new_', ''));
+        if (label && label.textContent.trim()) return label.textContent.trim();
+    }
+    return 'Return item';
+}
+
+function setImeiBadgeOpen(rowKey, open) {
+    document.querySelectorAll('.re-imei-badge[aria-expanded="true"]').forEach(function (badge) {
+        badge.setAttribute('aria-expanded', 'false');
+        badge.title = 'Show IMEI numbers';
+    });
+    if (!open || !rowKey) return;
+    const badge = document.getElementById('imeiBadge_' + rowKey);
+    if (!badge) return;
+    badge.setAttribute('aria-expanded', 'true');
+    badge.title = 'Hide IMEI numbers';
+}
+
+function renderImeiPopup() {
+    const pop = document.getElementById('reImeiPop');
+    const box = document.getElementById('reImeiPopList');
+    if (!pop || !box || !openImeiRowKey) return;
+    const list = retImeiData[openImeiRowKey] || [];
+    if (!list.length) { closeImeiPopup(); return; }
+    document.getElementById('reImeiPopTitle').textContent = itemNameForRow(openImeiRowKey);
+    document.getElementById('reImeiPopCount').textContent = list.length + ' IMEI' + (list.length !== 1 ? 's' : '');
+    box.innerHTML = list.map(function (im, i) {
+        return '<div class="re-imei-num">' + (i + 1) + '. ' + escHtml(im) + '</div>';
+    }).join('');
+    pop.hidden = false;
+    pop.classList.add('show');
+}
+
+function openImeiPopup(rowKey) {
+    const list = retImeiData[rowKey] || [];
+    if (!list.length) return;
+    openImeiRowKey = rowKey;
+    setImeiBadgeOpen(rowKey, true);
+    renderImeiPopup();
+}
+
+function closeImeiPopup() {
+    const pop = document.getElementById('reImeiPop');
+    if (pop) {
+        pop.classList.remove('show');
+        pop.hidden = true;
+    }
+    openImeiRowKey = null;
+    setImeiBadgeOpen(null, false);
+}
+
+function toggleImeiList(rowKey) {
+    if (openImeiRowKey === rowKey) closeImeiPopup();
+    else openImeiPopup(rowKey);
+}
+
 function updateImeiBadge(rowKey) {
     const badge = document.getElementById('imeiBadge_' + rowKey);
     const list  = retImeiData[rowKey] || [];
     if (!badge) return;
-    if (!list.length) { badge.style.display = 'none'; return; }
+    if (!list.length) {
+        badge.style.display = 'none';
+        badge.setAttribute('aria-expanded', 'false');
+        badge.title = 'Show IMEI numbers';
+        if (openImeiRowKey === rowKey) closeImeiPopup();
+        return;
+    }
     badge.style.display = 'inline-flex';
     badge.innerHTML = '<i class="bi bi-upc-scan"></i> ' + list.length + ' IMEI' + (list.length !== 1 ? 's' : '');
+    const open = openImeiRowKey === rowKey;
+    badge.title = open ? 'Hide IMEI numbers' : 'Show IMEI numbers';
+    badge.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) renderImeiPopup();
 }
 
 function syncImeiField(rowKey) {
@@ -480,9 +615,13 @@ function addNewItemRow(prefill) {
     tr.dataset.newRow = String(n);
     tr.dataset.itemId = prefill ? String(prefill.itemId) : '';
     tr.dataset.rowKey = rowKey;
-    const badgeHtml = retImeiData[rowKey].length
-        ? '<span class="re-imei-badge" id="imeiBadge_' + rowKey + '"><i class="bi bi-upc-scan"></i> ' + retImeiData[rowKey].length + ' IMEI' + (retImeiData[rowKey].length !== 1 ? 's' : '') + '</span>'
-        : '<span class="re-imei-badge" id="imeiBadge_' + rowKey + '" style="display:none;"></span>';
+    const badgeHtml = '<button type="button" class="re-imei-badge" id="imeiBadge_' + rowKey + '"'
+        + ' title="Show IMEI numbers" aria-expanded="false"'
+        + (retImeiData[rowKey].length ? '' : ' style="display:none;"') + '>'
+        + (retImeiData[rowKey].length
+            ? '<i class="bi bi-upc-scan"></i> ' + retImeiData[rowKey].length + ' IMEI' + (retImeiData[rowKey].length !== 1 ? 's' : '')
+            : '')
+        + '</button>';
     tr.innerHTML =
         '<td class="re-row-num">+</td>' +
         '<td style="position:relative;">' +
@@ -520,6 +659,7 @@ function addNewItemRow(prefill) {
 
 function removeNewRow(n) {
     const rowKey = 'new_' + n;
+    if (openImeiRowKey === rowKey) closeImeiPopup();
     delete retImeiData[rowKey];
     document.getElementById('newrow_' + n)?.remove();
     renderRetScanCount();
@@ -807,6 +947,11 @@ document.addEventListener('DOMContentLoaded', function() {
     renderRetScanCount();
 
     document.getElementById('itemsTbody').addEventListener('click', function(e) {
+        const imeiBadge = e.target.closest('.re-imei-badge');
+        if (imeiBadge && imeiBadge.id.indexOf('imeiBadge_') === 0) {
+            toggleImeiList(imeiBadge.id.slice('imeiBadge_'.length));
+            return;
+        }
         const delBtn = e.target.closest('.btn-del-row');
         if (delBtn) {
             toggleDelete(parseInt(delBtn.dataset.rowId, 10), delBtn);
@@ -850,6 +995,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btnAddNewItemRow').addEventListener('click', function() { addNewItemRow(); });
     document.getElementById('btnAddNewItemRow').addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addNewItemRow(); }
+    });
+
+    const imeiPop = document.getElementById('reImeiPop');
+    imeiPop.addEventListener('click', function(e) {
+        if (e.target === imeiPop) closeImeiPopup();
+    });
+    document.getElementById('reImeiPopClose').addEventListener('click', closeImeiPopup);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && openImeiRowKey) closeImeiPopup();
     });
 
     const scanBar = document.getElementById('retEditScanBar');

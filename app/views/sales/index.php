@@ -4,10 +4,6 @@
         <h1 class="page-title">Sales</h1>
         <?php if (!empty($filters['voided_only'])): ?>
         <p class="page-subtitle mb-0">Voided invoices only (this branch; excluded from normal list & ledgers).</p>
-        <?php endif; ?>
-        <?php if (Auth::isAdmin() && empty($filters['voided_only'])): ?>
-        <p class="mb-0 mt-1"><a href="?page=sales&view=voided" class="small fw-semibold" style="color:#64748b;">View voided invoices →</a></p>
-        <?php elseif (Auth::isAdmin() && !empty($filters['voided_only'])): ?>
         <p class="mb-0 mt-1"><a href="?page=sales" class="small fw-semibold" style="color:#64748b;">← Active sales</a></p>
         <?php endif; ?>
     </div>

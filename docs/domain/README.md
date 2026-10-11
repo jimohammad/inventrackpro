@@ -8,6 +8,7 @@ Graphify maps **code structure**; these files map **what must stay true**.
 | You are changing… | Read first |
 |-------------------|------------|
 | Reports, balances, statements, payments, wholesale/retail customers | [party-balance-payments.md](party-balance-payments.md) |
+| Salesman cash/bank handed to admin | [cash-custody.md](cash-custody.md) |
 | Warehouse picker, branch reports, public links | [warehouse-isolation.md](warehouse-isolation.md) |
 | Purchase orders, import shipments, landed cost | [purchase-orders-import.md](purchase-orders-import.md) |
 | Stock, returns, IMEI | [stock-imei.md](stock-imei.md) |

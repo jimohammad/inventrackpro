@@ -36,12 +36,10 @@ class FieldStatementController extends BaseController {
         if (!$party) { $this->showError('Invalid or expired link.'); return; }
 
         $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-        $transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', '', $statementWhId);
-
-        // Date-capped closing balance so the Balance card matches the running-balance
-        // column (net_balance from the batch union has no date cap and would include
-        // future-dated entries).
-        $closingBal = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
+        $asOfToday     = date('Y-m-d');
+        // Cap the lines at today so the running column matches the Balance card and Party Master Due.
+        $transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', $asOfToday, $statementWhId);
+        $closingBal = $partyModel->computeBalanceAsOf((int) $party['id'], $asOfToday, $statementWhId);
 
         // Get company info
         $companyName = self::getSettings()['company_name'] ?? PDF_COMPANY_NAME;
@@ -66,6 +64,10 @@ class FieldStatementController extends BaseController {
 
         $token  = trim($_GET['token'] ?? '');
         $refNo  = trim($_GET['ref'] ?? '');
+        $kind   = trim($_GET['kind'] ?? 'sale');
+        if (!in_array($kind, ['sale', 'return'], true)) {
+            $kind = 'sale';
+        }
 
         if (!$token || !$refNo) { echo json_encode(['error' => 'Invalid request']); return; }
 
@@ -77,26 +79,53 @@ class FieldStatementController extends BaseController {
         if (!$party) { echo json_encode(['error' => 'Invalid token']); return; }
 
         $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-        $saleSql = "SELECT s.invoice_no, s.date, s.created_at, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
-             FROM sales s WHERE s.invoice_no = ? AND s.party_id = ? AND s.status != 'cancelled'";
-        $saleParams = [$refNo, $party['id']];
-        if ($statementWhId > 0) {
-            $saleSql .= ' AND s.warehouse_id = ?';
-            $saleParams[] = $statementWhId;
-        }
-        $sale = $db->fetchOne($saleSql, $saleParams);
+        if ($kind === 'return') {
+            $docSql = "SELECT return_no AS invoice_no, date, created_at, subtotal,
+                              0 AS discount, grand_total, 0 AS paid_amount, 0 AS balance,
+                              status, reason
+                       FROM `returns`
+                       WHERE return_no = ? AND party_id = ? AND status = 'approved'";
+            $docParams = [$refNo, $party['id']];
+            if ($statementWhId > 0) {
+                $docSql .= ' AND warehouse_id = ?';
+                $docParams[] = $statementWhId;
+            }
+            $sale = $db->fetchOne($docSql, $docParams);
+            if (!$sale) { echo json_encode(['error' => 'Return not found']); return; }
 
-        if (!$sale) { echo json_encode(['error' => 'Invoice not found']); return; }
+            $itemsSql = "SELECT i.name AS item_name, ri.quantity, ri.unit_price, 0 AS discount, ri.total
+                 FROM return_items ri
+                 JOIN items i ON i.id = ri.item_id
+                 JOIN `returns` r ON r.id = ri.return_id
+                 WHERE r.return_no = ? AND r.party_id = ? AND r.status = 'approved'";
+            $itemsParams = [$refNo, $party['id']];
+            if ($statementWhId > 0) {
+                $itemsSql .= ' AND r.warehouse_id = ?';
+                $itemsParams[] = $statementWhId;
+            }
+            $sale['doc_kind'] = 'return';
+        } else {
+            $docSql = "SELECT s.invoice_no, s.date, s.created_at, s.subtotal, s.discount, s.grand_total, s.paid_amount, s.balance, s.status
+                 FROM sales s WHERE s.invoice_no = ? AND s.party_id = ? AND s.status != 'cancelled'";
+            $docParams = [$refNo, $party['id']];
+            if ($statementWhId > 0) {
+                $docSql .= ' AND s.warehouse_id = ?';
+                $docParams[] = $statementWhId;
+            }
+            $sale = $db->fetchOne($docSql, $docParams);
+            if (!$sale) { echo json_encode(['error' => 'Invoice not found']); return; }
 
-        $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
-             FROM sale_items si
-             JOIN items i ON i.id = si.item_id
-             JOIN sales s ON s.id = si.sale_id
-             WHERE s.invoice_no = ? AND s.party_id = ?";
-        $itemsParams = [$refNo, $party['id']];
-        if ($statementWhId > 0) {
-            $itemsSql .= ' AND s.warehouse_id = ?';
-            $itemsParams[] = $statementWhId;
+            $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
+                 FROM sale_items si
+                 JOIN items i ON i.id = si.item_id
+                 JOIN sales s ON s.id = si.sale_id
+                 WHERE s.invoice_no = ? AND s.party_id = ?";
+            $itemsParams = [$refNo, $party['id']];
+            if ($statementWhId > 0) {
+                $itemsSql .= ' AND s.warehouse_id = ?';
+                $itemsParams[] = $statementWhId;
+            }
+            $sale['doc_kind'] = 'sale';
         }
         $items = $db->fetchAll($itemsSql, $itemsParams);
 

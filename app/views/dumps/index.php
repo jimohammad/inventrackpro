@@ -23,6 +23,7 @@ $filters = [
     <?php endif; ?>
 </div>
 
+<?php $listHideDateDefaultAlert = true; ?>
 <?php include __DIR__ . '/../partials/list_page_alerts.php'; ?>
 
 <form method="GET" action="" style="background:linear-gradient(135deg,#fff7ed,#ffedd5);border:1px solid #fdba74;border-radius:16px;padding:16px 20px;margin-bottom:20px;">

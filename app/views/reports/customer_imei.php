@@ -86,6 +86,12 @@
     </div>
 </div>
 
+<?php if (!empty($imeiFilterNote)): ?>
+<div class="alert alert-warning py-2 mb-3" style="font-size:0.85rem;">
+    <?= htmlspecialchars($imeiFilterNote) ?>
+</div>
+<?php endif; ?>
+
 <?php if ($partyId && !empty($records)): ?>
 <?php
     $party = $records[0];
@@ -176,6 +182,11 @@
                 <span class="count-badge" style="background:rgba(16,185,129,0.12);color:#059669;padding:3px 10px;border-radius:5px;font-size:0.75rem;font-weight:600;">
                     <?= $inv['count'] ?> pcs
                 </span>
+                <a href="?page=reports&action=invoiceImeiBarcodePrint&sale_id=<?= (int) $inv['sale_id'] ?>"
+                   target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-outline-primary" style="font-size:0.72rem;padding:2px 8px;">
+                    <i class="bi bi-upc-scan me-1"></i>Barcodes
+                </a>
             </div>
         </div>
     </div>
@@ -219,7 +230,10 @@
 <div class="card">
     <div class="card-body text-center py-5">
         <i class="bi bi-inbox" style="font-size:2.5rem;color:#cbd5e1;"></i>
-        <p class="mt-3 text-muted">No IMEI records found for this customer with the selected filters.</p>
+        <p class="mt-3 text-muted mb-0"><?= htmlspecialchars((string) ($imeiMissNote ?? 'No IMEI records found for this customer with the selected filters.')) ?></p>
+        <?php if (!empty($imeiMissSaleId)): ?>
+        <a href="?page=sales&action=detail&id=<?= (int) $imeiMissSaleId ?>" class="btn btn-sm btn-outline-primary mt-3">Open invoice</a>
+        <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>

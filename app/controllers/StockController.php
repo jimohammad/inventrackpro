@@ -21,6 +21,19 @@ class StockController extends BaseController {
      * Session branch only.
      */
     public function pricelistPrint(): void {
+        $this->renderCatalogPrint(true);
+    }
+
+    /**
+     * Available-stock catalog as one A4 PDF (in-stock, active items only).
+     * Same look as Pricelist PDF, but no sale prices, qty numbers, IMEI, or cost.
+     * Session branch only.
+     */
+    public function stocklistPrint(): void {
+        $this->renderCatalogPrint(false);
+    }
+
+    private function renderCatalogPrint(bool $showPrices): void {
         Auth::authorizeAny(['stock', 'inventory'], 'view');
 
         $whId = Auth::warehouseId();
@@ -29,9 +42,10 @@ class StockController extends BaseController {
             return;
         }
 
+        $priceSelect = $showPrices ? 'i.sale_price,' : '';
         $db = Database::getInstance();
         $rows = $db->fetchAll(
-            "SELECT i.id, i.name, i.brand, i.sale_price, i.created_at,
+            "SELECT i.id, i.name, i.brand, {$priceSelect} i.created_at,
                     COALESCE(i.has_nfc, 0) AS has_nfc,
                     s.quantity AS stock,
                     COALESCE(c.name, '') AS category_name
@@ -64,7 +78,9 @@ class StockController extends BaseController {
         $companyEmail      = (string) ($settings['company_email'] ?? (defined('PDF_COMPANY_EMAIL') ? PDF_COMPANY_EMAIL : ''));
         $logoSrc           = $this->pricelistLogoDataUri();
         $printedAt         = date('d M Y, h:i A');
-        $pdfFilename       = 'Iqbal_Pricelist_' . date('Y-m-d') . '.pdf';
+        $pdfFilename       = $showPrices
+            ? 'Iqbal_Pricelist_' . date('Y-m-d') . '.pdf'
+            : 'Iqbal_Stock_List_' . date('Y-m-d') . '.pdf';
 
         include __DIR__ . '/../views/inventory/pricelist_print.php';
     }

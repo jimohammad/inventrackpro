@@ -1,34 +1,65 @@
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="page-title">Edit Discount — <?= htmlspecialchars($discount['discount_no']) ?></h1>
-    </div>
-    <a href="?page=discounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Back</a>
-</div>
+<style>
+.disc-edit-page { max-width: 920px; }
+.disc-edit-head {
+    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    margin-bottom:10px;
+}
+.disc-edit-head .page-title { margin:0; font-size:1.15rem; }
+.disc-edit-card {
+    border:1px solid var(--border-color, #e2e8f0); border-radius:10px; background:#fff; padding:10px 12px 12px;
+}
+.disc-edit-grid {
+    display:grid;
+    grid-template-columns: 118px minmax(150px,1.2fr) minmax(170px,1.3fr) 140px auto;
+    gap:6px 8px;
+    align-items:end;
+}
+.disc-edit-card .form-label {
+    display:block; font-size:.62rem; font-weight:800; text-transform:uppercase;
+    letter-spacing:.4px; color:#64748b; margin-bottom:3px;
+}
+.disc-edit-card .form-control,
+.disc-edit-card .form-select,
+.disc-edit-card .input-group-text {
+    border-radius:7px; border:1.4px solid #c9d5e8; min-height:32px; height:32px;
+    font-size:.8rem; padding:2px 8px;
+}
+.disc-edit-card .input-group-text { font-size:.68rem; font-weight:800; background:#f1f5f9; padding:0 8px; }
+.disc-edit-actions { display:flex; gap:6px; padding-bottom:1px; }
+.disc-edit-actions .btn { height:32px; padding:0 12px; font-size:.78rem; font-weight:700; border-radius:7px; }
+@media (max-width: 800px) {
+    .disc-edit-grid { grid-template-columns: 1fr 1fr; }
+    .disc-edit-actions { grid-column:1 / -1; }
+}
+</style>
 
-<div class="card" style="border-radius:14px;max-width:760px;border:1px solid #d7e3f8;box-shadow:0 10px 28px rgba(15,23,42,.05);">
-    <div class="card-body" style="padding:22px;">
+<div class="disc-edit-page">
+    <div class="disc-edit-head">
+        <h1 class="page-title">Edit Discount — <?= htmlspecialchars($discount['discount_no']) ?></h1>
+        <a href="?page=discounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Back</a>
+    </div>
+
+    <div class="disc-edit-card">
         <form method="POST" action="?page=discounts&action=update" id="discountEditForm">
             <?= Auth::csrfField() ?>
             <input type="hidden" name="id" value="<?= (int) $discount['id'] ?>">
 
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label" style="font-weight:700;font-size:0.78rem;text-transform:uppercase;letter-spacing:.4px;color:#64748b;">Date</label>
-                    <input type="date" name="date" class="form-control form-control-sm" value="<?= htmlspecialchars($discount['date'] ?? '') ?>" required>
+            <div class="disc-edit-grid">
+                <div>
+                    <label class="form-label">Date</label>
+                    <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($discount['date'] ?? '') ?>" required>
                 </div>
-
-                <div class="col-md-4">
-                    <label class="form-label" style="font-weight:700;font-size:0.78rem;text-transform:uppercase;letter-spacing:.4px;color:#64748b;">Customer <span class="text-danger">*</span></label>
-                    <select name="party_id" id="editDiscParty" class="form-select form-select-sm" required>
+                <div>
+                    <label class="form-label">Customer <span class="text-danger">*</span></label>
+                    <select name="party_id" id="editDiscParty" class="form-select" required>
                         <?php foreach ($parties as $p): ?>
                         <option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === (int) $discount['party_id'] ? 'selected' : '' ?>><?= htmlspecialchars($p['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-
-                <div class="col-md-4">
-                    <label class="form-label" style="font-weight:700;font-size:0.78rem;text-transform:uppercase;letter-spacing:.4px;color:#64748b;">Invoice <small class="text-muted">(optional)</small></label>
-                    <select name="sale_id" id="editDiscSale" class="form-select form-select-sm">
+                <div>
+                    <label class="form-label">Invoice <span style="text-transform:none;font-weight:600;color:#94a3b8;">optional</span></label>
+                    <select name="sale_id" id="editDiscSale" class="form-select">
                         <option value="">No invoice (general)</option>
                         <?php foreach (($invoices ?? []) as $inv): ?>
                         <option value="<?= (int) $inv['id'] ?>" <?= (int) $inv['id'] === (int) ($discount['sale_id'] ?? 0) ? 'selected' : '' ?>>
@@ -37,20 +68,18 @@
                         <?php endforeach; ?>
                     </select>
                 </div>
-
-                <div class="col-md-4">
-                    <label class="form-label" style="font-weight:700;font-size:0.78rem;text-transform:uppercase;letter-spacing:.4px;color:#64748b;">Amount <span class="text-danger">*</span></label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text" style="font-weight:700;"><?= APP_CURRENCY ?></span>
+                <div>
+                    <label class="form-label">Amount <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <span class="input-group-text"><?= APP_CURRENCY ?></span>
                         <input type="number" name="amount" class="form-control" step="0.001" min="0.001" required
-                               value="<?= number_format($discount['amount'], DECIMAL_PLACES, '.', '') ?>" style="font-weight:700;color:#059669;">
+                               value="<?= number_format($discount['amount'], DECIMAL_PLACES, '.', '') ?>" style="font-weight:800;color:#059669;">
                     </div>
                 </div>
-            </div>
-
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-primary btn-sm pin-protect"><i class="bi bi-check-lg me-1"></i> Save Changes</button>
-                <a href="?page=discounts" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                <div class="disc-edit-actions">
+                    <button type="submit" class="btn btn-primary pin-protect"><i class="bi bi-check-lg me-1"></i> Save</button>
+                    <a href="?page=discounts" class="btn btn-outline-secondary">Cancel</a>
+                </div>
             </div>
         </form>
     </div>

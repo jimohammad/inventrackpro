@@ -539,7 +539,7 @@ $accCountAll = count($accounts);
                 $rt = (string) ($txn['pay_ref_type'] ?? '');
                 if ($rt === 'discount') {
                     $lockReason = 'Discount payments are edited from Discounts.';
-                } elseif ($rt === 'purchase_order') {
+                } elseif ($rt === 'purchase_order' && ($txn['invoice_ref'] ?? '') !== Payment::UNLOCK_PO_ADVANCE_NO) {
                     $lockReason = 'PO advances cannot be edited.';
                 } else {
                     $editUrl = '?page=payments&action=edit&id=' . $txnId . '&return_account_id=' . $accLedgerId;

@@ -183,7 +183,7 @@ class PurchaseOrderController extends BaseController {
         $currency     = $this->input('currency') ?: 'AED';
         // Foreign price is a manual record/reminder only — no KWD conversion.
         $exchangeRate = 1;
-        $items        = $this->collectPostedPoItems($currency, '?page=purchaseorders&action=create');
+        $items        = $this->collectPostedPoItems($currency, '?page=purchaseorders&action=create', true);
 
         $subtotalForeign = array_sum(array_column($items, 'total_foreign'));
         $subtotalKwd     = array_sum(array_column($items, 'total_kwd'));
@@ -1005,6 +1005,139 @@ class PurchaseOrderController extends BaseController {
         }
     }
 
+    /**
+     * One-time removal of PO-000077 and PAY-001188.
+     * Puts the bank amount back so the transfer can be entered again.
+     */
+    public function purgeMistake(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=purchaseorders');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->flash('error', 'Invalid request method.');
+            $this->redirect('?page=purchaseorders');
+            return;
+        }
+
+        $id = $this->inputInt('id');
+        $po = $this->db->fetchOne("SELECT * FROM purchase_orders WHERE id = ?", [$id]);
+        if (!$po || (string) ($po['po_no'] ?? '') !== Payment::UNLOCK_PO_ADVANCE_NO) {
+            $this->flash('error', 'Only PO-000077 can be removed this way.');
+            $this->redirect('?page=purchaseorders');
+            return;
+        }
+        if (($po['status'] ?? '') === 'converted') {
+            $this->flash('error', 'This PO is already a purchase invoice. Reverse that invoice before removing the PO.');
+            $this->redirect('?page=purchaseorders&action=show&id=' . $id);
+            return;
+        }
+
+        $pay = $this->db->fetchOne(
+            "SELECT * FROM payments WHERE payment_no = 'PAY-001188' LIMIT 1"
+        );
+        if (!$pay) {
+            $this->flash('error', 'PAY-001188 was not found, so nothing was deleted.');
+            $this->redirect('?page=purchaseorders&action=show&id=' . $id);
+            return;
+        }
+        $payRefId = (int) ($pay['ref_id'] ?? 0);
+        if ($payRefId > 0 && $payRefId !== $id) {
+            $this->flash('error', 'PAY-001188 is linked to a different document, so nothing was deleted.');
+            $this->redirect('?page=purchaseorders&action=show&id=' . $id);
+            return;
+        }
+
+        $docs = [];
+        $this->db->beginTransaction();
+        try {
+            $pays = $this->db->fetchAll(
+                "SELECT * FROM payments
+                 WHERE id = ?
+                    OR (ref_type = 'purchase_order' AND ref_id = ?)
+                 FOR UPDATE",
+                [(int) $pay['id'], $id]
+            );
+            $seen = [];
+            foreach ($pays as $row) {
+                $pid = (int) ($row['id'] ?? 0);
+                if ($pid <= 0 || isset($seen[$pid])) {
+                    continue;
+                }
+                $seen[$pid] = true;
+                $amount = round((float) ($row['amount'] ?? 0), 3);
+                $accId = (int) ($row['account_id'] ?? 0);
+                if ($accId > 0 && $amount > 0 && ($row['payment_type'] ?? '') === 'out'
+                    && (string) ($row['status'] ?? 'active') !== 'cancelled'
+                ) {
+                    $this->db->fetchOne('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [$accId]);
+                    $this->db->execute(
+                        'UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?',
+                        [$amount, $accId]
+                    );
+                }
+                $this->db->execute('DELETE FROM payments WHERE id = ?', [$pid]);
+            }
+
+            foreach ([
+                "DELETE ipa FROM import_payable_accruals ipa
+                 JOIN shipment_item_charges sic ON sic.id = ipa.shipment_item_charge_id
+                 JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+                 WHERE poi.po_id = ?",
+                "DELETE sic FROM shipment_item_charges sic
+                 JOIN purchase_order_items poi ON poi.id = sic.po_item_id
+                 WHERE poi.po_id = ?",
+                'DELETE FROM shipment_purchase_orders WHERE po_id = ?',
+            ] as $extraSql) {
+                $this->db->execute('SAVEPOINT po_purge_extra');
+                try {
+                    $this->db->execute($extraSql, [$id]);
+                    $this->db->execute('RELEASE SAVEPOINT po_purge_extra');
+                } catch (Exception $e) {
+                    $this->db->execute('ROLLBACK TO SAVEPOINT po_purge_extra');
+                }
+            }
+
+            try {
+                $docs = $this->db->fetchAll(
+                    'SELECT stored_path FROM purchase_order_documents WHERE po_id = ?',
+                    [$id]
+                );
+                $this->db->execute('DELETE FROM purchase_order_documents WHERE po_id = ?', [$id]);
+            } catch (Exception $e) {
+                $docs = [];
+            }
+
+            $this->db->execute('DELETE FROM purchase_order_items WHERE po_id = ?', [$id]);
+            $this->db->execute('DELETE FROM purchase_orders WHERE id = ?', [$id]);
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->flash('error', 'Could not remove the PO: ' . $e->getMessage());
+            $this->redirect('?page=purchaseorders&action=show&id=' . $id);
+            return;
+        }
+
+        foreach ($docs as $doc) {
+            $rel = str_replace(['\\', '..'], ['/', ''], (string) ($doc['stored_path'] ?? ''));
+            if ($rel === '' || !str_starts_with($rel, 'po_docs/') || !defined('UPLOAD_PATH')) {
+                continue;
+            }
+            $abs = rtrim(UPLOAD_PATH, '/\\') . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            if (is_file($abs)) {
+                @unlink($abs);
+            }
+        }
+
+        $this->logActivity('delete_po', 'purchase_orders', $id, 'Removed PO-000077 and PAY-001188');
+        self::clearDashboardCache((int) ($po['warehouse_id'] ?? 0));
+        require_once __DIR__ . '/../models/Party.php';
+        Party::clearBalanceListCache();
+        $this->flash('success', 'PO-000077 and PAY-001188 are removed. The bank amount is back on the account. You can create the PO again.');
+        $this->redirect('?page=purchaseorders');
+    }
+
     // ─── Cancel PO ────────────────────────────────────────────────────────────
     public function cancel(): void {
         Auth::authorize('purchases', 'delete');
@@ -1152,29 +1285,39 @@ class PurchaseOrderController extends BaseController {
         $status          = $this->resolvePoStatus($paidKwd, $totalKwd);
 
         $newAccountId = $this->inputInt('account_id') ?: null;
-        if ($paidKwd > 0 && !$newAccountId) {
-            $this->flash('error', 'Please select an account for the paid amount.');
-            $this->redirect('?page=purchaseorders&action=edit&id=' . $id);
-            return;
-        }
 
         // Account handling: detect change in paid amount and deduct/refund accordingly
         $oldPaidKwd  = (float)$po['paid_kwd'];
         $oldAccountId = (int)($po['account_id'] ?? 0);
         $paidDiff = round($paidKwd - $oldPaidKwd, 3);
 
-        $poPayOnFile = $this->db->fetchOne(
-            "SELECT id FROM payments
+        $linkedPays = $this->db->fetchAll(
+            "SELECT id, amount, account_id FROM payments
              WHERE ref_type = 'purchase_order' AND ref_id = ? AND status = 'active'
-             LIMIT 1",
+             ORDER BY id ASC",
             [$id]
         );
-        if ($poPayOnFile && ($paidDiff != 0.0 || $newAccountId !== $oldAccountId)) {
+        $unlockPo = (string) ($po['po_no'] ?? '') === Payment::UNLOCK_PO_ADVANCE_NO;
+        if ($unlockPo && $linkedPays && $paidKwd > 0 && !$newAccountId) {
+            $newAccountId = $oldAccountId > 0 ? $oldAccountId : (int) ($linkedPays[0]['account_id'] ?? 0);
+            $newAccountId = $newAccountId > 0 ? $newAccountId : null;
+        }
+        if ($paidKwd > 0 && !$newAccountId) {
+            $this->flash('error', 'Please select an account for the paid amount.');
+            $this->redirect('?page=purchaseorders&action=edit&id=' . $id);
+            return;
+        }
+        if ($linkedPays && ($paidDiff != 0.0 || (int) $newAccountId !== $oldAccountId) && !$unlockPo) {
             $this->flash(
                 'error',
                 'This PO already has a posted payment. Amount Paid and account cannot be changed. '
                 . 'Cancel the PO to leave the amount as supplier credit (bank is not restored), then create a new PO if needed.'
             );
+            $this->redirect('?page=purchaseorders&action=edit&id=' . $id);
+            return;
+        }
+        if ($unlockPo && $linkedPays && $paidKwd <= 0) {
+            $this->flash('error', 'Enter the Amount Paid. This PO already has a bank transfer, so paid cannot be saved as zero.');
             $this->redirect('?page=purchaseorders&action=edit&id=' . $id);
             return;
         }
@@ -1200,7 +1343,14 @@ class PurchaseOrderController extends BaseController {
                 ]
             );
 
-            if ($poPayOnFile) {
+            if ($unlockPo && $linkedPays && ($paidDiff != 0.0 || (int) $newAccountId !== $oldAccountId)) {
+                $this->syncUnlockedPoPayments(
+                    $linkedPays,
+                    $paidKwd,
+                    (int) $newAccountId,
+                    (string) ($this->input('date') ?: $po['date'])
+                );
+            } elseif ($linkedPays) {
                 // Posted PAY rows are immutable — do not delete/recreate on item or header edits.
             } else {
             // Adjust account balances if paid amount changed
@@ -1378,11 +1528,57 @@ class PurchaseOrderController extends BaseController {
 
         // ─── Helpers ──────────────────────────────────────────────────────────────
     /**
-     * Posted PO lines. AED/USD may have blank KWD (filled at TT). Local KWD requires a price.
+     * PO-000077: move the bank by the real payment rows, then store the new paid total.
+     * One payment takes the full amount. Extra rows keep their amount; the latest row absorbs the difference.
      *
-     * @return list<array<string, mixed>>
+     * @param list<array<string,mixed>> $linkedPays
      */
-    private function collectPostedPoItems(string $currency, string $redirectUrl): array {
+    private function syncUnlockedPoPayments(array $linkedPays, float $paidKwd, int $newAccountId, string $date): void {
+        foreach ($linkedPays as $pay) {
+            $amt = round((float) ($pay['amount'] ?? 0), 3);
+            $acc = (int) ($pay['account_id'] ?? 0);
+            if ($acc > 0 && $amt > 0) {
+                $this->db->execute(
+                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?",
+                    [$amt, $acc]
+                );
+            }
+        }
+
+        $count = count($linkedPays);
+        $lastIdx = $count - 1;
+        $running = 0.0;
+        foreach ($linkedPays as $i => $pay) {
+            $payId = (int) $pay['id'];
+            $amt = round((float) ($pay['amount'] ?? 0), 3);
+            if ($count === 1) {
+                $amt = $paidKwd;
+            } elseif ($i === $lastIdx) {
+                $amt = round($paidKwd - $running, 3);
+            } else {
+                $running = round($running + $amt, 3);
+            }
+            if ($amt <= 0) {
+                throw new Exception('Paid amount is lower than the other payments already on this PO.');
+            }
+            $acc = $count === 1 ? $newAccountId : (int) ($pay['account_id'] ?? 0);
+            if ($i === $lastIdx && $newAccountId > 0) {
+                $acc = $newAccountId;
+            }
+            $this->db->execute(
+                "UPDATE payments SET amount = ?, account_id = ?, date = ? WHERE id = ?",
+                [$amt, $acc > 0 ? $acc : null, $date, $payId]
+            );
+            if ($acc > 0) {
+                $this->db->execute(
+                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?",
+                    [$amt, $acc]
+                );
+            }
+        }
+    }
+
+    private function collectPostedPoItems(string $currency, string $redirectUrl, bool $lockLineKwd = false): array {
         $rawItems = $_POST['items'] ?? [];
         $items    = [];
         foreach ($rawItems as $row) {
@@ -1400,6 +1596,10 @@ class PurchaseOrderController extends BaseController {
             }
             $foreignPrice = round((float) ($row['foreign_price'] ?? 0), 3);
             $foreignTotal = round($foreignPrice * $qty, 3);
+            if ($lockLineKwd) {
+                $kwdPrice = 0;
+                $kwdTotal = 0;
+            }
             $items[] = [
                 'item_id'            => (int) $row['item_id'],
                 'quantity'           => $qty,
@@ -1417,11 +1617,11 @@ class PurchaseOrderController extends BaseController {
 
         $isForeign = $currency !== 'KWD';
         foreach ($items as $it) {
-            if ($isForeign && $it['unit_price_foreign'] <= 0.001) {
-                $this->flash('error', 'Enter the supplier foreign price on every line. Leave KWD blank — it is filled when you pay the bank TT.');
+            if (($isForeign || $lockLineKwd) && $it['unit_price_foreign'] <= 0.001) {
+                $this->flash('error', 'Enter the supplier price on every line. Unit and Total (KWD) are filled when the bank payment is saved.');
                 $this->redirect($redirectUrl);
             }
-            if (!$isForeign && $it['total_kwd'] <= 0.001) {
+            if (!$isForeign && !$lockLineKwd && $it['total_kwd'] <= 0.001) {
                 $this->flash('error', 'Enter the KWD price on every line.');
                 $this->redirect($redirectUrl);
             }

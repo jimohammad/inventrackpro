@@ -59,30 +59,62 @@ $partyModel = new Party();
 if ($action === 'invoiceDetail') {
     header('Content-Type: application/json');
     $refNo = trim($_GET['ref'] ?? '');
+    $kind  = trim($_GET['kind'] ?? 'sale');
+    if (!in_array($kind, ['sale', 'return'], true)) {
+        $kind = 'sale';
+    }
     
     $party = $partyModel->findByStatementToken($token);
     if (!$party) { echo json_encode(['error' => 'Invalid token']); exit; }
     
     $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-    $saleSql = "SELECT invoice_no, date, created_at, subtotal, discount, grand_total, paid_amount, balance, status
-         FROM sales WHERE invoice_no = ? AND party_id = ? AND status != 'cancelled'";
-    $saleParams = [$refNo, $party['id']];
-    if ($statementWhId > 0) {
-        $saleSql .= ' AND warehouse_id = ?';
-        $saleParams[] = $statementWhId;
-    }
-    $sale = $db->fetchOne($saleSql, $saleParams);
-    if (!$sale) { echo json_encode(['error' => 'Invoice not found']); exit; }
-    
-    $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
-         FROM sale_items si
-         JOIN items i ON i.id = si.item_id
-         JOIN sales s ON s.id = si.sale_id
-         WHERE s.invoice_no = ? AND s.party_id = ?";
-    $itemsParams = [$refNo, $party['id']];
-    if ($statementWhId > 0) {
-        $itemsSql .= ' AND s.warehouse_id = ?';
-        $itemsParams[] = $statementWhId;
+    if ($kind === 'return') {
+        $docSql = "SELECT return_no AS invoice_no, date, created_at, subtotal,
+                          0 AS discount, grand_total, 0 AS paid_amount, 0 AS balance,
+                          status, reason
+                   FROM `returns`
+                   WHERE return_no = ? AND party_id = ? AND status = 'approved'";
+        $docParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $docSql .= ' AND warehouse_id = ?';
+            $docParams[] = $statementWhId;
+        }
+        $sale = $db->fetchOne($docSql, $docParams);
+        if (!$sale) { echo json_encode(['error' => 'Return not found']); exit; }
+
+        $itemsSql = "SELECT i.name AS item_name, ri.quantity, ri.unit_price, 0 AS discount, ri.total
+             FROM return_items ri
+             JOIN items i ON i.id = ri.item_id
+             JOIN `returns` r ON r.id = ri.return_id
+             WHERE r.return_no = ? AND r.party_id = ? AND r.status = 'approved'";
+        $itemsParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $itemsSql .= ' AND r.warehouse_id = ?';
+            $itemsParams[] = $statementWhId;
+        }
+        $sale['doc_kind'] = 'return';
+    } else {
+        $docSql = "SELECT invoice_no, date, created_at, subtotal, discount, grand_total, paid_amount, balance, status
+             FROM sales WHERE invoice_no = ? AND party_id = ? AND status != 'cancelled'";
+        $docParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $docSql .= ' AND warehouse_id = ?';
+            $docParams[] = $statementWhId;
+        }
+        $sale = $db->fetchOne($docSql, $docParams);
+        if (!$sale) { echo json_encode(['error' => 'Invoice not found']); exit; }
+
+        $itemsSql = "SELECT i.name as item_name, si.quantity, si.unit_price, si.discount, si.total
+             FROM sale_items si
+             JOIN items i ON i.id = si.item_id
+             JOIN sales s ON s.id = si.sale_id
+             WHERE s.invoice_no = ? AND s.party_id = ?";
+        $itemsParams = [$refNo, $party['id']];
+        if ($statementWhId > 0) {
+            $itemsSql .= ' AND s.warehouse_id = ?';
+            $itemsParams[] = $statementWhId;
+        }
+        $sale['doc_kind'] = 'sale';
     }
     $items = $db->fetchAll($itemsSql, $itemsParams);
     
@@ -101,9 +133,11 @@ if (!$party) {
 }
 
 $statementWhId = (int) ($party['statement_warehouse_id'] ?? $partyModel->resolvePublicStatementWarehouseId((int) $party['id']));
-$transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', '', $statementWhId);
+$asOfToday     = date('Y-m-d');
+// Same cap as Party Master Due and the Balance card. Future-dated rows stay off until that date.
+$transactions  = $partyModel->getUnifiedStatementTransactions((int) $party['id'], '', $asOfToday, $statementWhId);
 $openingBal    = $partyModel->computeStatementOpeningBalance((int) $party['id'], '', $statementWhId);
-$closingBal    = $partyModel->computeBalanceAsOf((int) $party['id'], date('Y-m-d'), $statementWhId);
+$closingBal    = $partyModel->computeBalanceAsOf((int) $party['id'], $asOfToday, $statementWhId);
 
 $company = $db->fetchOne("SELECT value FROM settings WHERE key_name = 'company_name'");
 $companyName = $company['value'] ?? (defined('PDF_COMPANY_NAME') ? PDF_COMPANY_NAME : 'Iqbal Electronics Co. LLC');
@@ -237,8 +271,8 @@ $companyPhoneVal = $companyPhone['value'] ?? '';
                 </td>
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;">
-                    <?php if ($t['type'] === 'Sale'): ?>
-                    <a href="javascript:void(0)" class="inv-link inv-view-link" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>"><?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i></a>
+                    <?php if ($t['type'] === 'Sale' || $t['type'] === 'Return'): ?>
+                    <a href="javascript:void(0)" class="inv-link inv-view-link" data-kind="<?= $t['type'] === 'Return' ? 'return' : 'sale' ?>" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>"><?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i></a>
                     <?php else: ?>
                     <span style="color:#4338ca;"><?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?></span>
                     <?php endif; ?>
@@ -299,21 +333,26 @@ function escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
-function showInvoice(refNo) {
+function showInvoice(refNo, kind) {
+    kind = kind === 'return' ? 'return' : 'sale';
     document.getElementById('invModal').style.display = 'flex';
     document.getElementById('invNo').textContent = refNo;
     document.getElementById('invDate').textContent = 'Loading...';
     document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div>';
 
-    fetch('/s/<?= rawurlencode($token) ?>?action=invoiceDetail&ref=' + encodeURIComponent(refNo))
+    fetch('/s/<?= rawurlencode($token) ?>?action=invoiceDetail&kind=' + encodeURIComponent(kind) + '&ref=' + encodeURIComponent(refNo))
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.error) { document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">' + escapeHtml(data.error) + '</div>'; return; }
-            var inv = data.invoice, items = data.items;
-            document.getElementById('invDate').textContent = inv.when_label || inv.date;
+            var inv = data.invoice, items = data.items || [];
+            var isReturn = inv.doc_kind === 'return';
+            document.getElementById('invDate').textContent = (isReturn ? 'Return · ' : '') + (inv.when_label || inv.date || '');
             var c = '<?= APP_CURRENCY ?>';
             var html = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
             html += '<thead><tr style="background:#f8fafc;"><th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#64748b;">ITEM</th><th style="padding:8px 10px;text-align:center;font-size:0.7rem;color:#64748b;">QTY</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">PRICE</th><th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;">TOTAL</th></tr></thead><tbody>';
+            if (!items.length) {
+                html += '<tr><td colspan="4" style="padding:12px 10px;color:#94a3b8;text-align:center;">No lines on this ' + (isReturn ? 'return' : 'invoice') + '</td></tr>';
+            }
             items.forEach(function(it) {
                 html += '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 10px;font-weight:500;">' + escapeHtml(it.item_name) + '</td><td style="padding:8px 10px;text-align:center;">' + escapeHtml(it.quantity) + '</td><td style="padding:8px 10px;text-align:right;">' + parseFloat(it.unit_price).toFixed(3) + '</td><td style="padding:8px 10px;text-align:right;font-weight:600;">' + parseFloat(it.total).toFixed(3) + '</td></tr>';
             });
@@ -322,9 +361,14 @@ function showInvoice(refNo) {
             html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;color:#64748b;"><span>Subtotal</span><span style="font-weight:600;">' + c + ' ' + parseFloat(inv.subtotal).toFixed(3) + '</span></div>';
             if (parseFloat(inv.discount) > 0) html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;color:#64748b;"><span>Discount</span><span style="color:#ef4444;">-' + c + ' ' + parseFloat(inv.discount).toFixed(3) + '</span></div>';
             html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:1rem;font-weight:800;color:#1e293b;border-top:1px solid #e2e8f0;margin-top:4px;"><span>Grand Total</span><span style="color:#4338ca;">' + c + ' ' + parseFloat(inv.grand_total).toFixed(3) + '</span></div>';
-            html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;"><span style="color:#64748b;">Paid</span><span style="color:#10b981;font-weight:600;">' + c + ' ' + parseFloat(inv.paid_amount).toFixed(3) + '</span></div>';
-            var bal = parseFloat(inv.balance);
-            if (bal > 0.001) html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;"><span style="color:#64748b;">Balance</span><span style="color:#ef4444;font-weight:700;">' + c + ' ' + bal.toFixed(3) + '</span></div>';
+            if (!isReturn) {
+                html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;"><span style="color:#64748b;">Paid</span><span style="color:#10b981;font-weight:600;">' + c + ' ' + parseFloat(inv.paid_amount).toFixed(3) + '</span></div>';
+                var bal = parseFloat(inv.balance);
+                if (bal > 0.001) html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;"><span style="color:#64748b;">Balance</span><span style="color:#ef4444;font-weight:700;">' + c + ' ' + bal.toFixed(3) + '</span></div>';
+            }
+            if (isReturn && inv.reason) {
+                html += '<div style="padding:8px 0 0;font-size:0.78rem;color:#64748b;">' + escapeHtml(inv.reason) + '</div>';
+            }
             html += '</div>';
             document.getElementById('invBody').innerHTML = html;
         })
@@ -338,7 +382,7 @@ document.getElementById('invModal')?.addEventListener('click', function(e) {
     if (e.target === this) closeInvModal();
 });
 document.querySelectorAll('.inv-view-link').forEach(function(a) {
-    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref')); });
+    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref'), this.getAttribute('data-kind')); });
 });
 </script>
 </body>

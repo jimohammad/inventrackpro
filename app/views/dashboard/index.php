@@ -6,10 +6,130 @@ function money($val) {
 ?>
 
 <!-- Page Header -->
-<div class="d-flex justify-content-between align-items-start mb-4">
-    <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Welcome back, <?= htmlspecialchars(Auth::name()) ?> — <?= date('l, d F Y') ?></p>
+<style>
+.dash-head {
+    gap: 12px;
+}
+.dash-when {
+    display: inline-grid;
+    grid-template-columns: auto auto auto;
+    grid-template-rows: auto auto;
+    align-items: baseline;
+    column-gap: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.dash-when::after {
+    content: "";
+    grid-column: 3;
+    grid-row: 1 / 3;
+    align-self: stretch;
+    background: #f8fafc;
+    border-left: 1px solid var(--border-color);
+}
+.dash-when__cal {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 8px 12px 9px;
+    background: linear-gradient(160deg, #818cf8 0%, #4f46e5 100%);
+    color: #fff;
+    line-height: 1;
+}
+.dash-when__mon {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.92;
+}
+.dash-when__day {
+    font-size: 1.45rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.dash-when__weekday,
+.dash-when__full,
+.dash-when__ampm,
+.dash-when__time {
+    position: relative;
+    z-index: 1;
+    white-space: nowrap;
+}
+.dash-when__weekday {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 8px 16px 2px 14px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+    line-height: 1;
+}
+.dash-when__full {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 0 16px 8px 14px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+.dash-when__ampm {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    padding: 8px 16px 2px 14px;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #6366f1;
+    line-height: 1;
+}
+.dash-when__time {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: end;
+    padding: 0 16px 8px 14px;
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #4338ca;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+@media (max-width: 576px) {
+    .dash-when { grid-template-columns: auto auto; }
+    .dash-when__weekday,
+    .dash-when__full { display: none; }
+    .dash-when::after,
+    .dash-when__ampm,
+    .dash-when__time { grid-column: 2; }
+}
+</style>
+<div class="d-flex justify-content-between align-items-center mb-4 dash-head">
+    <h1 class="page-title mb-0">Dashboard</h1>
+    <div class="dash-when" aria-label="<?= date('l, d F Y, h:i A') ?>">
+        <div class="dash-when__cal">
+            <span class="dash-when__mon"><?= date('M') ?></span>
+            <span class="dash-when__day"><?= date('j') ?></span>
+        </div>
+        <span class="dash-when__weekday"><?= date('l') ?></span>
+        <span class="dash-when__ampm"><?= date('A') ?></span>
+        <span class="dash-when__full"><?= date('F Y') ?></span>
+        <span class="dash-when__time"><?= date('h:i') ?></span>
     </div>
 </div>
 

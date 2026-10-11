@@ -592,6 +592,20 @@ class ReturnController extends BaseController {
                 return;
             }
 
+            $returnParty = $db->fetchOne('SELECT id, type, is_active FROM parties WHERE id = ?', [$partyId]);
+            if (!$returnParty || (int) ($returnParty['is_active'] ?? 0) !== 1) {
+                $this->redirectReturnCreateWithDraft('error', 'Customer is inactive or does not exist.');
+                return;
+            }
+            $returnTypes = ['customer', 'both'];
+            if (Auth::canInvoiceSupplier()) {
+                $returnTypes[] = 'supplier';
+            }
+            if (!in_array((string) ($returnParty['type'] ?? ''), $returnTypes, true)) {
+                $this->redirectReturnCreateWithDraft('error', 'Selected party is not allowed on a sale return.');
+                return;
+            }
+
             $imeiErr = $this->validateReturnLineImeis($items, 'sale', $refId);
             if ($imeiErr !== null) {
                 $this->redirectReturnCreateWithDraft('error', $imeiErr);
@@ -1362,15 +1376,12 @@ class ReturnController extends BaseController {
                                 [$retItemId]
                             );
                             foreach ($imeiRows as $imeiRow) {
-                                $imeiAff = $db->execute(
-                                    "UPDATE imei_records
-                                     SET status = 'sold', sale_id = ?, warehouse_id = ?
-                                     WHERE id = ? AND status IN ('in_stock','returned')",
-                                    [!empty($return['ref_id']) ? (int)$return['ref_id'] : null, $warehouseId, (int)$imeiRow['id']]
+                                $this->returnModel->restoreReturnedImeiToSold(
+                                    (int) $imeiRow['id'],
+                                    $warehouseId,
+                                    (int) ($return['ref_id'] ?? 0),
+                                    'edit'
                                 );
-                                if ($imeiAff === 0) {
-                                    throw new Exception("Unable to restore IMEI {$imeiRow['imei']} to sold state.");
-                                }
                             }
                             $db->execute("DELETE FROM return_item_imei WHERE return_item_id = ?", [$retItemId]);
                         }
@@ -1512,15 +1523,12 @@ class ReturnController extends BaseController {
                                 if (in_array($imeiText, $postedImeis, true)) {
                                     continue;
                                 }
-                                $soldAff = $db->execute(
-                                    "UPDATE imei_records
-                                     SET status='sold', sale_id=?, warehouse_id=?
-                                     WHERE id=? AND status IN ('in_stock','returned')",
-                                    [!empty($return['ref_id']) ? (int)$return['ref_id'] : null, $warehouseId, (int)$imeiId]
+                                $this->returnModel->restoreReturnedImeiToSold(
+                                    (int) $imeiId,
+                                    $warehouseId,
+                                    (int) ($return['ref_id'] ?? 0),
+                                    'edit'
                                 );
-                                if ($soldAff === 0) {
-                                    throw new Exception("Unable to restore IMEI {$imeiText} to sold state.");
-                                }
                                 $db->execute(
                                     "DELETE FROM return_item_imei WHERE return_item_id = ? AND imei_id = ?",
                                     [$retItemId, (int)$imeiId]

@@ -1626,6 +1626,7 @@ class LandedCostController extends BaseController {
         if (!in_array($settleScope, ['month', 'to_date'], true)) {
             $settleScope = 'month';
         }
+        $discountAmount = round(max(0, (float) str_replace(',', '', trim($this->input('discount_amount', '0', 'post')))), 3);
 
         $paymentIds = array_values(array_unique(array_filter(
             array_map('intval', (array) ($_POST['payment_ids'] ?? [])),
@@ -1677,10 +1678,12 @@ class LandedCostController extends BaseController {
         if ($paymentIds !== []) {
             $ph = implode(',', array_fill(0, count($paymentIds), '?'));
             $found = $db->fetchAll(
-                "SELECT id, payment_no, amount, party_id, status, payment_type, date
+                "SELECT id, payment_no, amount, party_id, account_id, status, payment_type, date
                  FROM payments
                  WHERE id IN ({$ph}) AND party_id = ? AND payment_type = 'out' AND status = 'active'
                    AND (warehouse_id = ? OR warehouse_id IS NULL)
+                   AND ref_type IS NOT NULL AND ref_type != ''
+                   AND ref_type NOT IN ('discount', 'expense', 'purchase_order')
                  ORDER BY amount DESC, id ASC",
                 array_merge($paymentIds, [$partyId, $wh])
             );
@@ -1695,10 +1698,12 @@ class LandedCostController extends BaseController {
         }
         foreach ($paymentNos as $payNo) {
             $p = $db->fetchOne(
-                "SELECT id, payment_no, amount, party_id, status, payment_type, date
+                "SELECT id, payment_no, amount, party_id, account_id, status, payment_type, date
                  FROM payments
                  WHERE payment_no = ? AND party_id = ? AND payment_type = 'out' AND status = 'active'
-                   AND (warehouse_id = ? OR warehouse_id IS NULL)",
+                   AND (warehouse_id = ? OR warehouse_id IS NULL)
+                   AND ref_type IS NOT NULL AND ref_type != ''
+                   AND ref_type NOT IN ('discount', 'expense', 'purchase_order')",
                 [$payNo, $partyId, $wh]
             );
             if (!$p) {
@@ -1728,6 +1733,22 @@ class LandedCostController extends BaseController {
         PackingVendorBillService::ensureSchema($db);
 
         $accruedTotal = round(array_sum(array_map(static fn ($r) => (float) ($r['amount'] ?? 0), $payableRows)), 3);
+        if ($discountAmount > $accruedTotal + 0.001) {
+            $this->flash('error', 'Discount cannot be more than the packing due (ERP estimate).');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+        $covered = round($paySum + $discountAmount, 3);
+        if (abs($covered - $accruedTotal) > 0.001) {
+            $this->flash(
+                'error',
+                'Linked payments plus discount must equal the ERP packing due ('
+                . number_format($accruedTotal, DECIMAL_PLACES)
+                . '). Selected cash is ' . number_format($paySum, DECIMAL_PLACES) . '.'
+            );
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
         $chargeIds = [];
         foreach ($payableRows as $r) {
             $cid = (int) ($r['id'] ?? 0);
@@ -1787,6 +1808,7 @@ class LandedCostController extends BaseController {
         );
 
         $bills = 0;
+        $discountLeft = $discountAmount;
         foreach ($paymentsList as $p) {
             $pid = (int) ($p['id'] ?? 0);
             $amt = round((float) ($p['amount'] ?? 0), 3);
@@ -1794,20 +1816,49 @@ class LandedCostController extends BaseController {
                 continue;
             }
             $shareEst = $paySum > 0.001 ? round($accruedTotal * ($amt / $paySum), 3) : 0.0;
+            $billAmt = $amt;
+            $billNote = 'Linked existing PAY — packing vendor bill AP';
+            if ($discountLeft > 0.001) {
+                $billAmt = round($amt + $discountLeft, 3);
+                $billNote .= ' · discount ' . number_format($discountLeft, DECIMAL_PLACES);
+                $discountLeft = 0.0;
+            }
             $id = PackingVendorBillService::createPaidBill(
                 $db,
                 $partyId,
                 $pid,
-                $amt,
+                $billAmt,
                 (string) ($p['date'] ?? date('Y-m-d')),
                 $settleScope === 'month' ? $settleMonth : substr((string) ($p['date'] ?? ''), 0, 7),
                 $shareEst,
                 $wh,
                 '',
-                'Linked existing PAY — packing vendor bill AP'
+                $billNote
             );
             if ($id > 0) {
                 $bills++;
+            }
+        }
+
+        $discPayId = 0;
+        if ($discountAmount > 0.001) {
+            $firstPay = $paymentsList[0] ?? [];
+            $discPayId = PackingVendorBillService::createPaymentDiscount(
+                $db,
+                $partyId,
+                $discountAmount,
+                (string) ($firstPay['date'] ?? date('Y-m-d')),
+                $wh,
+                sprintf(
+                    'Packing discount at payment — %s off ERP due %s (linked cash %s)',
+                    number_format($discountAmount, DECIMAL_PLACES),
+                    number_format($accruedTotal, DECIMAL_PLACES),
+                    number_format($paySum, DECIMAL_PLACES)
+                ),
+                (int) ($firstPay['account_id'] ?? 0)
+            );
+            if ($discPayId > 0) {
+                $this->logActivity('create_payment', 'payments', $discPayId);
             }
         }
 
@@ -1818,16 +1869,21 @@ class LandedCostController extends BaseController {
             static fn ($p) => (string) $p['payment_no'],
             $paymentsList
         ));
-        $this->flash(
-            'success',
-            sprintf(
-                'Linked %s (%s KWD) → %d vendor bill(s); ERP estimate %s cleared from party AP. Statement should match invoice ↔ payment.',
-                $payLabel,
-                number_format($paySum, DECIMAL_PLACES),
-                $bills,
-                number_format($accruedTotal, DECIMAL_PLACES)
-            )
+        $linkMsg = sprintf(
+            'Linked %s (%s KWD)%s → %d vendor bill(s); ERP due %s cleared from party AP.',
+            $payLabel,
+            number_format($paySum, DECIMAL_PLACES),
+            $discountAmount > 0.001
+                ? (', discount ' . number_format($discountAmount, DECIMAL_PLACES))
+                : '',
+            $bills,
+            number_format($accruedTotal, DECIMAL_PLACES)
         );
+        if ($discountAmount > 0.001 && $discPayId <= 0) {
+            $this->flash('warning', $linkMsg . ' Discount payment row failed — check Union statement.');
+        } else {
+            $this->flash('success', $linkMsg);
+        }
         $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
     }
 
@@ -1909,6 +1965,7 @@ class LandedCostController extends BaseController {
         $extraNotes    = trim($this->input('notes', '', 'post'));
         $settleMonth   = trim($this->input('settle_month', '', 'post'));
         $invoiceRaw    = trim($this->input('invoice_amount', '', 'post'));
+        $discountRaw   = trim($this->input('discount_amount', '0', 'post'));
         $invoiceRef    = trim($this->input('invoice_ref', '', 'post'));
         $settleScope   = trim($this->input('settle_scope', 'to_date', 'post'));
         if (!in_array($settleScope, ['month', 'to_date'], true)) {
@@ -1927,8 +1984,9 @@ class LandedCostController extends BaseController {
         }
 
         $invoiceAmount = round((float) str_replace(',', '', $invoiceRaw), 3);
+        $discountAmount = round(max(0, (float) str_replace(',', '', $discountRaw)), 3);
         if ($invoiceAmount <= 0.001) {
-            $this->flash('error', 'Enter Union’s invoice amount (exact billed KWD).');
+            $this->flash('error', 'Enter the cash to pay (ERP due minus discount).');
             $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
             return;
         }
@@ -1971,6 +2029,21 @@ class LandedCostController extends BaseController {
             $erpEstimate += $amt;
         }
         $erpEstimate = round($erpEstimate, 3);
+        if ($discountAmount > $erpEstimate + 0.001) {
+            $this->flash('error', 'Discount cannot be more than the packing due (ERP estimate).');
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
+        $billAmount = round($invoiceAmount + $discountAmount, 3);
+        if (abs($billAmount - $erpEstimate) > 0.001) {
+            $this->flash(
+                'error',
+                'Cash plus discount must equal the ERP packing due ('
+                . number_format($erpEstimate, DECIMAL_PLACES) . ').'
+            );
+            $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
+            return;
+        }
 
         if ($chargeIds === [] || $partyId <= 0) {
             $this->flash('error', 'Could not resolve Union Logistics or packing lines.');
@@ -1983,12 +2056,15 @@ class LandedCostController extends BaseController {
             : 'to date';
         $partyName = (string) ($packingParty['name'] ?? ($payableRows[0]['party_name'] ?? 'Union Logistics'));
         $notes = sprintf(
-            'Packing DXB — %s — vendor invoice %s KWD (%s; ERP est. %s)',
+            'Packing DXB — %s — cash %s KWD (%s; ERP due %s)',
             $partyName,
             number_format($invoiceAmount, DECIMAL_PLACES),
             $scopeLabel,
             number_format($erpEstimate, DECIMAL_PLACES)
         );
+        if ($discountAmount > 0.001) {
+            $notes .= ' · discount ' . number_format($discountAmount, DECIMAL_PLACES);
+        }
         if ($invoiceRef !== '') {
             $notes .= ' · Inv ' . $invoiceRef;
         }
@@ -2033,7 +2109,7 @@ class LandedCostController extends BaseController {
             $db,
             $partyId,
             (int) $payId,
-            $invoiceAmount,
+            $billAmount,
             $date,
             $settleScope === 'month' ? $settleMonth : substr($date, 0, 7),
             $erpEstimate,
@@ -2042,19 +2118,47 @@ class LandedCostController extends BaseController {
             $notes
         );
 
+        $discPayId = 0;
+        if ($discountAmount > 0.001) {
+            $discPayId = PackingVendorBillService::createPaymentDiscount(
+                $db,
+                $partyId,
+                $discountAmount,
+                $date,
+                $this->warehouseId(),
+                sprintf(
+                    'Packing discount at payment — %s off ERP due %s (cash %s)',
+                    number_format($discountAmount, DECIMAL_PLACES),
+                    number_format($erpEstimate, DECIMAL_PLACES),
+                    number_format($invoiceAmount, DECIMAL_PLACES)
+                ),
+                $accountId
+            );
+        }
+
         $this->logActivity('create_payment', 'payments', (int) $payId);
+        if ($discPayId > 0) {
+            $this->logActivity('create_payment', 'payments', $discPayId);
+        }
         Party::clearBalanceListCache();
         self::clearDashboardCache($this->warehouseId());
 
-        $this->flash(
-            'success',
-            sprintf(
-                'Union vendor invoice posted & paid: %s %s (ERP estimate was %s). Party AP = invoice ↔ payment.',
-                APP_CURRENCY,
-                number_format($invoiceAmount, DECIMAL_PLACES),
-                number_format($erpEstimate, DECIMAL_PLACES)
-            ) . ($billId > 0 ? ' Bill #' . $billId . '.' : '')
-        );
+        $flashKind = 'success';
+        $flashMsg = sprintf(
+            'Union packing paid: cash %s %s%s (ERP due %s). Bill %s = cash + discount.',
+            APP_CURRENCY,
+            number_format($invoiceAmount, DECIMAL_PLACES),
+            $discountAmount > 0.001
+                ? (', discount ' . number_format($discountAmount, DECIMAL_PLACES))
+                : '',
+            number_format($erpEstimate, DECIMAL_PLACES),
+            number_format($billAmount, DECIMAL_PLACES)
+        ) . ($billId > 0 ? ' Bill #' . $billId . '.' : '');
+        if ($discountAmount > 0.001 && $discPayId <= 0) {
+            $flashKind = 'warning';
+            $flashMsg .= ' Discount payment row failed — check Union statement.';
+        }
+        $this->flash($flashKind, $flashMsg);
 
         $this->redirect('?page=landedcost&action=packingDue&month=' . urlencode($settleMonth));
     }

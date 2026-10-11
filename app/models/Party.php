@@ -45,6 +45,15 @@ class Party extends BaseModel {
         return $column . " NOT IN ('discount','expense') AND {$column} IS NOT NULL AND {$column} != ''";
     }
 
+    /**
+     * Outbound cash / settlement that reduces what we owe.
+     * Includes supplier packing discount (`ref_type=discount` + `payment_type=out`).
+     * Customer discounts stay `payment_type=in` and are not in this arm.
+     */
+    private static function balanceOutboundPaymentSql(string $refColumn = 'ref_type'): string {
+        return "payment_type = 'out' AND {$refColumn} IS NOT NULL AND {$refColumn} != '' AND {$refColumn} != 'expense'";
+    }
+
     /** Extract DISC-* ref from discount payment notes (DiscountController format). */
     private static function discountRefNoFromNotesSql(string $alias = 'py'): string {
         return "CASE WHEN {$alias}.notes LIKE 'Discount DISC-%'"
@@ -60,11 +69,6 @@ class Party extends BaseModel {
         return 'CASE WHEN po_conv.id IS NOT NULL'
             . ' THEN po_conv.subtotal_kwd + COALESCE(po_conv.other_charges_kwd, 0) + COALESCE(po_conv.adjustment_kwd, 0)'
             . " ELSE {$purchaseAlias}.grand_total END";
-    }
-
-    /** Outbound payments counted in party balance (posted cash, including PO advances). */
-    private static function balanceOutboundPaymentSql(string $refColumn = 'ref_type'): string {
-        return "payment_type = 'out' AND " . self::balancePaymentRefTypeSql($refColumn);
     }
 
     public static function typeLabel(string $type): string {
@@ -692,7 +696,7 @@ class Party extends BaseModel {
         if ($type !== 'all') {
             if ($type === 'freight_forwarder') {
                 $where .= " AND p.type = 'freight_forwarder'";
-            } elseif ($type === 'payment_out') {
+            } elseif ($type === 'payment_out' || $type === 'payment_in') {
                 $where .= " AND p.type IN ('customer', 'supplier', 'both', 'freight_forwarder')";
             } elseif ($type === 'purchase') {
                 $where .= " AND p.type IN ('customer', 'supplier', 'both')";
@@ -1072,7 +1076,8 @@ class Party extends BaseModel {
         $discounts = $this->db->fetchAll(
             "SELECT py.id, 'discount' as txn_type,
                     {$discountRefNo} as ref_no, py.date,
-                    0 as debit, py.amount as credit,
+                    CASE WHEN py.payment_type = 'out' THEN py.amount ELSE 0 END as debit,
+                    CASE WHEN py.payment_type = 'in' THEN py.amount ELSE 0 END as credit,
                     py.notes, py.status, py.created_at
              FROM payments py
              WHERE py.party_id = ? AND py.ref_type = 'discount' AND py.status = 'active'
@@ -1203,7 +1208,9 @@ class Party extends BaseModel {
         }
         $discounts = $this->db->fetchAll(
             "SELECT 'discount' as type, py.id, " . self::discountRefNoFromNotesSql('py') . " as ref_no, py.date,
-                    0 as debit, py.amount as credit, 0 as balance, py.status, py.created_at
+                    CASE WHEN py.payment_type = 'out' THEN py.amount ELSE 0 END as debit,
+                    CASE WHEN py.payment_type = 'in' THEN py.amount ELSE 0 END as credit,
+                    0 as balance, py.status, py.created_at
              FROM payments py
              WHERE py.party_id = ? AND py.ref_type = 'discount' AND py.status = 'active'
                 {$discDateFilter}{$discWhFilter}",
@@ -1453,12 +1460,21 @@ class Party extends BaseModel {
         $params     = [];
         $typeClause = '';
 
-        if ($type === 'payment_out') {
-            // Pay anyone on the ledger: suppliers, freight, both, or customer-only.
+        if (Auth::isSalesFloor()) {
+            $type = 'customer';
+        }
+
+        if ($type === 'payment_out' || $type === 'payment_in') {
+            // Payment Out: pay anyone. Payment In (admin): receive from customer or supplier.
             $typeClause = "AND p.type IN ('customer', 'supplier', 'both', 'freight_forwarder')";
         } elseif ($type === 'purchase') {
             // Buy from suppliers, both, or customer-only (trade-in / buy-back).
             $typeClause = "AND p.type IN ('customer', 'supplier', 'both')";
+        } elseif ($type === 'sale') {
+            // New Sale: customers and dual parties. Admin may also invoice a supplier.
+            $typeClause = Auth::canInvoiceSupplier()
+                ? "AND p.type IN ('customer', 'supplier', 'both')"
+                : "AND p.type IN ('customer', 'both')";
         } elseif ($type !== 'all') {
             $typeClause = "AND (p.type = ? OR p.type = 'both')";
             $params[] = $type;

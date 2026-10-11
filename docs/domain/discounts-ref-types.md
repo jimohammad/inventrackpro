@@ -16,7 +16,7 @@
 | `purchase` | Payment against purchase invoice | Supplier: reduces we-owe |
 | `purchase_order` | Advance paid on PO (before convert) | **In party balance** (posted cash / vendor down payment); account out |
 | `expense` | Expense payment | Account only (not party balance union) |
-| `discount` | Customer discount granted | Customer: reduces owed (always `payment_type` in) |
+| `discount` | Discount granted | **Customer** (`payment_type=in`): reduces what they owe. **Supplier packing** (`payment_type=out`, Packing due only): reduces what we owe Union — no bank movement. |
 | `shipment_cost` | Legacy/generic shipment cost | Supplier-side payment family |
 | `shipment_freight_hk` | Freight HK→DXB leg paid | Supplier balance + account |
 | `shipment_packing_dxb` | Packing DXB leg | Same |
@@ -80,6 +80,14 @@ rg "ref_type" app/ database/ --glob "*.php" --glob "*.sql"
 ```
 
 ## History
+
+- **2026-10-08 (UX):** New discount **Per Pc** defaults to 0.250 KWD. Qty stays 1, so Total starts at 0.250. Changing Per Pc or Qty still recalculates until Total is typed by hand.
+
+- **2026-10-04 (fix):** Customer Discounts only post and reverse `payment_type=in` rows on this branch. A packing discount (`payment_type=out`) cannot be edited or deleted from this screen. Legacy payments with a blank `warehouse_id` count as Main, so they can be reversed the same way the party balance already counts them. The customer list is this branch only. New discount payments are saved `status=active` and use the shared payment number.
+
+- **2026-09-19 (UX):** Customer Discounts list/create is one compact card (toolbar form + tight history). Same fields and Apply/Print flow; no modal. Edit page matches the denser layout.
+
+- **2026-09-12:** Packing due may post `ref_type=discount` with `payment_type=out` (supplier discount at pay/link). Not created from the Discounts module or Make Payment form. Party outbound balance includes those rows; statement shows them as debit. Account balance still ignores all `discount` rows.
 
 - **2026-09-06:** Make Payment can post `purchase_order` advances when staff allocate open POs (`po_pay[]`). Server validates party, branch, and unpaid balance. Client still cannot POST a freeform `ref_type=purchase_order`.
 - **2026-08-13:** Posted `purchase_order` advances count in party balance/statement (vendor down payment). Cancel PO unlinks PAY; bank is not restored.

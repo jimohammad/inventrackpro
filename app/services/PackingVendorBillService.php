@@ -103,7 +103,69 @@ class PackingVendorBillService {
     }
 
     /**
-     * Create a paid vendor bill matched to a payment (invoice amount = payment amount).
+     * Supplier packing discount at payment — no bank movement.
+     * payment_type=out + ref_type=discount reduces Union AP (debit) like a payment.
+     * Account balance ignores ref_type=discount (same as customer discounts).
+     */
+    public static function createPaymentDiscount(
+        Database $db,
+        int $partyId,
+        float $amount,
+        string $date,
+        int $warehouseId,
+        string $notes,
+        ?int $accountId = null
+    ): int {
+        $amount = round($amount, 3);
+        if ($partyId <= 0 || $amount <= 0.001) {
+            return 0;
+        }
+
+        require_once __DIR__ . '/../models/Payment.php';
+
+        $ownTxn = !$db->inTransaction();
+        if ($ownTxn) {
+            $db->beginTransaction();
+        }
+        try {
+            $paymentModel = new Payment();
+            $payNo = $paymentModel->nextPaymentNo();
+            $accId = (int) ($accountId ?? 0);
+            if ($accId <= 0) {
+                $acc = $db->fetchOne("SELECT id FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC LIMIT 1");
+                $accId = (int) ($acc['id'] ?? 1);
+            }
+            $id = (int) $db->insert(
+                "INSERT INTO payments
+                    (payment_no, ref_type, ref_id, party_id, payment_type, account_id, amount,
+                     payment_method, date, notes, warehouse_id, status, created_by)
+                 VALUES (?, 'discount', 0, ?, 'out', ?, ?, 'cash', ?, ?, ?, 'active', ?)",
+                [
+                    $payNo,
+                    $partyId,
+                    $accId,
+                    $amount,
+                    $date !== '' ? $date : date('Y-m-d'),
+                    $notes !== '' ? $notes : 'Packing discount at payment',
+                    $warehouseId > 0 ? $warehouseId : null,
+                    Auth::id(),
+                ]
+            );
+            if ($ownTxn) {
+                $db->commit();
+            }
+            return $id;
+        } catch (Throwable $e) {
+            if ($ownTxn) {
+                $db->rollBack();
+            }
+            error_log('[PackingVendorBillService] createPaymentDiscount: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Create a paid vendor bill matched to a payment (invoice = cash + packing discount).
      */
     public static function createPaidBill(
         Database $db,

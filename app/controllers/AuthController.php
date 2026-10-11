@@ -73,8 +73,6 @@ class AuthController extends BaseController {
         $ip    = self::clientIp();
         $email = trim($_POST['email'] ?? '');
 
-        $this->ensureLoginAttemptsTable($db);
-
         $attempts = null;
         try {
             $attempts = $db->fetchOne(
@@ -84,6 +82,16 @@ class AuthController extends BaseController {
             );
         } catch (Throwable $e) {
             error_log('[ERP] login_attempts count: ' . $e->getMessage());
+            $this->ensureLoginAttemptsTable($db);
+            try {
+                $attempts = $db->fetchOne(
+                    "SELECT COUNT(*) as c FROM login_attempts
+                     WHERE (ip = ? OR email = ?) AND created_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
+                    [$ip, $email]
+                );
+            } catch (Throwable $retry) {
+                error_log('[ERP] login_attempts count retry: ' . $retry->getMessage());
+            }
         }
 
         if ($attempts && (int) ($attempts['c'] ?? 0) >= 5) {

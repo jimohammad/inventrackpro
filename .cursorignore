@@ -5,11 +5,16 @@
 .vscode/
 .claude/
 .foundry/
+.agents/
 node_modules/
 graphify-out/
 .graphify_python
 .graphify_python (1)
 launch-your-agent/
+
+# Do not catalog user-global skill copies if they reappear here
+.cursor/skills/gstack/
+.cursor/skills/gstack-*/
 
 # Duplicate app forks (live copies; edit root app/ only unless asked)
 wf/
@@ -54,3 +59,4 @@ php_errors.log
 package.json
 package-lock.json
 composer.lock
+

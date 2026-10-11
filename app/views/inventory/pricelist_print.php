@@ -1,17 +1,25 @@
 <?php
 /**
- * Customer wholesale pricelist — one A4 page, same look as public /pricelist.
+ * Customer wholesale pricelist / available-stock catalog — one A4 page.
+ * $showPrices = false omits sale prices (names + availability only).
  */
+$showPrices   = !empty($showPrices);
 $companyName  = (string) ($companyName ?? PDF_COMPANY_NAME);
 $companyPhone = trim((string) ($companyPhone ?? ''));
 $companyEmail = trim((string) ($companyEmail ?? ''));
 $printedAt    = (string) ($printedAt ?? date('d M Y, h:i A'));
-$pdfFilename  = (string) ($pdfFilename ?? 'Pricelist.pdf');
+$pdfFilename  = (string) ($pdfFilename ?? ($showPrices ? 'Pricelist.pdf' : 'Stock_List.pdf'));
 $itemCount    = (int) ($itemCount ?? 0);
 $grouped      = is_array($grouped ?? null) ? $grouped : [];
 $catCounts    = is_array($catCounts ?? null) ? $catCounts : [];
 $logoSrc      = $logoSrc ?? null;
 $newArrivalCutoff = (string) ($newArrivalCutoff ?? date('Y-m-d H:i:s', strtotime('-7 days')));
+$pageTitle    = $showPrices ? 'Price List' : 'Available Stock';
+$pageSub      = $showPrices ? 'Product Catalog &amp; Price List' : 'Available Stock List';
+$toolbarHint  = $showPrices ? 'One A4 page · same look as the online pricelist' : 'One A4 page · available items, no prices';
+$footerNote   = $showPrices ? 'Prices may change without notice' : 'Availability may change without notice';
+$shareTitle   = $showPrices ? 'Price List' : 'Available Stock';
+$shareText    = $showPrices ? 'Wholesale price list' : 'Available stock list';
 $money = static function (float $v): string {
     return APP_CURRENCY . ' ' . number_format($v, DECIMAL_PLACES);
 };
@@ -21,7 +29,7 @@ $money = static function (float $v): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Price List — <?= htmlspecialchars($companyName) ?></title>
+    <title><?= htmlspecialchars($pageTitle) ?> — <?= htmlspecialchars($companyName) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -209,18 +217,28 @@ $money = static function (float $v): string {
             vertical-align: middle;
         }
 
+        /* table-cell: NFC stays in the true row center (html2canvas is unreliable with CSS grid) */
         .pl-item {
-            display: grid;
-            grid-template-columns: 1fr 48px 1fr;
-            align-items: center;
-            column-gap: 6px;
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: separate;
             padding: 0.55em 0.85em;
             background: #fff;
             border: 1px solid #e8f5e9;
             border-radius: 8px;
             margin-bottom: 1.4mm;
         }
-        .pl-item-info { min-width: 0; }
+        .pl-item-info,
+        .pl-item-nfc,
+        .pl-item-right {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .pl-item-info {
+            width: 42%;
+            min-width: 0;
+        }
         .pl-item-name-row {
             display: flex;
             align-items: center;
@@ -254,33 +272,34 @@ $money = static function (float $v): string {
             margin-top: 1px;
         }
         .pl-item-nfc {
-            width: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            justify-self: center;
+            width: 16%;
+            text-align: center;
         }
         .pl-nfc-badge {
             flex-shrink: 0;
             display: inline-block;
-            padding: 1px 7px;
+            padding: 3px 12px;
             border-radius: 20px;
-            font-size: 0.68em;
+            font-size: 9.5pt;
             font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.06em;
             background: #0d9488;
             color: #fff;
             -webkit-text-fill-color: #fff;
-            line-height: 1.4;
+            line-height: 1.35;
         }
         .pl-item-right {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 10px;
-            min-width: 0;
+            width: 42%;
+            text-align: right;
+            white-space: nowrap;
         }
+        .pl-item-right .pl-item-stock,
+        .pl-item-right .pl-item-price {
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .pl-item-right .pl-item-stock { margin-right: 10px; }
         .pl-item-stock { text-align: center; }
         .pl-stock-badge {
             display: inline-block;
@@ -337,7 +356,7 @@ $money = static function (float $v): string {
     <button type="button" class="btn-share" id="btnShare" hidden>Share</button>
     <button type="button" class="btn-print" id="btnPrint">Print</button>
     <a class="btn-back" href="?page=stock">Back to Stock List</a>
-    <span class="hint">One A4 page · same look as the online pricelist</span>
+    <span class="hint"><?= htmlspecialchars($toolbarHint) ?></span>
 </div>
 
 <div class="stage">
@@ -350,7 +369,7 @@ $money = static function (float $v): string {
                     <?php endif; ?>
                     <div>
                         <div class="pl-brand-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="pl-brand-sub">Product Catalog &amp; Price List</div>
+                        <div class="pl-brand-sub"><?= $pageSub ?></div>
                     </div>
                 </div>
                 <div class="pl-header-right">
@@ -409,7 +428,9 @@ $money = static function (float $v): string {
                         <span class="pl-stock-badge low">Low Stock</span>
                         <?php endif; ?>
                     </div>
+                    <?php if ($showPrices): ?>
                     <div class="pl-item-price"><?= $money((float) ($item['sale_price'] ?? 0)) ?></div>
+                    <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -419,7 +440,7 @@ $money = static function (float $v): string {
         <?php endif; ?>
 
         <footer class="pl-footer">
-            <?= htmlspecialchars($companyName) ?> &mdash; Prices may change without notice &mdash; Updated <?= htmlspecialchars($printedAt) ?>
+            <?= htmlspecialchars($companyName) ?> &mdash; <?= htmlspecialchars($footerNote) ?> &mdash; Updated <?= htmlspecialchars($printedAt) ?>
             <?php if ($companyEmail !== ''): ?>
             &mdash; <?= htmlspecialchars($companyEmail) ?>
             <?php endif; ?>
@@ -519,6 +540,8 @@ $money = static function (float $v): string {
                     doc.querySelectorAll('.pl-nfc-badge').forEach(function (el) {
                         el.style.color = '#ffffff';
                         el.style.webkitTextFillColor = '#ffffff';
+                        el.style.fontSize = '9.5pt';
+                        el.style.padding = '3px 12px';
                     });
                 }
             },
@@ -555,7 +578,7 @@ $money = static function (float $v): string {
             if (!pdfBlob) await buildPdf();
             var file = new File([pdfBlob], filename, { type: 'application/pdf' });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'Price List', text: 'Wholesale price list' });
+                await navigator.share({ files: [file], title: <?= json_encode($shareTitle) ?>, text: <?= json_encode($shareText) ?> });
                 return;
             }
             var pdf = await buildPdf();

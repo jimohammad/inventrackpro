@@ -87,7 +87,7 @@ $money = static fn($v) => APP_CURRENCY . ' ' . number_format((float) $v, DECIMAL
             <div class="row g-3">
                 <div class="col-md-6 position-relative" id="impSupplierWrap">
                     <label class="form-label" style="font-weight:600;font-size:0.82rem;">Supplier</label>
-                    <input type="text" id="impSupplierSearch" class="form-control form-control-sm" placeholder="Search supplier…" autocomplete="off" <?= $canSave ? 'required' : 'disabled' ?>>
+                    <input type="text" id="impSupplierSearch" class="form-control form-control-sm" placeholder="Search supplier…" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list" <?= $canSave ? 'required' : 'disabled' ?>>
                     <input type="hidden" name="party_id" id="impSupplierId" value="">
                     <div class="imp-ac" id="impSupplierDrop" style="display:none;"></div>
                 </div>

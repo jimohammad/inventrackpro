@@ -150,6 +150,7 @@ $categories = [
         ['page' => 'reports', 'action' => 'customerPurchases', 'perm' => 'rpt_customer_purchases', 'icon' => 'bi-bag-check-fill',     'color' => '#a855f7', 'bg' => 'rgba(168,85,247,0.1)',  'title' => 'Customer Purchases',    'desc' => 'What a customer bought, by date'],
         ['page' => 'reports', 'action' => 'salesReturns',  'perm' => 'rpt_sales_returns', 'icon' => 'bi-arrow-return-left', 'color' => '#ef4444', 'bg' => 'rgba(239,68,68,0.1)',   'title' => 'Sales Returns',         'desc' => 'Returned sales & item details'],
         ['page' => 'reports', 'action' => 'customerImei',  'perm' => 'rpt_customer_imei', 'icon' => 'bi-phone',             'color' => '#0891b2', 'bg' => 'rgba(8,145,178,0.1)',   'title' => 'Customer IMEI',         'desc' => 'IMEIs sold with invoice & date'],
+        ['page' => 'reports', 'action' => 'invoiceImeiBarcode', 'perm' => 'rpt_customer_imei', 'icon' => 'bi-upc-scan', 'color' => '#0e7490', 'bg' => 'rgba(14,116,144,0.1)', 'title' => 'Invoice IMEI Barcodes', 'desc' => 'One invoice, a barcode for each IMEI'],
         ['page' => 'reports', 'action' => 'returnImei',    'perm' => 'rpt_return_imei',   'icon' => 'bi-phone-flip',        'color' => '#e11d48', 'bg' => 'rgba(225,29,72,0.1)',  'title' => 'Return IMEI',           'desc' => 'IMEIs on return invoices per party'],
     ],
     'Official documents' => [

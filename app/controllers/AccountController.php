@@ -108,10 +108,12 @@ class AccountController extends BaseController {
                             CASE WHEN p.payment_type = 'out' THEN -p.amount ELSE p.amount END as amount,
                             CONCAT(UPPER(p.ref_type), ' / ', UPPER(p.payment_type)) as note,
                             COALESCE(pa.name, '—') as party,
-                            NULL as invoice_ref,
+                            po_adv.po_no as invoice_ref,
                             p.ref_type as pay_ref_type
                      FROM payments p
                      LEFT JOIN parties pa ON pa.id = p.party_id
+                     LEFT JOIN purchase_orders po_adv
+                            ON po_adv.id = p.ref_id AND p.ref_type = 'purchase_order'
                      WHERE p.account_id = ? AND {$payLedgerWhere}
                      ORDER BY p.date DESC, p.id DESC
                      LIMIT 200",

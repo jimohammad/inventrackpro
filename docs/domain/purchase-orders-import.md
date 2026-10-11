@@ -124,6 +124,24 @@ Result should be empty.
 
 ## History
 
+### 2026-09-28 — Edit PO: changing the item leaves the rest of the line
+
+- On Edit Purchase Order, click the item name and type to pick a different catalog item.
+- Qty, foreign price, Unit (KWD), Total (KWD), charges, bank adj, and amount paid stay as they were. A new blank line does not refill those prices.
+
+### 2026-09-25 — New PO KWD columns stay blank until payment
+
+- On New PO, Unit (KWD) and Total (KWD) stay locked for AED, USD, and KWD. Staff type the supplier price in the currency column only. The bank payment still writes the KWD. A posted line KWD amount on create is saved as 0.
+
+### 2026-09-25 — Remove PO-000077 and PAY-001188
+
+- Admin button on that PO deletes the order, its lines, PAY-001188, and any other payment posted on that PO, and puts those bank amounts back. Shipment links and import charge rows for that PO are removed with it. Refuses only if the PO is already converted to a purchase invoice, or if PAY-001188 points at a different document.
+
+### 2026-09-25 — PO-000077 payment can be corrected
+
+- Admin can edit the Payment Out linked to **PO-000077** (list, detail, print, account ledger). Saving updates that PO’s `paid_kwd`, account, and supplier. Bank balance moves with the new amount.
+- Editing PO-000077 itself can change Amount Paid and account. Every posted payment on that PO is updated with the bank (one payment takes the full amount; if there are several, the latest one absorbs the difference). Other PO advances stay locked. Delete stays blocked.
+
 ### 2026-09-06 — New PO has no Other Charges, bank adj, or on-form payment
 
 - New Purchase Order form no longer has Other Charges. `other_charges_kwd` is always saved as 0. Extra costs belong on Import Logistics.

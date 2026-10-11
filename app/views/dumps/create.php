@@ -54,7 +54,7 @@ $dec     = (int) DECIMAL_PLACES;
             <div class="dump-field">
                 <label>Party (account to credit)</label>
                 <div class="dump-search-wrap" id="partySearchWrap">
-                    <input type="text" id="partySearch" placeholder="Type to search party…" autocomplete="off">
+                    <input type="text" id="partySearch" placeholder="Type to search party…" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list">
                     <div class="dump-autocomplete" id="partyDropdown"></div>
                 </div>
             </div>

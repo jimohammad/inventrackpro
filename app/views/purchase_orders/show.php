@@ -255,6 +255,17 @@ $kwdUnknown      = $hasForeign && $poTotalKwd <= 0.001 && (float)($po['paid_kwd'
             </button>
         </form>
         <?php endif; ?>
+        <?php if (Auth::isAdmin() && ($po['po_no'] ?? '') === 'PO-000077' && ($po['status'] ?? '') !== 'converted'): ?>
+        <form method="POST" action="?page=purchaseorders&action=purgeMistake" style="display:inline;"
+              onsubmit="return confirm('Delete PO-000077 and PAY-001188 completely?\n\nThe bank amount goes back to the account. You can enter this PO again afterwards.')">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="id" value="<?= (int) $po['id'] ?>">
+            <button type="submit"
+               style="padding:8px 18px;border-radius:8px;background:linear-gradient(135deg,#dc2626,#b91c1c);border:none;color:#fff;font-size:0.85rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                <i class="bi bi-trash"></i> Delete PO and payment
+            </button>
+        </form>
+        <?php endif; ?>
         <?php if (Auth::isAdmin() && $po['status'] !== 'converted'): ?>
         <a href="?page=purchaseorders&action=edit&id=<?= $po['id'] ?>"
            style="padding:8px 18px;border-radius:8px;background:linear-gradient(135deg,#f59e0b,#d97706);border:none;color:#fff;font-size:0.85rem;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">

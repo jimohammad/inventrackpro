@@ -265,6 +265,26 @@ class Auth {
         return in_array(self::role(), ['cashier', 'viewer'], true);
     }
 
+    /** Supplier-only / freight — hidden from salesman on every picker, list, and search. */
+    public static function isSupplierHiddenType(string $partyType): bool {
+        return in_array($partyType, ['supplier', 'freight_forwarder'], true);
+    }
+
+    /** Directory / reports: admin always; manager via `suppliers`; salesman never. */
+    public static function canBrowseSuppliers(): bool {
+        return !self::isSalesFloor() && self::can('suppliers', 'view');
+    }
+
+    /** Only admin may take Payment In from a supplier or freight vendor. */
+    public static function canReceiveFromSupplier(): bool {
+        return self::isAdmin();
+    }
+
+    /** Only admin may raise a sale invoice (or sale return) to a supplier-only party. */
+    public static function canInvoiceSupplier(): bool {
+        return self::isAdmin();
+    }
+
     // Check specific permission
     public static function can(string $module, string $action = 'view'): bool {
         if (self::isAdmin()) return true; // admin can do everything
@@ -282,6 +302,9 @@ class Auth {
      * Party autocomplete type. Salesman may only search customers (not suppliers / freight).
      */
     public static function sanitizePartySearchType(string $type): string {
+        if (self::isSalesFloor()) {
+            return 'customer';
+        }
         if (in_array($type, ['supplier', 'freight_forwarder'], true) && !self::can('suppliers', 'view')) {
             return 'customer';
         }
@@ -291,7 +314,14 @@ class Auth {
         if ($type === 'purchase' && !self::can('purchases', 'view')) {
             return 'customer';
         }
-        if (in_array($type, ['payment_out', 'payment_out'], true) && !self::can('payments_out', 'view')) {
+        if ($type === 'payment_out' && !self::can('payments_out', 'view')) {
+            return 'customer';
+        }
+        if ($type === 'payment_in' && !self::canReceiveFromSupplier()) {
+            return 'customer';
+        }
+        // Sale invoice picker: admin may also match supplier names. Everyone else stays on customers.
+        if ($type === 'sale' && !self::canInvoiceSupplier()) {
             return 'customer';
         }
         return $type;

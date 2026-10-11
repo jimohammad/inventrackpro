@@ -9,6 +9,9 @@ class Payment extends BaseModel {
     public const STATUS_ACTIVE    = 'active';
     public const STATUS_CANCELLED = 'cancelled';
 
+    /** One-time correction: this PO advance and its Payment Out can be edited by admin. */
+    public const UNLOCK_PO_ADVANCE_NO = 'PO-000077';
+
     /** Import logistics payments — no sale/purchase FIFO allocation. */
     private const SHIPMENT_LEG_REFS = [
         'shipment_freight_hk',
@@ -29,12 +32,41 @@ class Payment extends BaseModel {
         return !in_array($ref, self::SHIPMENT_LEG_REFS, true);
     }
 
+    /**
+     * Lock the cash/bank row before a balance change.
+     * New receipts and a switch to another account require an active account.
+     *
+     * @throws Exception
+     */
+    public function lockAccountForPosting(int $accountId, bool $mustBeActive = true): void {
+        if ($accountId <= 0) {
+            throw new Exception('Please select an account.');
+        }
+        try {
+            $acc = $this->db->fetchOne(
+                'SELECT id, COALESCE(is_active, 1) AS is_active FROM accounts WHERE id = ? FOR UPDATE',
+                [$accountId]
+            );
+        } catch (PDOException $e) {
+            if ((int) ($e->errorInfo[1] ?? 0) !== 1054) {
+                throw $e;
+            }
+            $acc = $this->db->fetchOne('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [$accountId]);
+            if ($acc) {
+                $acc['is_active'] = 1;
+            }
+        }
+        if (!$acc) {
+            throw new Exception('Account not found.');
+        }
+        if ($mustBeActive && (int) ($acc['is_active'] ?? 1) !== 1) {
+            throw new Exception('That account is inactive.');
+        }
+    }
+
     /** Lock the account row then apply a signed delta to the cached current_balance. */
     private function applyAccountCacheDelta(int $accountId, float $delta): void {
-        if ($accountId <= 0) {
-            return;
-        }
-        $this->db->fetchOne('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [$accountId]);
+        $this->lockAccountForPosting($accountId, true);
         if (abs($delta) < 0.0005) {
             return;
         }
@@ -267,21 +299,27 @@ class Payment extends BaseModel {
         self::appendListDateFilters($where, $params, $filters);
         if (!empty($filters['search'])) {
             $like   = '%' . $filters['search'] . '%';
-            $where .= " AND (py.payment_no LIKE ? OR pa.name LIKE ?)";
-            $params = array_merge($params, [$like, $like]);
+            $where .= " AND (py.payment_no LIKE ? OR pa.name LIKE ? OR po_adv.po_no LIKE ?)";
+            $params = array_merge($params, [$like, $like, $like]);
+        }
+        if (Auth::isSalesFloor()) {
+            $where .= " AND (pa.id IS NULL OR pa.type IN ('customer', 'both'))";
         }
 
         $limit    = max(1, min(ListPage::MAX_ROWS, $limit));
         $fetchCap = $limit + 1;
 
         $rows = $this->db->fetchAll(
-            "SELECT py.id, py.payment_no, py.date, py.created_at, py.ref_type,
+            "SELECT py.id, py.payment_no, py.date, py.created_at, py.ref_type, py.ref_id,
                     py.amount, py.payment_type, pa.name as party_name,
-                    a.name as account_name, u.name as created_by_name
+                    a.name as account_name, u.name as created_by_name,
+                    po_adv.po_no
              FROM payments py
              LEFT JOIN parties pa ON pa.id = py.party_id
              LEFT JOIN accounts a ON a.id = py.account_id
              LEFT JOIN users u ON u.id = py.created_by
+             LEFT JOIN purchase_orders po_adv
+                    ON po_adv.id = py.ref_id AND py.ref_type = 'purchase_order'
              {$where}
              ORDER BY py.id DESC
              LIMIT {$fetchCap}",
@@ -293,12 +331,15 @@ class Payment extends BaseModel {
 
     public function findFull(int $id): array|false {
         return $this->db->fetchOne(
-            "SELECT py.*, pa.name as party_name, pa.phone as party_phone,
-                    a.name as account_name, u.name as created_by_name
+            "SELECT py.*, pa.name as party_name, pa.phone as party_phone, pa.type as party_type,
+                    a.name as account_name, u.name as created_by_name,
+                    po_adv.po_no
              FROM payments py
              LEFT JOIN parties pa ON pa.id = py.party_id
              LEFT JOIN accounts a ON a.id = py.account_id
              LEFT JOIN users u ON u.id = py.created_by
+             LEFT JOIN purchase_orders po_adv
+                    ON po_adv.id = py.ref_id AND py.ref_type = 'purchase_order'
              WHERE py.id = ?",
             [$id]
         );
@@ -404,10 +445,15 @@ class Payment extends BaseModel {
                 'ref_id'       => (int) ($data['ref_id'] ?? 0),
             ];
             if ($paymentType === 'in' && $partyId > 0 && $whId > 0 && $this->usesFifoAllocation($allocProbe)) {
-                $prioritySaleId = ($refType === 'sale')
-                    ? (int) ($data['ref_id'] ?? 0)
-                    : 0;
-                $this->applyInPaymentToSaleInvoices($partyId, $whId, $totalAmount, $prioritySaleId);
+                $partyTypeRow = $this->db->fetchOne('SELECT type FROM parties WHERE id = ?', [$partyId]);
+                $partyType = (string) ($partyTypeRow['type'] ?? '');
+                // Freight refunds stay on the forwarder ledger. Supplier sale invoices do get FIFO.
+                if ($partyType !== 'freight_forwarder') {
+                    $prioritySaleId = ($refType === 'sale')
+                        ? (int) ($data['ref_id'] ?? 0)
+                        : 0;
+                    $this->applyInPaymentToSaleInvoices($partyId, $whId, $totalAmount, $prioritySaleId);
+                }
             }
 
             // FIFO auto-allocation for PURCHASE payments — apply to oldest unpaid purchases first (branch-scoped)
@@ -460,6 +506,11 @@ class Payment extends BaseModel {
             $foreign = round((float) ($row['subtotal_foreign'] ?? 0), 3);
             $currency = (string) ($row['currency'] ?? 'KWD');
             $kwdUnknown = $currency !== 'KWD' && $foreign > 0.001 && $total <= 0.001 && $paid <= 0.001;
+            // KWD new POs store the supplier price on the currency column and leave line KWD at 0 until payment.
+            if ($currency === 'KWD' && $foreign > 0.001 && $total <= 0.001 && $paid <= 0.001) {
+                $total = $foreign;
+                $unpaid = $foreign;
+            }
             if ($unpaid <= 0.001 && !$kwdUnknown) {
                 continue;
             }
@@ -522,26 +573,7 @@ class Payment extends BaseModel {
 
         $this->db->beginTransaction();
         try {
-            try {
-                $acc = $this->db->fetchOne(
-                    'SELECT id, COALESCE(is_active, 1) AS is_active FROM accounts WHERE id = ? FOR UPDATE',
-                    [$accountId]
-                );
-            } catch (PDOException $e) {
-                if ((int) ($e->errorInfo[1] ?? 0) !== 1054) {
-                    throw $e;
-                }
-                $acc = $this->db->fetchOne('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [$accountId]);
-                if ($acc) {
-                    $acc['is_active'] = 1;
-                }
-            }
-            if (!$acc) {
-                throw new Exception('Account not found.');
-            }
-            if ((int) ($acc['is_active'] ?? 1) !== 1) {
-                throw new Exception('That account is inactive.');
-            }
+            $this->lockAccountForPosting($accountId, true);
 
             $firstId   = 0;
             $payNos    = [];
@@ -583,6 +615,7 @@ class Payment extends BaseModel {
                 $currency = (string) ($po['currency'] ?? 'KWD');
                 $foreignTotal = round((float) ($po['subtotal_foreign'] ?? 0), 3);
                 $oldTotal = $this->poTotalKwd($po);
+                $kwdPriceOnForeign = $currency === 'KWD' && $oldTotal <= 0.001 && $alreadyPaid <= 0.001 && $foreignTotal > 0.001;
                 if ($currency !== 'KWD' && $oldTotal <= 0.001 && $alreadyPaid <= 0.001 && $payAmt > 0.001 && abs($adjDelta) < 0.001) {
                     $adjDelta = $payAmt;
                 }
@@ -599,7 +632,9 @@ class Payment extends BaseModel {
                     );
                 }
 
-                $unpaid = max(0, round($newTotal - $alreadyPaid, 3));
+                $unpaid = $kwdPriceOnForeign
+                    ? max(0, round($foreignTotal + $adjDelta - $alreadyPaid, 3))
+                    : max(0, round($newTotal - $alreadyPaid, 3));
                 if ($payAmt > $unpaid && ($payAmt - $unpaid) <= $this->poPaidTolerance($newTotal)) {
                     $payAmt = $unpaid;
                 }
@@ -614,10 +649,13 @@ class Payment extends BaseModel {
                 }
 
                 $newPaid = round($alreadyPaid + $payAmt, 3);
-                if ($this->isPoFullyPaid($newPaid, $newTotal)) {
-                    $newPaid = $newTotal;
+                $settleTotal = $kwdPriceOnForeign
+                    ? round($foreignTotal + $adjDelta, 3)
+                    : $newTotal;
+                if ($this->isPoFullyPaid($newPaid, $settleTotal)) {
+                    $newPaid = $settleTotal;
                 }
-                $newStatus = $this->isPoFullyPaid($newPaid, $newTotal) ? 'paid' : 'draft';
+                $newStatus = $this->isPoFullyPaid($newPaid, $settleTotal) ? 'paid' : 'draft';
 
                 $poNo = (string) ($po['po_no'] ?? ('#' . $poId));
                 $notes = $baseNotes === '' ? $poNo : ($baseNotes . ' · ' . $poNo);
@@ -629,10 +667,13 @@ class Payment extends BaseModel {
                 $exchangeRate = (float) ($po['exchange_rate'] ?? 1);
                 $subtotalKwd = round((float) ($po['subtotal_kwd'] ?? 0), 3);
                 $otherCharges = round((float) ($po['other_charges_kwd'] ?? 0), 3);
-                if ($newStatus === 'paid' && $currency !== 'KWD' && $foreignTotal > 0.001) {
-                    $exchangeRate = round($newTotal / $foreignTotal, 6);
-                    $notes .= ' · TT 1 ' . $currency . ' = ' . rtrim(rtrim(number_format($exchangeRate, 6, '.', ''), '0'), '.') . ' KWD';
-                    [$subtotalKwd, $newAdj] = $this->applySettledKwdToPoLines($poId, $newTotal, $otherCharges);
+                if ($newStatus === 'paid' && $foreignTotal > 0.001 && ($currency !== 'KWD' || $kwdPriceOnForeign)) {
+                    if ($currency !== 'KWD') {
+                        $exchangeRate = round($newTotal / $foreignTotal, 6);
+                        $notes .= ' · TT 1 ' . $currency . ' = ' . rtrim(rtrim(number_format($exchangeRate, 6, '.', ''), '0'), '.') . ' KWD';
+                    }
+                    $lineTarget = $kwdPriceOnForeign ? $newPaid : $newTotal;
+                    [$subtotalKwd, $newAdj] = $this->applySettledKwdToPoLines($poId, $lineTarget, $otherCharges);
                 }
 
                 $payNo = $this->nextPaymentNo();
@@ -802,6 +843,8 @@ class Payment extends BaseModel {
      */
     public function deleteWithReversal(int $id): bool {
         $this->lastError = '';
+        require_once __DIR__ . '/PaymentCollection.php';
+        PaymentCollection::ensureTable($this->db);
         $this->db->beginTransaction();
         try {
             $pay = $this->db->fetchOne('SELECT * FROM payments WHERE id = ? FOR UPDATE', [$id]);
@@ -822,6 +865,11 @@ class Payment extends BaseModel {
 
             if (($pay['status'] ?? self::STATUS_ACTIVE) === self::STATUS_CANCELLED) {
                 throw new Exception('This payment was voided with its invoice and cannot be deleted individually.');
+            }
+            if (PaymentCollection::isActivelyCollected($this->db, $id)) {
+                throw new Exception(
+                    'This receipt was given to admin. On the same day, undo it from Collect from salesman, then delete.'
+                );
             }
 
             $amount    = (float) $pay['amount'];

@@ -44,8 +44,9 @@ HK→DXB forwarder is **not** a single permanent party. The HK column header is 
 | `import_vendor_bills` | Vendor **invoice** amount | **Yes** (credit) |
 | Payment `shipment_packing_dxb` | Cash / bank PAY | **Yes** (debit vs AP) |
 
-- Settle from Packing due with **Union invoice KWD** (`payPackingBulk`) or **link existing PAY** (`linkPackingExisting`).
-- Each settle creates a paid vendor bill (= PAY amount) and clears packing estimate accruals from AP scope.
+- Settle from Packing due with **Pay KWD** (`payPackingBulk`) or **link existing PAY** (`linkPackingExisting`).
+- Pay defaults to the ERP due (fixed packing rate × qty). A **Discount** field reduces cash; the shortfall posts `ref_type=discount` + `payment_type=out` (no bank movement). Vendor bill = cash + discount so Union’s statement still clears.
+- Each settle creates a paid vendor bill and clears packing estimate accruals from AP scope.
 - One-time admin: **Migrate → vendor bill AP** (`migrateUnionPackingToVendorBills`) for historical Union PAYs.
 - Do **not** use opening-balance force-Clear for packing variance — invoice ↔ payment is the control.
 
@@ -95,7 +96,15 @@ When investigating a specific account, compare `accounts.current_balance` to `Ac
 
 ## History
 
+- **2026-10-03 (fix):** Packing due Pay and Link existing PAY now refuse to clear the lines unless cash plus discount equals the ERP packing due. A typed Pay now amount, or a short linked PAY without the matching discount, no longer wipes the open packing list. Link also ignores discount, expense, and PO-advance vouchers, and posts the packing discount on the same account as the linked PAY (still no bank movement).
+
+- **2026-09-22:** Dashboard cash cards still use `AccountBalanceService` (as-of today, session branch). Balances are one grouped pass per ledger table (`activeAccountBalancesAsOf`) so sign-in does not repeat that formula once per account. Stock, trade receivables, and month-compare stay on the 30-minute cache; a copy up to 18 hours old is shown immediately and rewritten after the page is sent.
+
+- **2026-09-12:** Packing due can take a **payment-time discount** (decrease from the fixed-rate due). Cash PAY is the reduced amount; a `ref_type=discount` / `payment_type=out` row settles the rest with no bank movement. Vendor bill = cash + discount. Customer discounts stay `payment_type=in`.
+
 - **2026-09-09:** Ledger account **Knet warba** renamed to **Knet - Warba Bank** (`AccountLedgerLoader::renameKnetWarbaAccount()`). Same account id and balances.
+
+- **2026-09-26:** **Collect from salesman** remembers which cashier/manager Payment In receipts the admin took (`payment_collections`). It does not move Main Cash, the bank, or party balance. The retired Custody account stays removed. See [cash-custody.md](cash-custody.md).
 
 - **2026-09-09:** Cash Custody module and the auto-created **Custody** cash account were removed. Remaining custody balance (if any) is returned to **Main Cash** on first Accounts page load (`AccountLedgerLoader::retireCashCustodyModule()`). Do not recreate a Custody/safe account.
 
@@ -105,6 +114,7 @@ When investigating a specific account, compare `accounts.current_balance` to `Ac
 - **2026-08-23 (HK→DXB forwarder choice):** HK freight is no longer locked to Logix One FZE. On the shipment form, pick **Logix One FZE (26049)** or **Logiverse FZCO (26045)** from the party dropdown under the HK /pc amount (default 26049). Accruals post to the selected party.
 - **2026-08-15 (admin ledger edit):** Accounts card ledger (bank/cash) lets admins select one transaction and edit it. Payments/expenses reuse existing admin editors (return to the ledger); transfers stay on `updateTransfer`; adjustments use `updateAdjustment`. Discount and `purchase_order` PAY rows stay locked.
 - **2026-07-29 (partner party 26058):** Partner profit Party Master account is **26058** `Muhammad Faisal ( Partner )` (`IMPORT_PARTNER_PARTY_CODE`). Was `26014`. Remap open/paid accruals + `shipment_partner` PAYs: `database/migrations/2026_07_29_partner_profit_party_26058.sql`.
+- **2026-09-29:** Freight, packing, and partner pay forms pre-select **NBK Bank Account** (`BaseController::preferredPayAccountId()`). The blank “Select bank” option stays if NBK is missing, so Pay still cannot fall through to the first ledger row (often CBK). Partner and packing still confirm account + amount before submit.
 - **2026-07-29 (partner/packing/freight pay):** Bank account dropdown starts empty (`— Select bank account —`) so Pay cannot silently use the first ledger row (often CBK). Partner due also confirms account + amount before submit.
 - **2026-07-29 (vendor bill AP):** Union packing follows invoice AP: `packing_dxb` estimate accruals excluded from party ledger; AP = `import_vendor_bills` matched to PAY. Packing due pay/link posts vendor bill; admin migrate replaces force-Clear. Migration: `database/migrations/2026_07_29_import_vendor_bills.sql`.
 - **2026-07-29:** Packing due pays **Union’s invoice amount** (not ERP line total). ERP packing is an estimate until the bill arrives. Scope: all unpaid to date (default) or one month. Cash = invoice only. **Already transferred?** — `linkPackingExisting` links an existing Union PAY with no new cash.

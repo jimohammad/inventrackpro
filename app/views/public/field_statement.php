@@ -148,8 +148,8 @@
                 </td>
                 <td><span class="badge <?= $badgeClass ?>"><?= $t['type'] ?></span></td>
                 <td style="font-weight:600;color:#4338ca;">
-                    <?php if ($t['type'] === 'Sale'): ?>
-                    <a href="javascript:void(0)" class="inv-view-link" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
+                    <?php if ($t['type'] === 'Sale' || $t['type'] === 'Return'): ?>
+                    <a href="javascript:void(0)" class="inv-view-link" data-kind="<?= $t['type'] === 'Return' ? 'return' : 'sale' ?>" data-ref="<?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?>" style="color:#4338ca;text-decoration:none;border-bottom:1px dashed #4338ca;">
                         <?= htmlspecialchars((string)($t['ref_no'] ?? '')) ?> <i class="bi bi-eye" style="font-size:0.7rem;opacity:0.5;"></i>
                     </a>
                     <?php else: ?>
@@ -217,13 +217,14 @@ function escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
-function showInvoice(refNo) {
+function showInvoice(refNo, kind) {
+    kind = kind === 'return' ? 'return' : 'sale';
     document.getElementById('invModal').style.display = 'flex';
     document.getElementById('invNo').textContent = refNo;
     document.getElementById('invDate').textContent = 'Loading...';
     document.getElementById('invBody').innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div>';
 
-    fetch('?page=fieldstatement&action=invoiceDetail&token=' + stmtToken + '&ref=' + encodeURIComponent(refNo))
+    fetch('?page=fieldstatement&action=invoiceDetail&token=' + stmtToken + '&kind=' + encodeURIComponent(kind) + '&ref=' + encodeURIComponent(refNo))
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.error) {
@@ -231,8 +232,9 @@ function showInvoice(refNo) {
                 return;
             }
             var inv = data.invoice;
-            var items = data.items;
-            document.getElementById('invDate').textContent = inv.when_label || inv.date;
+            var items = data.items || [];
+            var isReturn = inv.doc_kind === 'return';
+            document.getElementById('invDate').textContent = (isReturn ? 'Return · ' : '') + (inv.when_label || inv.date || '');
 
             var html = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
             html += '<thead><tr style="background:#f8fafc;"><th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#64748b;font-weight:700;">ITEM</th>';
@@ -240,6 +242,9 @@ function showInvoice(refNo) {
             html += '<th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;font-weight:700;">PRICE</th>';
             html += '<th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#64748b;font-weight:700;">TOTAL</th></tr></thead><tbody>';
 
+            if (!items.length) {
+                html += '<tr><td colspan="4" style="padding:12px 10px;color:#94a3b8;text-align:center;">No lines on this ' + (isReturn ? 'return' : 'invoice') + '</td></tr>';
+            }
             items.forEach(function(it) {
                 html += '<tr style="border-bottom:1px solid #f1f5f9;">';
                 html += '<td style="padding:8px 10px;font-weight:500;">' + escapeHtml(it.item_name) + '</td>';
@@ -264,6 +269,7 @@ function showInvoice(refNo) {
             html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:1rem;font-weight:800;color:#1e293b;border-top:1px solid #e2e8f0;margin-top:4px;">';
             html += '<span>Grand Total</span><span style="color:#4338ca;"><?= APP_CURRENCY ?> ' + parseFloat(inv.grand_total).toFixed(3) + '</span></div>';
 
+            if (!isReturn) {
             html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;">';
             html += '<span style="color:#64748b;">Paid</span><span style="color:#10b981;font-weight:600;"><?= APP_CURRENCY ?> ' + parseFloat(inv.paid_amount).toFixed(3) + '</span></div>';
 
@@ -271,6 +277,10 @@ function showInvoice(refNo) {
             if (bal > 0.001) {
                 html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;">';
                 html += '<span style="color:#64748b;">Balance</span><span style="color:#ef4444;font-weight:700;"><?= APP_CURRENCY ?> ' + bal.toFixed(3) + '</span></div>';
+            }
+            }
+            if (isReturn && inv.reason) {
+                html += '<div style="padding:8px 0 0;font-size:0.78rem;color:#64748b;">' + escapeHtml(inv.reason) + '</div>';
             }
 
             html += '</div>';
@@ -291,7 +301,7 @@ document.getElementById('invModal')?.addEventListener('click', function(e) {
     if (e.target === this) closeInvModal();
 });
 document.querySelectorAll('.inv-view-link').forEach(function(a) {
-    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref')); });
+    a.addEventListener('click', function() { showInvoice(this.getAttribute('data-ref'), this.getAttribute('data-kind')); });
 });
 </script>
 

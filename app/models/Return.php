@@ -284,6 +284,45 @@ class SaleReturn extends BaseModel {
         return $this->db->fetchOne($sql . ' LIMIT 1', $params);
     }
 
+    /**
+     * Put a returned serial back on the sale it came from.
+     * Multi-invoice returns have no header ref_id; the sale id is on the IMEI note.
+     *
+     * @param 'void'|'edit' $context
+     */
+    public function restoreReturnedImeiToSold(int $imeiId, int $warehouseId, int $headerRefId, string $context = 'edit'): void {
+        $row = $this->db->fetchOne(
+            'SELECT id, imei, notes FROM imei_records WHERE id = ? FOR UPDATE',
+            [$imeiId]
+        );
+        if (!$row) {
+            throw new Exception('IMEI record disappeared during return ' . $context . '.');
+        }
+        $label = (string) ($row['imei'] ?? '');
+        $notes = (string) ($row['notes'] ?? '');
+        $saleId = $headerRefId > 0 ? $headerRefId : $this->parseReturnSourceSaleIdFromNotes($notes);
+        if ($saleId === null || $saleId <= 0) {
+            $verb = $context === 'void' ? 'void return' : 'remove this IMEI from the return';
+            throw new Exception(
+                'Cannot ' . $verb . ' — IMEI ' . $label .
+                ' has no source sale to restore.'
+            );
+        }
+        $restoredNotes = $this->stripReturnSourceSaleNote($notes);
+        $aff = $this->db->execute(
+            "UPDATE imei_records
+             SET status = 'sold', sale_id = ?, warehouse_id = ?, notes = ?
+             WHERE id = ? AND status IN ('in_stock','returned')",
+            [$saleId, $warehouseId, $restoredNotes !== '' ? $restoredNotes : null, $imeiId]
+        );
+        if ($aff === 0) {
+            $verb = $context === 'void' ? 'void return' : 'restore IMEI ' . $label . ' to sold';
+            throw new Exception(
+                'Cannot ' . $verb . ' — IMEI ' . $label . ' is no longer in stock (may have been sold again).'
+            );
+        }
+    }
+
     private function parseReturnSourceSaleIdFromNotes(string $notes): ?int {
         if (preg_match('/return_src_sale:(\d+)/', $notes, $m)) {
             return (int) $m[1];
@@ -982,27 +1021,7 @@ class SaleReturn extends BaseModel {
                     );
                 }
             } else {
-                $saleIdForImei = $refSaleId > 0
-                    ? $refSaleId
-                    : $this->parseReturnSourceSaleIdFromNotes($notes);
-                if ($saleIdForImei === null || $saleIdForImei <= 0) {
-                    throw new Exception(
-                        'Cannot void return — IMEI ' . ($imeiRow['imei'] ?? '') .
-                        ' has no source sale to restore (multi-invoice return missing return_src_sale note).'
-                    );
-                }
-                $restoredNotes = $this->stripReturnSourceSaleNote($notes);
-                $aff = $this->db->execute(
-                    "UPDATE imei_records
-                     SET status = 'sold', sale_id = ?, warehouse_id = ?, notes = ?
-                     WHERE id = ? AND status IN ('in_stock','returned')",
-                    [$saleIdForImei, $warehouseId, $restoredNotes !== '' ? $restoredNotes : null, $imeiId]
-                );
-                if ($aff === 0) {
-                    throw new Exception(
-                        'Cannot void return — IMEI ' . ($imeiRow['imei'] ?? '') . ' is no longer in stock (may have been sold again).'
-                    );
-                }
+                $this->restoreReturnedImeiToSold($imeiId, $warehouseId, $refSaleId, 'void');
             }
         }
 

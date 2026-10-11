@@ -19,8 +19,14 @@
     <div>
         <h1 class="page-title"><?= htmlspecialchars($pageHeading) ?></h1>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <?php if (Auth::isAdmin() && !$isOutList): ?>
+        <a href="?page=payments&action=collect"
+           style="display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 16px;border-radius:0;background:#1e293b;color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;">
+            <i class="bi bi-person-check"></i> Collect from salesman<?php if (($collectWaiting ?? 0) > 0): ?> (<?= (int) $collectWaiting ?>)<?php endif; ?>
+        </a>
+    <?php endif; ?>
     <?php if (Auth::can($paymentsPermModule, 'add')): ?>
-    <div style="display:flex;gap:8px;">
         <?php if ($isOutList): ?>
         <a href="?page=payments&action=pay"
            style="display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 16px;border-radius:0;background:#dc2626;color:#fff;font-size:.88rem;font-weight:700;text-decoration:none;">
@@ -32,10 +38,17 @@
             <i class="bi bi-arrow-down-circle-fill"></i> Receive Payment
         </a>
         <?php endif; ?>
-    </div>
     <?php endif; ?>
+    </div>
 </div>
 
+<?php if (!$isOutList && ((float) ($heldForAdmin['cash'] ?? 0) > 0.001 || (float) ($heldForAdmin['bank'] ?? 0) > 0.001)): ?>
+<div style="background:#fff7ed;border:1px solid #fdba74;padding:12px 16px;margin-bottom:16px;font-weight:700;color:#9a3412;">
+    Still to give admin:
+    <?= APP_CURRENCY ?> <?= number_format((float) $heldForAdmin['cash'], DECIMAL_PLACES) ?> cash,
+    <?= APP_CURRENCY ?> <?= number_format((float) $heldForAdmin['bank'], DECIMAL_PLACES) ?> bank
+</div>
+<?php endif; ?>
 
 <!-- Filters -->
 <form method="GET" action="" id="paymentsFilterForm" style="background:<?= $isOutList ? '#fef2f2' : '#eef2ff' ?>;border:1px solid <?= $isOutList ? '#fecaca' : '#c7d2fe' ?>;border-radius:0;padding:16px 20px;margin-bottom:20px;">
@@ -263,13 +276,17 @@ include __DIR__ . '/../partials/list_page_alerts.php';
                                    class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:none;" title="Download PDF">
                                     <i class="bi bi-file-earmark-pdf"></i>
                                 </a>
-                                <?php if (Auth::isAdmin() && ($p['ref_type'] ?? '') !== 'discount' && ($p['ref_type'] ?? '') !== 'purchase_order'): ?>
+                                <?php $isWithAdmin = !empty($lockedPaymentIds[(int) $p['id']]); ?>
+                                <?php if ($isWithAdmin): ?>
+                                <span class="badge" style="background:#e0e7ff;color:#3730a3;align-self:center;">With admin</span>
+                                <?php endif; ?>
+                                <?php if (!$isWithAdmin && Auth::isAdmin() && ($p['ref_type'] ?? '') !== 'discount' && (($p['ref_type'] ?? '') !== 'purchase_order' || ($p['po_no'] ?? '') === Payment::UNLOCK_PO_ADVANCE_NO)): ?>
                                 <a href="?page=payments&action=edit&id=<?= $p['id'] ?>"
                                    class="btn btn-sm pin-protect" style="background:rgba(245,158,11,0.15);color:#d97706;border:none;" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 <?php endif; ?>
-                                <?php if (Auth::can($paymentsPermModule, 'delete') && ($p['ref_type'] ?? '') !== 'discount' && ($p['ref_type'] ?? '') !== 'purchase_order'): ?>
+                                <?php if (!$isWithAdmin && Auth::can($paymentsPermModule, 'delete') && ($p['ref_type'] ?? '') !== 'discount' && ($p['ref_type'] ?? '') !== 'purchase_order'): ?>
                                 <form method="POST" action="?page=payments&action=delete" class="js-payment-delete" style="display:inline;">
                                     <?= Auth::csrfField() ?>
                                     <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
@@ -351,9 +368,17 @@ include __DIR__ . '/../partials/list_page_alerts.php';
     window.iqbalWhenIdle(function () {
         if (typeof jQuery === 'undefined') return;
         if (jQuery.fn && jQuery.fn.select2 && !jQuery('#paymentPartyFilter').hasClass('select2-hidden-accessible')) {
-            var partySearchType = <?= json_encode($isOutList ? 'payment_out' : 'customer') ?>;
+            var partySearchType = <?= json_encode(
+                $isOutList
+                    ? 'payment_out'
+                    : (Auth::canReceiveFromSupplier() ? 'payment_in' : 'customer')
+            ) ?>;
             jQuery('#paymentPartyFilter').select2({
-                placeholder: <?= json_encode($isOutList ? 'Search party...' : 'Search customer...') ?>,
+                placeholder: <?= json_encode(
+                    $isOutList
+                        ? 'Search party...'
+                        : (Auth::canReceiveFromSupplier() ? 'Search party...' : 'Search customer...')
+                ) ?>,
                 allowClear: true,
                 width: '100%',
                 minimumInputLength: 1,

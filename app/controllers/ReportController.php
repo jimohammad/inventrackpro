@@ -240,7 +240,8 @@ class ReportController extends BaseController {
              FROM payments py
              JOIN parties p ON p.id = py.party_id
              LEFT JOIN users u ON u.id = py.created_by
-             WHERE py.date = ? AND py.payment_type = 'out' AND py.warehouse_id = ? AND py.status = 'active'
+             WHERE py.date = ? AND py.payment_type = 'out' AND py.ref_type != 'discount'
+               AND py.warehouse_id = ? AND py.status = 'active'
              ORDER BY py.created_at ASC",
             [$date, $whId]
         );
@@ -1834,9 +1835,11 @@ class ReportController extends BaseController {
             "SELECT id, name, sku FROM items WHERE is_active = 1 ORDER BY name ASC"
         );
 
-        $records = $partyId
-            ? $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId)
-            : [];
+        $imeiBundle     = $this->resolveCustomerImeiReport($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        $records        = $imeiBundle['records'];
+        $imeiFilterNote = $imeiBundle['filter_note'];
+        $imeiMissNote   = $imeiBundle['miss_note'];
+        $imeiMissSaleId = $imeiBundle['sale_id'];
 
         $pageTitle = 'Customer IMEI Report';
         $page      = 'reports';
@@ -1878,7 +1881,7 @@ class ReportController extends BaseController {
             $itemName = $itemRow ? (string) $itemRow['name'] : '';
         }
 
-        $records  = $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        $records  = $this->resolveCustomerImeiReport($partyId, $fromDate, $toDate, $invoiceNo, $itemId)['records'];
         $settings = self::getSettings();
 
         include __DIR__ . '/../views/reports/customer_imei_print.php';
@@ -1906,7 +1909,7 @@ class ReportController extends BaseController {
             $this->redirect('?page=reports&action=customerImei');
         }
 
-        $records = $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        $records = $this->resolveCustomerImeiReport($partyId, $fromDate, $toDate, $invoiceNo, $itemId)['records'];
 
         $safeName = preg_replace('/[^a-z0-9]+/i', '_', (string) $party['name']) ?: 'Customer';
         $filename = 'Customer_IMEI_' . $safeName . '_' . date('Y-m-d') . '.csv';
@@ -1943,6 +1946,293 @@ class ReportController extends BaseController {
         exit;
     }
 
+    /** One sales invoice with a Code 128 barcode for each IMEI. */
+    public function invoiceImeiBarcode(): void {
+        $this->authorizeReport('rpt_customer_imei');
+        require_once __DIR__ . '/../helpers/Code128.php';
+
+        $partyId   = $this->inputInt('party_id', 0, 'get');
+        $invoiceNo = trim((string) $this->input('invoice_no', '', 'get'));
+        $saleId    = $this->inputInt('sale_id', 0, 'get');
+        $customers = (new Party())->listForFilter('customer');
+
+        if ($invoiceNo !== '') {
+            $found = $this->loadInvoiceForImeiBarcode(0, $invoiceNo, $partyId);
+        } elseif ($saleId > 0) {
+            $found = $this->loadInvoiceForImeiBarcode($saleId, '', 0);
+        } else {
+            $found = ['sale' => null, 'matches' => [], 'note' => ''];
+        }
+
+        $sale    = $found['sale'];
+        $matches = $found['matches'];
+        $note    = $found['note'];
+        if ($sale && $partyId > 0 && (int) ($sale['party_id'] ?? 0) !== $partyId) {
+            $sale = null;
+            $note = 'That invoice is not for the selected customer.';
+        } elseif ($sale && $partyId <= 0) {
+            $partyId = (int) ($sale['party_id'] ?? 0);
+        }
+        $groups  = $sale ? $this->groupInvoiceImeiBarcodeRows($this->fetchSaleImeiBarcodeRecords((int) $sale['id'])) : [];
+        $invoices = $partyId > 0 ? $this->fetchPartyInvoicesForImeiBarcode($partyId) : [];
+        if ($sale && $invoices !== []) {
+            $known = false;
+            foreach ($invoices as $inv) {
+                if ((int) $inv['id'] === (int) $sale['id']) {
+                    $known = true;
+                    break;
+                }
+            }
+            if (!$known) {
+                array_unshift($invoices, $sale);
+            }
+        }
+        if ($partyId > 0 && $invoices === [] && $note === '' && !$sale && $invoiceNo === '') {
+            $note = 'No invoices for this customer on this branch.';
+        }
+        if ($sale && $invoiceNo === '') {
+            $invoiceNo = (string) ($sale['invoice_no'] ?? '');
+        }
+
+        $pageTitle = 'Invoice IMEI Barcodes';
+        $page      = 'reports';
+
+        ob_start();
+        include __DIR__ . '/../views/reports/invoice_imei_barcode.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function invoiceImeiBarcodePrint(): void {
+        $this->authorizeReport('rpt_customer_imei');
+        require_once __DIR__ . '/../helpers/Code128.php';
+
+        $saleId = $this->inputInt('sale_id', 0, 'get');
+        $found  = $this->loadInvoiceForImeiBarcode($saleId, '');
+        $sale   = $found['sale'];
+        if (!$sale) {
+            $this->redirect('?page=reports&action=invoiceImeiBarcode');
+        }
+
+        $groups   = $this->groupInvoiceImeiBarcodeRows($this->fetchSaleImeiBarcodeRecords((int) $sale['id']));
+        $settings = self::getSettings();
+
+        include __DIR__ . '/../views/reports/invoice_imei_barcode_print.php';
+    }
+
+    /**
+     * @return array{records:list<array<string,mixed>>,filter_note:string,miss_note:string,sale_id:int}
+     */
+    private function resolveCustomerImeiReport(
+        int $partyId,
+        string $fromDate,
+        string $toDate,
+        string $invoiceNo,
+        int $itemId
+    ): array {
+        $empty = ['records' => [], 'filter_note' => '', 'miss_note' => '', 'sale_id' => 0];
+        if ($partyId <= 0) {
+            return $empty;
+        }
+
+        $records = $this->fetchCustomerImeiRecords($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        if ($records !== []) {
+            return [
+                'records'     => $records,
+                'filter_note' => '',
+                'miss_note'   => '',
+                'sale_id'     => 0,
+            ];
+        }
+
+        // Invoice number is explicit: show that customer's serials even when item/date filters hide them.
+        if ($invoiceNo !== '') {
+            $loose = $this->fetchCustomerImeiRecords($partyId, '', '', $invoiceNo, 0);
+            if ($loose !== []) {
+                return [
+                    'records'     => $loose,
+                    'filter_note' => $this->customerImeiRelaxedNote($loose, $fromDate, $toDate, $itemId),
+                    'miss_note'   => '',
+                    'sale_id'     => (int) ($loose[0]['sale_id'] ?? 0),
+                ];
+            }
+        }
+
+        [$missNote, $saleId] = $this->explainMissingCustomerImei($partyId, $fromDate, $toDate, $invoiceNo, $itemId);
+        return [
+            'records'     => [],
+            'filter_note' => '',
+            'miss_note'   => $missNote,
+            'sale_id'     => $saleId,
+        ];
+    }
+
+    /** @param list<array<string,mixed>> $rows */
+    private function customerImeiRelaxedNote(array $rows, string $fromDate, string $toDate, int $itemId): string {
+        $parts = [];
+        $outside = false;
+        $shownDates = [];
+        foreach ($rows as $row) {
+            $day = substr((string) ($row['date'] ?? ''), 0, 10);
+            if ($day === '') {
+                continue;
+            }
+            $shownDates[$day] = true;
+            if (($fromDate !== '' && $day < $fromDate) || ($toDate !== '' && $day > $toDate)) {
+                $outside = true;
+            }
+        }
+        if ($outside) {
+            $labels = [];
+            foreach (array_keys($shownDates) as $day) {
+                $labels[] = date('d M Y', strtotime($day));
+            }
+            $parts[] = 'Invoice date is ' . implode(', ', $labels) . ', outside the selected dates. Showing it because the invoice number was entered.';
+        }
+        if ($itemId > 0) {
+            $itemOnInvoice = false;
+            $onInvoice = [];
+            foreach ($rows as $row) {
+                if ((int) ($row['item_id'] ?? 0) === $itemId) {
+                    $itemOnInvoice = true;
+                    break;
+                }
+                $name = trim((string) ($row['item_name'] ?? ''));
+                if ($name !== '') {
+                    $onInvoice[$name] = true;
+                }
+            }
+            if (!$itemOnInvoice) {
+                $selected = $this->db->fetchOne('SELECT name FROM items WHERE id = ?', [$itemId]);
+                $selectedName = trim((string) ($selected['name'] ?? ''));
+                $got = $onInvoice !== [] ? implode(', ', array_keys($onInvoice)) : 'a different item';
+                $parts[] = $selectedName !== ''
+                    ? 'The invoice item is ' . $got . '. The item filter was ' . $selectedName . '.'
+                    : 'The invoice item is ' . $got . '.';
+            }
+        }
+        return implode(' ', $parts);
+    }
+
+    /**
+     * @return array{0:string,1:int}
+     */
+    private function explainMissingCustomerImei(
+        int $partyId,
+        string $fromDate,
+        string $toDate,
+        string $invoiceNo,
+        int $itemId
+    ): array {
+        $whId = $this->reportWarehouseId();
+        if ($invoiceNo === '') {
+            return ['No IMEI records found for this customer with the selected filters.', 0];
+        }
+
+        $sales = $this->db->fetchAll(
+            "SELECT s.id, s.invoice_no, s.date, s.status, s.party_id, s.warehouse_id,
+                    p.name AS party_name, p.type AS party_type
+             FROM sales s
+             LEFT JOIN parties p ON p.id = s.party_id
+             WHERE s.invoice_no LIKE ?
+             ORDER BY (s.invoice_no = ?) DESC, s.id DESC
+             LIMIT 8",
+            ['%' . $invoiceNo . '%', $invoiceNo]
+        );
+        if ($sales === []) {
+            return ['No sales invoice matching ' . $invoiceNo . ' was found.', 0];
+        }
+
+        $onBranch = array_values(array_filter(
+            $sales,
+            static fn(array $s): bool => (int) ($s['warehouse_id'] ?? 0) === $whId
+        ));
+        if ($onBranch === []) {
+            return [$invoiceNo . ' is on another branch, so this report does not list it.', 0];
+        }
+
+        $forParty = array_values(array_filter(
+            $onBranch,
+            static fn(array $s): bool => (int) ($s['party_id'] ?? 0) === $partyId
+        ));
+        if ($forParty === []) {
+            $other = $onBranch[0];
+            return [
+                (string) $other['invoice_no'] . ' is for ' . $this->partyLabelForImeiMiss($other) . ', not the selected customer.',
+                0,
+            ];
+        }
+
+        $sale = $forParty[0];
+        $saleId = (int) $sale['id'];
+        $inv = (string) $sale['invoice_no'];
+        if ((string) ($sale['status'] ?? '') === 'cancelled') {
+            return [$inv . ' is cancelled, so it is left off this report.', $saleId];
+        }
+
+        $day = substr((string) ($sale['date'] ?? ''), 0, 10);
+        if (($fromDate !== '' && $day < $fromDate) || ($toDate !== '' && $day > $toDate)) {
+            $when = $day !== '' ? date('d M Y', strtotime($day)) : 'blank';
+            return [$inv . ' is dated ' . $when . ', outside the selected dates.', $saleId];
+        }
+
+        $lines = $this->db->fetchAll(
+            "SELECT i.name, si.item_id,
+                    (SELECT COUNT(*) FROM sale_item_imei sii WHERE sii.sale_item_id = si.id) AS linked
+             FROM sale_items si
+             JOIN items i ON i.id = si.item_id
+             WHERE si.sale_id = ?",
+            [$saleId]
+        );
+        $matchLines = $itemId > 0
+            ? array_values(array_filter($lines, static fn(array $l): bool => (int) $l['item_id'] === $itemId))
+            : $lines;
+        if ($itemId > 0 && $matchLines === []) {
+            $selected = $this->db->fetchOne('SELECT name FROM items WHERE id = ?', [$itemId]);
+            $selectedName = trim((string) ($selected['name'] ?? 'the selected item'));
+            $got = [];
+            foreach ($lines as $line) {
+                $name = trim((string) ($line['name'] ?? ''));
+                if ($name !== '') {
+                    $got[$name] = true;
+                }
+            }
+            $listed = $got !== [] ? implode(', ', array_keys($got)) : 'no items';
+            $linked = 0;
+            foreach ($lines as $line) {
+                $linked += (int) ($line['linked'] ?? 0);
+            }
+            $extra = $linked === 0 ? ' No IMEIs were scanned on it.' : '';
+            return [$inv . ' does not contain ' . $selectedName . '. It has ' . $listed . '.' . $extra, $saleId];
+        }
+
+        $linked = 0;
+        foreach ($matchLines as $line) {
+            $linked += (int) ($line['linked'] ?? 0);
+        }
+        if ($linked === 0) {
+            return [
+                $inv . ' is saved for this customer, but it has no scanned IMEIs. Open the invoice and scan the serials.',
+                $saleId,
+            ];
+        }
+
+        return [
+            $inv . ' has scanned IMEIs, but they are not linked to the invoice line. Open the invoice to confirm the serials.',
+            $saleId,
+        ];
+    }
+
+    /** @param array<string,mixed> $sale */
+    private function partyLabelForImeiMiss(array $sale): string {
+        $type = (string) ($sale['party_type'] ?? '');
+        if (Auth::isSalesFloor() && Auth::isSupplierHiddenType($type)) {
+            return 'another party';
+        }
+        $name = trim((string) ($sale['party_name'] ?? ''));
+        return $name !== '' ? $name : 'another customer';
+    }
+
     /** @return list<array<string, mixed>> */
     private function fetchCustomerImeiRecords(
         int $partyId,
@@ -1951,40 +2241,261 @@ class ReportController extends BaseController {
         string $invoiceNo,
         int $itemId = 0
     ): array {
-        $where  = "WHERE s.party_id = ? AND s.warehouse_id = ? AND s.status != 'cancelled' AND ir.id IS NOT NULL";
+        $where  = "WHERE s.party_id = ? AND s.warehouse_id = ? AND s.status != 'cancelled'";
         $params = [$partyId, $this->reportWarehouseId()];
 
         if ($fromDate !== '') {
-            $where .= " AND s.date >= ?";
+            $where .= ' AND s.date >= ?';
             $params[] = $fromDate;
         }
         if ($toDate !== '') {
-            $where .= " AND s.date <= ?";
+            // Include the whole To date when sales.date is stored with a time.
+            $where .= ' AND s.date < DATE_ADD(?, INTERVAL 1 DAY)';
             $params[] = $toDate;
         }
         if ($invoiceNo !== '') {
-            $where .= " AND s.invoice_no LIKE ?";
+            $where .= ' AND s.invoice_no LIKE ?';
             $params[] = '%' . $invoiceNo . '%';
         }
+
+        $linkedWhere = $where;
+        $linkedParams = $params;
         if ($itemId > 0) {
-            $where .= " AND si.item_id = ?";
-            $params[] = $itemId;
+            $linkedWhere .= ' AND si.item_id = ?';
+            $linkedParams[] = $itemId;
         }
 
+        $fallbackWhere = $where . " AND NOT EXISTS (
+                SELECT 1 FROM sale_item_imei sii
+                JOIN sale_items si3 ON si3.id = sii.sale_item_id
+                WHERE sii.imei_id = ir.id AND si3.sale_id = s.id
+            )";
+        $fallbackParams = $params;
+        if ($itemId > 0) {
+            $fallbackWhere .= ' AND COALESCE(si.item_id, ir.item_id) = ?';
+            $fallbackParams[] = $itemId;
+        }
+
+        $sql = "SELECT imei, imei2, item_name, brand, model, item_id, invoice_no, date, sale_id,
+                       party_name, party_phone, party_code
+                FROM (
+                    SELECT ir.imei, ir.imei2, i.name AS item_name, i.brand, i.model, si.item_id,
+                           s.invoice_no, s.date, s.id AS sale_id,
+                           p.name AS party_name, p.phone AS party_phone, p.party_code
+                    FROM sale_item_imei sii
+                    JOIN sale_items si ON si.id = sii.sale_item_id
+                    JOIN sales s ON s.id = si.sale_id
+                    JOIN imei_records ir ON ir.id = sii.imei_id
+                    JOIN items i ON i.id = si.item_id
+                    JOIN parties p ON p.id = s.party_id
+                    {$linkedWhere}
+                    UNION
+                    SELECT ir.imei, ir.imei2,
+                           COALESCE(i.name, i2.name) AS item_name,
+                           COALESCE(i.brand, i2.brand) AS brand,
+                           COALESCE(i.model, i2.model) AS model,
+                           COALESCE(si.item_id, ir.item_id) AS item_id,
+                           s.invoice_no, s.date, s.id AS sale_id,
+                           p.name AS party_name, p.phone AS party_phone, p.party_code
+                    FROM sales s
+                    JOIN parties p ON p.id = s.party_id
+                    JOIN imei_records ir ON ir.sale_id = s.id
+                    LEFT JOIN sale_items si ON si.sale_id = s.id AND si.item_id = ir.item_id
+                    LEFT JOIN items i ON i.id = si.item_id
+                    LEFT JOIN items i2 ON i2.id = ir.item_id
+                    {$fallbackWhere}
+                ) imei_rows
+                ORDER BY `date` DESC, sale_id DESC, item_name ASC, imei ASC";
+
+        return $this->db->fetchAll($sql, array_merge($linkedParams, $fallbackParams));
+    }
+
+    /**
+     * @return array{sale:?array<string,mixed>,matches:list<array<string,mixed>>,note:string}
+     */
+    private function loadInvoiceForImeiBarcode(int $saleId, string $invoiceNo, int $partyId = 0): array {
+        $wh = $this->reportWarehouseId();
+        $empty = ['sale' => null, 'matches' => [], 'note' => ''];
+
+        if ($saleId > 0) {
+            $sale = $this->fetchSaleHeaderForImeiBarcode($wh, $saleId, '');
+            if (!$sale) {
+                return ['sale' => null, 'matches' => [], 'note' => 'That invoice is not on this branch.'];
+            }
+            return ['sale' => $sale, 'matches' => [], 'note' => ''];
+        }
+
+        if ($invoiceNo === '') {
+            return $empty;
+        }
+
+        $exact = $this->fetchSaleHeadersForImeiBarcode($wh, $invoiceNo, true, $partyId);
+        if (count($exact) === 1) {
+            return ['sale' => $exact[0], 'matches' => [], 'note' => ''];
+        }
+        if (count($exact) > 1) {
+            return [
+                'sale'    => null,
+                'matches' => $exact,
+                'note'    => 'More than one invoice uses that number. Pick one.',
+            ];
+        }
+
+        $like = $this->fetchSaleHeadersForImeiBarcode($wh, $invoiceNo, false, $partyId);
+        if (count($like) === 1) {
+            return ['sale' => $like[0], 'matches' => [], 'note' => ''];
+        }
+        if (count($like) > 1) {
+            return [
+                'sale'    => null,
+                'matches' => $like,
+                'note'    => 'Several invoices match. Pick one.',
+            ];
+        }
+
+        return [
+            'sale'    => null,
+            'matches' => [],
+            'note'    => 'No invoice found on this branch for that number.',
+        ];
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function fetchSaleHeadersForImeiBarcode(int $warehouseId, string $invoiceNo, bool $exact, int $partyId = 0): array {
+        $partySql = $partyId > 0 ? ' AND s.party_id = ?' : '';
+        if ($exact) {
+            $params = [$warehouseId];
+            if ($partyId > 0) {
+                $params[] = $partyId;
+            }
+            $params[] = $invoiceNo;
+            return $this->db->fetchAll(
+                "SELECT s.id, s.invoice_no, s.date, s.status, p.id AS party_id,
+                        p.name AS party_name, p.phone AS party_phone, p.party_code
+                 FROM sales s
+                 JOIN parties p ON p.id = s.party_id
+                 WHERE s.warehouse_id = ?{$partySql} AND UPPER(s.invoice_no) = UPPER(?)
+                 ORDER BY s.date DESC, s.id DESC
+                 LIMIT 20",
+                $params
+            );
+        }
+
+        $params = [$warehouseId];
+        if ($partyId > 0) {
+            $params[] = $partyId;
+        }
+        $params[] = '%' . $invoiceNo . '%';
         return $this->db->fetchAll(
-            "SELECT ir.imei, ir.imei2, i.name as item_name, i.brand, i.model,
-                    s.invoice_no, s.date, s.id as sale_id,
-                    p.name as party_name, p.phone as party_phone, p.party_code
-             FROM sale_item_imei sii
-             JOIN sale_items si ON si.id = sii.sale_item_id
-             JOIN sales s ON s.id = si.sale_id
-             JOIN imei_records ir ON ir.id = sii.imei_id
-             JOIN items i ON i.id = si.item_id
+            "SELECT s.id, s.invoice_no, s.date, s.status, p.id AS party_id,
+                    p.name AS party_name, p.phone AS party_phone, p.party_code
+             FROM sales s
              JOIN parties p ON p.id = s.party_id
-             {$where}
-             ORDER BY s.date DESC, s.id DESC, i.name ASC, ir.imei ASC",
+             WHERE s.warehouse_id = ?{$partySql} AND s.status != 'cancelled'
+               AND s.invoice_no LIKE ?
+             ORDER BY s.date DESC, s.id DESC
+             LIMIT 15",
             $params
         );
+    }
+
+    /**
+     * Recent sales invoices for one customer on this branch.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function fetchPartyInvoicesForImeiBarcode(int $partyId): array {
+        return $this->db->fetchAll(
+            "SELECT s.id, s.invoice_no, s.date, s.status, p.id AS party_id,
+                    p.name AS party_name, p.phone AS party_phone, p.party_code
+             FROM sales s
+             JOIN parties p ON p.id = s.party_id
+             WHERE s.party_id = ? AND s.warehouse_id = ? AND s.status != 'cancelled'
+             ORDER BY s.date DESC, s.id DESC
+             LIMIT 400",
+            [$partyId, $this->reportWarehouseId()]
+        );
+    }
+
+    /** @return array<string,mixed>|null */
+    private function fetchSaleHeaderForImeiBarcode(int $warehouseId, int $saleId, string $invoiceNo): ?array {
+        if ($saleId > 0) {
+            $row = $this->db->fetchOne(
+                "SELECT s.id, s.invoice_no, s.date, s.status, p.id AS party_id,
+                        p.name AS party_name, p.phone AS party_phone, p.party_code
+                 FROM sales s
+                 JOIN parties p ON p.id = s.party_id
+                 WHERE s.id = ? AND s.warehouse_id = ?",
+                [$saleId, $warehouseId]
+            );
+            return $row ?: null;
+        }
+        if ($invoiceNo === '') {
+            return null;
+        }
+        $rows = $this->fetchSaleHeadersForImeiBarcode($warehouseId, $invoiceNo, true);
+        return count($rows) === 1 ? $rows[0] : null;
+    }
+
+    /**
+     * Serials on one sale: line links, plus imei_records.sale_id when the line link is missing.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function fetchSaleImeiBarcodeRecords(int $saleId): array {
+        $wh = $this->reportWarehouseId();
+        $sql = "SELECT imei, imei2, item_name, brand, model
+                FROM (
+                    SELECT ir.imei, ir.imei2, i.name AS item_name, i.brand, i.model
+                    FROM sale_item_imei sii
+                    JOIN sale_items si ON si.id = sii.sale_item_id
+                    JOIN sales s ON s.id = si.sale_id
+                    JOIN imei_records ir ON ir.id = sii.imei_id
+                    JOIN items i ON i.id = si.item_id
+                    WHERE s.id = ? AND s.warehouse_id = ?
+                    UNION
+                    SELECT ir.imei, ir.imei2,
+                           COALESCE(i.name, i2.name) AS item_name,
+                           COALESCE(i.brand, i2.brand) AS brand,
+                           COALESCE(i.model, i2.model) AS model
+                    FROM sales s
+                    JOIN imei_records ir ON ir.sale_id = s.id
+                    LEFT JOIN sale_items si ON si.sale_id = s.id AND si.item_id = ir.item_id
+                    LEFT JOIN items i ON i.id = si.item_id
+                    LEFT JOIN items i2 ON i2.id = ir.item_id
+                    WHERE s.id = ? AND s.warehouse_id = ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sale_item_imei sii
+                          JOIN sale_items si3 ON si3.id = sii.sale_item_id
+                          WHERE sii.imei_id = ir.id AND si3.sale_id = s.id
+                      )
+                ) imei_rows
+                ORDER BY item_name ASC, imei ASC";
+
+        return $this->db->fetchAll($sql, [$saleId, $wh, $saleId, $wh]);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $records
+     * @return list<array{item_name:string,brand:string,model:string,imeis:list<array<string,mixed>>}>
+     */
+    private function groupInvoiceImeiBarcodeRows(array $records): array {
+        $grouped = [];
+        foreach ($records as $row) {
+            $name = (string) ($row['item_name'] ?? 'Item');
+            if (!isset($grouped[$name])) {
+                $grouped[$name] = [
+                    'item_name' => $name,
+                    'brand'     => (string) ($row['brand'] ?? ''),
+                    'model'     => (string) ($row['model'] ?? ''),
+                    'imeis'     => [],
+                ];
+            }
+            $grouped[$name]['imeis'][] = $row;
+        }
+        return array_values($grouped);
     }
 
     // Customer Return IMEI — IMEIs on sale return invoices for a party

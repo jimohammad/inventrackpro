@@ -673,17 +673,34 @@ p, .lead, .page-subtitle { font-family: inherit; }
 .table-responsive::-webkit-scrollbar-thumb,
 .search-results::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 
-/* Page title */
+/* Page title — one mark on every screen that uses .page-title */
 .page-title {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: var(--text-main);
-    margin-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    font-size: 1.42rem;
+    font-weight: 800;
+    letter-spacing: -0.038em;
+    line-height: 1.15;
+    color: #0f172a;
+}
+.page-title:not(.pv-name):not(.stock-page__title)::before {
+    content: "";
+    width: 4px;
+    height: 0.92em;
+    flex: 0 0 4px;
+    background: linear-gradient(180deg, #a5b4fc 0%, #4f46e5 100%);
+    box-shadow: 2px 0 0 rgba(79, 70, 229, 0.14);
 }
 .page-subtitle {
     color: var(--text-muted);
     font-size: 0.85rem;
     font-family: inherit;
+    margin-top: 2px;
+}
+@media print {
+    .page-title::before { box-shadow: none; }
 }
 
 /* Select2 dark theme override */
@@ -907,4 +924,23 @@ input[type=number] { -moz-appearance: textfield; }
 }
 .pin-digit.err {
     border-color: #ef4444;
+}
+
+/*
+ * Sharp square fields and windows — same corners as the sale invoice.
+ * One ID beats page <style> rules and inline border-radius.
+ * Toggles, radios, and spinners stay round so they still read as controls.
+ */
+#app,
+#app * {
+    border-radius: 0 !important;
+}
+#app input[type="radio"],
+#app .spinner-border,
+#app .spinner-grow,
+#app .rounded-circle {
+    border-radius: 50% !important;
+}
+#app .form-switch .form-check-input {
+    border-radius: 2em !important;
 }

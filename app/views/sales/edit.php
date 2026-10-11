@@ -392,11 +392,12 @@ $itemCount = count($editSale['items']);
                     </div>
 
                     <div class="se-field">
-                        <label class="se-label" for="partySearch">Customer</label>
+                        <label class="se-label" for="partySearch"><?= Auth::canInvoiceSupplier() ? 'Party' : 'Customer' ?></label>
                         <?php if (!empty($saleEditLockParty)): ?>
                         <div class="se-party-search" id="partySearchWrap">
                             <i class="bi bi-person-circle se-party-icon"></i>
                             <input type="text" id="partySearch" class="se-input is-selected" readonly
+                                   autocomplete="one-time-code" data-1p-ignore="true" data-lpignore="true"
                                    value="<?= htmlspecialchars($editSale['party_name']) ?>">
                             <input type="hidden" name="party_id" id="partyIdInput" required
                                    value="<?= (int) $editSale['party_id'] ?>">
@@ -407,12 +408,15 @@ $itemCount = count($editSale['items']);
                             <i class="bi bi-person-circle se-party-icon"></i>
                             <input type="text" id="partySearch" class="se-input is-selected"
                                    value="<?= htmlspecialchars($editSale['party_name']) ?>"
-                                   placeholder="Search customer…" autocomplete="off">
+                                   placeholder="<?= Auth::canInvoiceSupplier() ? 'Search customer / supplier…' : 'Search customer…' ?>"
+                                   autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                   data-1p-ignore="true" data-lpignore="true" data-form-type="other"
+                                   role="combobox" aria-autocomplete="list">
                             <div class="se-autocomplete" id="partyDropdown" style="display:none;"></div>
                             <input type="hidden" name="party_id" id="partyIdInput" required
                                    value="<?= (int) $editSale['party_id'] ?>">
                         </div>
-                        <div class="se-party-hint">Type a name to change the customer on this invoice</div>
+                        <div class="se-party-hint"><?= Auth::canInvoiceSupplier() ? 'Type a name to change the party on this invoice. Suppliers appear here for admin.' : 'Type a name to change the customer on this invoice' ?></div>
                         <?php endif; ?>
                         <div id="editCreditHint" class="se-credit-hint se-credit-ok" hidden></div>
                     </div>
@@ -637,6 +641,7 @@ var partyCreditLimit = <?= json_encode((float)($partyCreditLimit ?? 0)) ?>;
 var partyOutstanding = <?= json_encode((float)($partyOutstanding ?? 0)) ?>;
 var partyCustomerKind = <?= json_encode((string)($partyCustomerKind ?? 'wholesale')) ?>;
 const SALE_EDIT_LOCK_PARTY = <?= !empty($saleEditLockParty) ? 'true' : 'false' ?>;
+const salePartySearchType = <?= Auth::canInvoiceSupplier() ? "'sale'" : "'customer'" ?>;
 const isCashier = <?= in_array(Auth::role(), ['cashier','viewer'], true) ? 'true' : 'false' ?>;
 const enforcePriceFloor = <?= (in_array(Auth::role(), ['cashier','viewer'], true) && empty($allowSalesmanFreePrice)) ? 'true' : 'false' ?>;
 const RETAIL_TIER_KWD = 40;
@@ -1559,6 +1564,7 @@ function renderEditPartyResults(parties, keepHighlight) {
     drop.innerHTML = parties.map(function(p, idx) {
         return '<div class="se-autocomplete-item" data-idx="' + idx + '">'
             + '<strong>' + escEditHtml(p.name) + '</strong>'
+            + (p.type === 'supplier' ? ' <small style="color:#b45309;font-weight:700;">Supplier</small>' : '')
             + (p.customer_kind === 'retail' ? ' <small style="color:#4338ca;font-weight:700;">Retail</small>' : '')
             + '<small class="float-end" style="color:#94a3b8;">' + escEditHtml(p.phone || '') + '</small>'
             + editPartyBalanceLine(p)
@@ -1582,7 +1588,7 @@ function runEditPartySearch() {
         if (partySearchAbort) partySearchAbort.abort();
         partySearchAbort = new AbortController();
         const signal = partySearchAbort.signal;
-        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=customer&balances=0', { signal })
+        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=' + salePartySearchType + '&balances=0', { signal })
             .then(function(r) { return r.json(); })
             .then(function(parties) {
                 if (input.value.trim() !== qNow) return;
@@ -1593,7 +1599,7 @@ function runEditPartySearch() {
                 }
                 renderEditPartyResults(parties, false);
                 const ids = parties.map(function(p) { return p.id; }).join(',');
-                return fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(ids) + '&type=customer', { signal })
+                return fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(ids) + '&type=' + salePartySearchType, { signal })
                     .then(function(r) { return r.json(); })
                     .then(function(enriched) {
                         if (input.value.trim() !== qNow) return;
@@ -1642,7 +1648,7 @@ function selectEditParty(party) {
         persistEditDraftLocal();
         return;
     }
-    fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(party.id) + '&type=customer')
+    fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(party.id) + '&type=' + salePartySearchType)
         .then(function(r) { return r.json(); })
         .then(function(rows) {
             if (String(idEl.value) !== String(party.id)) return;

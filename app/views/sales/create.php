@@ -515,7 +515,7 @@ table.items-tbl tfoot td { background:#fff !important; border:none !important; }
         <div class="sale-composer-row">
             <div class="sale-field customer-search-wrap" id="partySearchWrap">
                 <i class="bi bi-person-circle search-icon"></i>
-                <input type="text" id="partySearch" placeholder="Search agent / customer..." autocomplete="off" autofocus>
+                <input type="text" id="partySearch" placeholder="<?= Auth::canInvoiceSupplier() ? 'Search agent / customer / supplier...' : 'Search agent / customer...' ?>" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list" autofocus>
                 <div class="autocomplete-box" id="partyDropdown" style="display:none;"></div>
                 <input type="hidden" name="party_id" id="partyIdInput" required>
             </div>
@@ -746,6 +746,7 @@ let imeiData       = {};
 let activeImeis    = [];
 let currentItemName = '';
 const saleCurrency = '<?= defined("APP_CURRENCY") ? APP_CURRENCY : "KWD" ?>';
+const salePartySearchType = <?= Auth::canInvoiceSupplier() ? "'sale'" : "'customer'" ?>;
 const saleDraft = <?= json_encode($saleDraft ?? null, JSON_UNESCAPED_UNICODE) ?>;
 let selectedPartyCredit = { id: 0, balance: 0, credit_limit: 0, customer_kind: 'wholesale' };
 const RETAIL_TIER_KWD = 40;
@@ -1296,7 +1297,7 @@ function renderPartySearchResults(parties, keepHighlight) {
     }
     drop.innerHTML = parties.map((p, idx) => `
                     <div class="autocomplete-item" data-idx="${idx}">
-                        <strong>${escSaleHtml(p.name)}</strong>${p.customer_kind === 'retail' ? ' <small style="color:#4338ca;font-weight:700;">Retail</small>' : ''}
+                        <strong>${escSaleHtml(p.name)}</strong>${p.type === 'supplier' ? ' <small style="color:#b45309;font-weight:700;">Supplier</small>' : ''}${p.customer_kind === 'retail' ? ' <small style="color:#4338ca;font-weight:700;">Retail</small>' : ''}
                     </div>`).join('');
     bindPartyDropdown(drop);
     if (input && document.activeElement === input) drop.style.display = 'block';
@@ -1315,7 +1316,7 @@ function runPartySearch() {
         if (partySearchAbort) partySearchAbort.abort();
         partySearchAbort = new AbortController();
         const signal = partySearchAbort.signal;
-        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(qNow)}&type=customer&balances=0`, { signal })
+        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(qNow)}&type=${salePartySearchType}&balances=0`, { signal })
             .then(r => r.json())
             .then(parties => {
                 if (input.value.trim() !== qNow) return;
@@ -1400,7 +1401,7 @@ function selectParty(party, opts) {
         document.getElementById('partyIdInput').value = party.id;
         document.getElementById('partyDropdown').style.display = 'none';
         partyHighlightIdx = -1;
-        fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(party.id) + '&type=customer')
+        fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(party.id) + '&type=' + salePartySearchType)
             .then(r => r.json())
             .then(rows => {
                 if (String(document.getElementById('partyIdInput').value) !== String(party.id)) return;

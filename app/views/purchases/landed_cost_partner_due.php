@@ -22,6 +22,8 @@ $monthLabel  = $monthLabel ?? date('F Y');
 $settleMonth = $settleMonth ?? date('Y-m');
 $dueMonths   = $dueMonths ?? [];
 $monthCount  = count($monthRows);
+$accounts    = $accounts ?? [];
+$defaultPayAccountId = BaseController::preferredPayAccountId($accounts);
 ?>
 
 <?php if (!empty($settlementMismatch)): ?>
@@ -161,7 +163,7 @@ $canFixDuplicates = $canFixDuplicates ?? false;
                         style="border-width:2px;">
                     <option value="">— Select bank account —</option>
                     <?php foreach ($accounts as $acc): ?>
-                    <option value="<?= (int) $acc['id'] ?>"><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
+                    <option value="<?= (int) $acc['id'] ?>"<?= (int) $acc['id'] === $defaultPayAccountId ? ' selected' : '' ?>><?= htmlspecialchars(BaseController::formatAccountLabel($acc, true)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

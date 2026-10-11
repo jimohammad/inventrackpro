@@ -98,6 +98,10 @@ table.items-tbl tbody td.col-num{background:#f8fafc;line-height:48px;}
 .po-cell-input.foreign:focus{background:#fffbeb;}
 .po-cell-input.unit{text-align:right;color:#1e3a5f;font-variant-numeric:tabular-nums;}
 .po-cell-input.total{text-align:right;color:#4338ca;background:#eef2ff;font-weight:700;font-variant-numeric:tabular-nums;}
+.po-cell-input.unit[readonly],
+.po-cell-input.total[readonly]{
+    background:#f1f5f9;color:#94a3b8;cursor:not-allowed;pointer-events:none;
+}
 .po-cell-input.total:focus{background:#eef2ff;}
 .po-row-remove{
     display:flex;align-items:center;justify-content:center;
@@ -159,7 +163,7 @@ table.items-tbl tbody td.col-num{background:#f8fafc;line-height:48px;}
         <div class="sale-composer-row">
             <div class="sale-field sale-field-primary customer-search-wrap" id="supplierSearchWrap">
                 <i class="bi bi-person-circle search-icon"></i>
-                <input type="text" id="supplierSearch" placeholder="Search supplier..." autocomplete="off"
+                <input type="text" id="supplierSearch" placeholder="Search supplier..." autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other"
                     autofocus role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="supplierDrop">
                 <button type="button" id="supplierComboToggle" tabindex="-1" aria-label="Search suppliers">
                     <i class="bi bi-chevron-down"></i>
@@ -524,12 +528,14 @@ function addRow(noFocus) {
         </td>
         <td class="col-price">
             <input type="number" class="po-cell-input unit" name="items[${rowCount}][kwd_price]" id="kwdprice_${rid}"
-                value="" step="0.001" min="0" placeholder="after TT"
+                value="" step="0.001" min="0" placeholder="after TT" readonly tabindex="-1"
+                title="Filled when the bank payment is saved"
                 data-row="${rid}" data-calc="price">
         </td>
         <td class="col-ktotal">
             <input type="number" class="po-cell-input total" name="items[${rowCount}][kwd_total]" id="kwdtotal_${rid}"
-                value="" step="0.001" min="0" placeholder="after TT"
+                value="" step="0.001" min="0" placeholder="after TT" readonly tabindex="-1"
+                title="Filled when the bank payment is saved"
                 data-row="${rid}" data-calc="total">
         </td>
         <td class="col-act">
@@ -788,16 +794,11 @@ function selectItem(rid, item) {
     if (drop) drop.style.display = 'none';
     poItemHighlightIdx[rid] = -1;
     prefillForeign(rid, item);
-    if (poIsForeignCurrency()) {
-        document.getElementById('kwdprice_' + rid).value = '';
-        const tot = document.getElementById('kwdtotal_' + rid);
-        if (tot) tot.value = '';
-        recalcTotals();
-    } else {
-        const kwd = parseFloat(item.purchase_price || 0);
-        document.getElementById('kwdprice_' + rid).value = kwd > 0 ? kwd.toFixed(3) : '';
-        calcFromPrice(rid, true);
-    }
+    const kwdPriceEl = document.getElementById('kwdprice_' + rid);
+    const kwdTotEl = document.getElementById('kwdtotal_' + rid);
+    if (kwdPriceEl) kwdPriceEl.value = '';
+    if (kwdTotEl) kwdTotEl.value = '';
+    recalcTotals();
     const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
     if (rows[rows.length - 1]?.id === rid) addRow();
     loadPriceHistory(rid, item.id, item.name);
@@ -873,9 +874,12 @@ function poIsForeignCurrency() {
 }
 
 function refreshKwdPlaceholders() {
-    const ph = poIsForeignCurrency() ? 'after TT' : '0.000';
     document.querySelectorAll('#poTbody .po-cell-input.unit, #poTbody .po-cell-input.total').forEach(function(el) {
-        el.placeholder = ph;
+        el.placeholder = 'after TT';
+        el.readOnly = true;
+        el.tabIndex = -1;
+        el.title = 'Filled when the bank payment is saved';
+        el.value = '';
     });
 }
 
@@ -945,11 +949,7 @@ function checkSaveBtn() {
         const rid = tr.id;
         const qty = parseFloat(document.getElementById('qty_' + rid)?.value || 0);
         if (qty < 1) return false;
-        if (poIsForeignCurrency()) {
-            return parseFloat(document.getElementById('fprice_' + rid)?.value || 0) > 0;
-        }
-        return parseFloat(document.getElementById('kwdprice_' + rid)?.value || 0) > 0
-            || parseFloat(document.getElementById('kwdtotal_' + rid)?.value || 0) > 0;
+        return parseFloat(document.getElementById('fprice_' + rid)?.value || 0) > 0;
     });
     document.getElementById('poSaveBtn').disabled = !pricesOk || !supplierId;
 }

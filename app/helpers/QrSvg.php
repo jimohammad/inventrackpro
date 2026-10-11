@@ -51,9 +51,15 @@ class QrSvg {
                 imagefilledrectangle($im, $x0, $y0, $x0 + $scale - 1, $y0 + $scale - 1, $black);
             }
         }
-        ob_start();
-        $ok = imagepng($im, null, 6);
-        $bin = (string) ob_get_clean();
+        $stream = fopen('php://memory', 'w+b');
+        if ($stream === false) {
+            imagedestroy($im);
+            throw new RuntimeException('Could not encode QR PNG.');
+        }
+        $ok = imagepng($im, $stream, 6);
+        rewind($stream);
+        $bin = (string) stream_get_contents($stream);
+        fclose($stream);
         imagedestroy($im);
         if (!$ok || $bin === '') {
             throw new RuntimeException('Could not encode QR PNG.');

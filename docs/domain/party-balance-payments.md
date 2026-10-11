@@ -36,7 +36,7 @@ Sale-side payments use directional logic where applicable:
 - `payment_type = 'in'` (receipt) → reduces what they owe  
 - `payment_type = 'out'` on sale refs → increases what they owe  
 
-Purchase-side / outbound payments in balance union: non-blank `ref_type`, excluding `discount`, `expense`, and blank ref (duplicate advances). **Posted PO advances (`purchase_order`) count** — cash already left the bank (vendor down payment). PO-converted purchase credits use the source PO KWD total, not logistics-inflated invoice `grand_total`.
+Purchase-side / outbound payments in balance union: non-blank `ref_type`, excluding `expense` and blank ref (duplicate advances). **`ref_type=discount` + `payment_type=out`** (packing payment-time discount) **counts** as outbound — it reduces what we owe, with no bank movement. Customer discounts stay `payment_type=in` (sale_payments). **Posted PO advances (`purchase_order`) count** — cash already left the bank (vendor down payment). PO-converted purchase credits use the source PO KWD total, not logistics-inflated invoice `grand_total`.
 
 ### Payment direction (accounts)
 
@@ -44,6 +44,17 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 
 - **Receipt** (`payment_type = 'in'`) → increases account balance  
 - **Payment** (`payment_type = 'out'`) → decreases account balance  
+
+### Salesman receipts handed to admin
+
+Admin is often away. Cashier and manager Payment In stays on **Main Cash** or the **bank** the moment it is saved. **Collect from salesman** only remembers which of those receipts the admin has physically taken. It does not post a second voucher and does not change party balance or account balance.
+
+- Admin only. Cashier and manager see “Still to give admin” on Payment In.
+- Included: active Payment In on this branch, saved by a **cashier** or **manager**, on or after the first time the page is opened (`settings.payment_collection_from`). Discounts are excluded. The admin’s own receipts are already with him.
+- Cash vs bank follows the receipt method (cash notes vs KNET, transfer, card, cheque).
+- A receipt can be collected once. Undo is the same calendar day only (Asia/Kuwait) and puts the receipts back on the open list.
+- While a collection is active, that receipt cannot be edited or deleted. Undo it the same day first. If the invoice is later cancelled, the collection history shows **cancelled later** and that amount drops out of the live “with admin” total.
+- Do not recreate the retired Custody cash account. See [cash-custody.md](cash-custody.md).
 
 ### Wholesale vs retail customers
 
@@ -58,7 +69,7 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 - `credit_limit <= 0` means no cap. A positive limit is a hard cap on unpaid exposure (outstanding + this invoice).
 - New Sale / Edit / Add Item disable Save when this invoice would exceed the remaining credit. Collect payment first — do not override on the invoice.
 - Edit invoice: if Save is blocked by the limit, newly scanned IMEIs stay on the edit form (session draft) until the invoice actually saves. Collect payment (or raise `parties.credit_limit` on the party form, then return) and Save again — do not rescan.
-- **Change customer on edit (admin):** the invoice picker can reassign `sales.party_id` to another active customer/`both` party on the same branch. Linked sale receipts (`payments.ref_type=sale`), invoice discounts (`customer_discounts.sale_id` + their `ref_type=discount` payments), and warranty replacements for that sale move with it. **Sale returns are not moved** (cross-party returns stay on the return party). Credit check on the new party uses the unpaid invoice remainder (`grand − paid`), not the full total. A salesman with an approved edit unlock **cannot** change the customer.
+- **Change party on edit (admin):** the invoice picker can reassign `sales.party_id` to another active customer, `both`, or **supplier** party on the same branch. Linked sale receipts (`payments.ref_type=sale`), invoice discounts (`customer_discounts.sale_id` + their `ref_type=discount` payments), and warranty replacements for that sale move with it. **Sale returns are not moved** (cross-party returns stay on the return party). Credit check on the new party uses the unpaid invoice remainder (`grand − paid`), not the full total. A salesman with an approved edit unlock **cannot** change the customer. Manager cannot pick a supplier-only party.
 
 ### Sale returns (credit notes)
 
@@ -82,7 +93,7 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 - `ref_type = purchase_order` is a label (advance vs invoice allocation), not a reason to omit the row.
 - On convert, the same PAY flips to `ref_type = purchase` against the invoice (clearing). No second bank movement.
 - Cancel PO does **not** restore the bank. PAY is unlinked to unallocated `purchase` credit (`ref_id = 0`).
-- PO advances cannot be edited or deleted from Payments.
+- PO advances cannot be edited or deleted from Payments, except a one-time admin correction on **PO-000077** (edit only; delete stays blocked). Saving that Payment Out keeps the PO paid amount and bank account in step.
 
 ### Dashboard vs Party Master
 
@@ -95,10 +106,23 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 
 ### Payment Out / Purchase party types
 
-- **Payment Out** party search includes `customer`, `supplier`, `both`, and `freight_forwarder` (buy-back / pay customer-only parties).
+- **Payment Out** party search includes `customer`, `supplier`, `both`, and `freight_forwarder` (buy-back / pay customer-only parties) — **not salesman**. Sales floor Payment Out (if the module is granted) is customers/`both` only.
 - **Make Payment** lists the supplier’s **open POs** (`draft`/`paid` with unpaid KWD) after a party is selected. Entering a pay amount posts `ref_type = purchase_order` (same as Mark as Paid) and updates `paid_kwd`. Optional **+ / − bank adj** is added to `adjustment_kwd` and included in the PO total. Client cannot POST `ref_type=purchase_order` as a freeform field — only validated `po_pay[]` lines. Leave PO amounts empty to post a normal unallocated Payment Out (FIFO onto purchase invoices).
-- **Purchase** (and purchase return / PO) party pickers include `customer`, `supplier`, and `both` — customer-only parties can be purchased from without changing their type to supplier.
+- **Purchase** (and purchase return / PO) party pickers include `customer`, `supplier`, and `both` — customer-only parties can be purchased from without changing their type to supplier. Sales floor pickers never return supplier/freight names.
 - Ledger rules are unchanged: purchases credit the party; payment `out` increases what they owe / reduces what we owe.
+
+### Payment In from a supplier (admin)
+
+- **Admin** may Receive Payment (`payment_type=in`) from `customer`, `both`, `supplier`, or `freight_forwarder` (refund / they owe us). Search type `payment_in`.
+- Manager and salesman Payment In stay **customers/`both` only**. A crafted POST of a supplier `party_id` is rejected unless the user is admin.
+- Inbound cash still uses `ref_type=sale` (existing IN whitelist). **Supplier** receipts FIFO-allocate onto that supplier’s unpaid sale invoices (same as a customer). **Freight** receipts are not FIFO-allocated onto sale invoices — they hit the party ledger and the bank only.
+
+### Sale invoice to a supplier (admin)
+
+- **Admin** may save a sale invoice (and a sale return) against an active `supplier` party on this branch. Search type `sale`. The name shows in the party box with a **Supplier** tag.
+- Manager, cashier, and viewer stay on `customer` / `both`. A crafted supplier `party_id` is rejected unless the user is admin. `freight_forwarder` is never a sale party.
+- The sale increases that supplier’s unified Due (they owe us). Dashboard trade AR stays `customer` + `both` only.
+- API sale create stays `customer` / `both` only.
 
 ### New purchase invoice
 
@@ -107,10 +131,12 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 
 ### Supplier directory (who can see suppliers)
 
-- **Salesman/cashier and viewer never see suppliers** — not in the sidebar, Party Master, global search, or party autocomplete (`type=supplier` is forced to customers).
+- **Salesman/cashier and viewer never see suppliers** — not in the sidebar, Party Master, global search, New Sale, Payment In/Out, returns, or party autocomplete. `Auth::sanitizePartySearchType()` always returns `customer` for sales floor (`purchase` / `payment_out` / `sale` / `type=supplier` cannot leak names). Payment lists hide supplier/freight vouchers; opening one by id returns not-found.
+- **Admin New Sale** (and sale edit / sale return) is the exception: search type `sale` includes supplier names. Manager New Sale does not.
 - **Party Master does not grant supplier access.** Only the `suppliers` module does. Admin always has it; manager has it by default; cashier/viewer are hard-blocked even if a checkbox was left on.
 - Freight Forwarders, Supplier Contacts, and Supplier Statement use the same rule (`suppliers` / `supplier_contacts` / `rpt_supplier_stmt`).
-- Purchase / Payment Out pickers still search suppliers for users who have those modules (manager/admin).
+- Purchase / Payment Out pickers still search suppliers for users who have those modules (**manager/admin**, not salesman).
+- Dual `both` parties remain visible to salesman as customers (invoicing). Supplier-only and freight stay hidden.
 
 ## Code map
 
@@ -122,11 +148,13 @@ Cash/bank **account** balance (not party ledger) — see also CLAUDE.md “Payme
 | Edit sale customer | `SalesController::update` / `reassignSalePartyLinks()` — moves invoice + sale receipts + invoice discounts; returns stay |
 | Payment create | `app/models/Payment.php`, `app/controllers/PaymentController.php`; `Sale::addPayment` requires an existing **active** account; Make Payment PO advances via `Payment::createPurchaseOrderAdvances()` |
 | Invoice AR repair | `Sale::refreshInvoicePaymentState()` on sale **detail** and payment writes — **not** on the sales list GET. Admin Party Master **Rebuild invoice badges** (`PartyController::rebuildAllocation` → `Payment::rebuildFifoAllocationForParty`) only updates invoice paid/balance/status; ledger and cash are unchanged. Highlighted only when `saleAllocationGap` is non-zero; otherwise collapsed under Admin. |
-| Party autocomplete | `Party::search()`; AJAX `SalesController::searchParties` (`Auth::sanitizePartySearchType`). New Sale loads Due only after a customer is picked (`searchPartyBalances` for that one id). Search/list include `customer_kind`. |
+| Party autocomplete | `Party::search()`; AJAX `SalesController::searchParties` (`Auth::sanitizePartySearchType`). New Sale uses type `sale` (admin includes suppliers). Due loads after a party is picked (`searchPartyBalances`). Search/list include `customer_kind`. |
+| Admin sale to supplier | `Auth::canInvoiceSupplier()`; `SalesController::saleInvoicePartyTypes()`; `Payment::createStandalone` FIFO for supplier (not freight) |
 | Retail price floor | `Party::unitPriceFloor()` / `SaleValidator` — retail is catalog + 0.500 (<40 KWD) or + 1.000 (40+); wholesale uses the list. |
 | Party Master list | HTML from `getByType($type, false)` (no ledger UNION). Balances via `?page=parties&action=listBalances` (`getByType(true)`). Due/Clear tabs filter in the browser after balances arrive. |
-| Supplier directory | `Auth::can('suppliers')` only (not Party Master). Cashier/viewer hard-blocked. `PartyController::canViewSuppliers()` / `authorizeParty()` |
-| Payment In list | `?page=payments` — `payment_type=in`, perm module `payments`; newest **25** rows (search/dates/party still find older) |
+| Supplier directory | `Auth::can('suppliers')` only (not Party Master). Cashier/viewer hard-blocked. `PartyController::canViewSuppliers()` / `authorizeParty()`. `Auth::isSalesFloor()` / `sanitizePartySearchType()` / `canReceiveFromSupplier()` |
+| Payment In list | `?page=payments` — `payment_type=in`, perm module `payments`; newest **25** rows (search/dates/party still find older). Salesman list omits supplier/freight parties. |
+| Collect from salesman | `?page=payments&action=collect` — admin only. `PaymentCollection` stores the handover. No account or party movement. |
 | Payment Out list | `?page=payments&action=out` — `payment_type=out`, perm module `payments_out` (same store engine); same **25**-row cap |
 | Statements | `app/controllers/ReportController.php`, `statement.php` |
 | Bank KYC receipts PDF | `ReportController::bankKycReceipts` / `bankKycReceiptsPrint` — incoming only, branch-scoped |
@@ -146,7 +174,9 @@ WHERE status IN ('draft', 'paid') AND warehouse_id = 1 AND paid_kwd > 0.001;
 
 - Party Master detail: a Clear supplier with no sale-receipt gap must **not** show a prominent rebuild warning — only a collapsed Admin row. A customer whose receipts vs `sales.paid_amount` differ should show the warning with the amount and **Rebuild invoice badges**.
 - Compare Party Master balance vs Account Statement for the same party/date range.
-- Manual: log in as cashier/salesman — sidebar has Customers, not Suppliers / Freight / Supplier Contacts. `?page=parties&type=supplier` shows customers only. Opening a supplier `id` on party detail returns 403. New Sale party search does not return supplier-only names.
+- Manual: cashier saves Payment In (cash and KNET). Payment In shows **Still to give admin**. Admin → **Collect from salesman** ticks them → **I collected these**. Party Due and Main Cash / bank do not change again. Receipt shows **With admin**. Salesman cannot delete it. Admin **Undo** the same day puts it back; the next day Undo is gone. Manager receipts appear on the same page. Admin’s own Payment In does not.
+- Manual: log in as cashier/salesman — sidebar has Customers, not Suppliers / Freight / Supplier Contacts. `?page=parties&type=supplier` shows customers only. Opening a supplier `id` on party detail returns 403. New Sale, Payment In, Payment Out, and returns party search do not return supplier-only names. Payment In list does not show receipts from a supplier. Opening that PAY by id is not-found.
+- Manual: log in as admin — New Sale party search shows a supplier name (tagged Supplier) and the invoice saves. Manager New Sale does not list that supplier, and a crafted supplier `party_id` is rejected. Receive Payment can pick a supplier; Save posts Payment In; bank increases; if that supplier has an unpaid sale invoice, the receipt marks it paid/partial. Freight Payment In still does not paint onto sale invoices. Manager Receive Payment still cannot pick a supplier (use Make Payment to pay them).
 - Manual: edit a sale, scan extra IMEIs so the total exceeds the customer credit limit, Save → blocked (including as admin), scanned lines still on the form. Collect payment (or raise the limit on the party form, then return) and Save again without rescanning. New Sale Save is also disabled when this invoice would exceed remaining credit.
 - Manual: New Customer → **Retail** → New Sale. Under 40 KWD list auto-fills +0.500; 40 KWD+ auto-fills +1.000. Salesman can raise it; Save at list price is blocked. Existing customers stay Wholesale and still use the list.
 - Manual: Make Payment → pick a supplier with unpaid draft POs → list appears. Pay unpaid (+ optional adj) → PAY `purchase_order`, PO `paid_kwd` / status update. Empty PO amounts still save as a normal Payment Out.
@@ -162,6 +192,22 @@ FROM payments
 WHERE status = 'active' AND warehouse_id IS NULL
 ORDER BY date DESC LIMIT 50;
 ```
+
+- **2026-09-25:** Make Payment lists a new KWD PO whose line KWD is still 0. Unpaid is the supplier price typed on the PO. Paying it in full writes that KWD onto the lines.
+
+- **2026-09-25:** Admin may edit the Payment Out for **PO-000077** only. The PO `paid_kwd`, account, and party update with the voucher. Other `purchase_order` payments stay locked and cannot be deleted.
+
+- **2026-10-03 (fix):** Public statement (`statement.php`) and field statement listed future-dated rows, so the last running balance could disagree with the Balance card and Party Master Due. Both lists now stop at today, same as `computeBalanceAsOf`.
+
+- **2026-10-03 (fix):** Receive Payment and landed-cost payments through `Payment::createStandalone` rejected a missing or inactive account before the voucher and the cash balance were saved. Payment edit does the same when the till changes. Staying on the original till (even if later deactivated) still allows an amount correction. PO advances already had this check.
+
+- **2026-10-03:** Public statement (`/s/{token}`) Return ref opens the same line-detail modal as a Sale. Only that party’s approved return on the statement branch. Field statement uses the same modal.
+
+- **2026-10-03:** Admin New Sale / Edit Sale / Sale Return can pick a supplier (`Auth::canInvoiceSupplier`, search type `sale`). Manager and sales floor stay on customers. Supplier Payment In now FIFO-allocates onto that supplier’s sale invoices; freight receipts still do not.
+
+- **2026-09-16:** Salesman/cashier/viewer cannot see suppliers on invoice or Payment In/Out pickers (search type forced to customers; lists hide supplier/freight vouchers). Admin may Receive Payment from a supplier (`payment_in`). Freight inbound cash is not FIFO-allocated onto sale invoices.
+
+- **2026-09-26:** Admin **Collect from salesman** records handover of cashier/manager Payment In. No second cash posting. See [cash-custody.md](cash-custody.md).
 
 - **2026-09-09 (UI):** Public customer statement (`/s/{token}`), field statement, and Reports → Party Statement DATE column show recorded time from `created_at` (`h:i A` under the date). Header/footer “as of / Generated on” already had a clock. Invoice modal uses the same label. No fake midnight if `created_at` is missing.
 
@@ -197,6 +243,8 @@ ORDER BY date DESC LIMIT 50;
 - **2026-08-28 (UI):** Party Master detail no longer always shows “Admin: rebuild invoice allocation”. That tool never changed the ledger — it only replays payments onto invoice Paid/Partial badges. It is now a warning only when sale receipts and invoice `paid_amount` differ; otherwise it is collapsed. Supplier pages show purchase counts, not “Active sales: 0”.
 
 - **2026-08-28:** Dashboard Receivables no longer includes supplier PO advances (trade AR via `Party::tradeReceivableTotals()`). Awaiting Goods card shows `paid_kwd` on open POs, not full order value.
+
+- **2026-09-12:** Packing due discount at payment is `ref_type=discount` / `payment_type=out` and is included in the outbound party-balance arm (statement debit). Customer `discount` + `in` unchanged.
 
 - **2026-08-25 (security):** `Sale::addPayment` rejects missing or inactive `account_id` (POST only) so a receipt cannot credit a dummy till row.
 

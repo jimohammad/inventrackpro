@@ -260,7 +260,8 @@ table.items-tbl tfoot tr{background:#f8f9ff;}
                 <div class="po-sum-row payment">
                     <span class="sum-label"><i class="bi bi-cash-coin"></i> Amount Paid</span>
                     <div class="sum-control">
-                        <input type="number" name="paid_kwd" id="paidKwd" class="sum-input" step="0.001" min="0" value="0">
+                        <input type="number" name="paid_kwd" id="paidKwd" class="sum-input" step="0.001" min="0"
+                            value="<?= number_format((float)($po['paid_kwd'] ?? 0), 3, '.', '') ?>">
                     </div>
                 </div>
             </div>
@@ -310,7 +311,10 @@ function addRow() {
         <td class="col-item" style="position:relative;">
             <input type="text" class="po-cell-input item-search" placeholder="Search item by name or SKU…"
                 autocomplete="off" data-row="${rid}"
-                oninput="searchItem(this,'${rid}')">
+                title="Type to replace this item. Qty, prices, and payment stay as they are."
+                oninput="searchItem(this,'${rid}')"
+                onfocus="this.select()"
+                onblur="restoreItemLabel(this)">
             <input type="hidden" name="items[${rowCount}][item_id]" id="itemId_${rid}">
             <div class="autocomplete-box item-dropdown" id="itemDrop_${rid}" style="display:none;"></div>
         </td>
@@ -347,6 +351,7 @@ function addRow() {
 
 function removeRow(rid) {
     document.getElementById('hist_' + rid)?.remove();
+    document.getElementById('itemDrop_' + rid)?.remove();
     document.getElementById(rid)?.remove();
     delete itemStore[rid];
     renumber(); recalcTotals();
@@ -360,6 +365,9 @@ function renumber() {
 }
 
 function positionPoItemDrop(input, drop) {
+    if (drop.parentElement !== document.body) {
+        document.body.appendChild(drop);
+    }
     const rect = input.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     drop.style.left = rect.left + 'px';
@@ -455,10 +463,29 @@ function prefillForeign(rid, item) {
     calcForeign(rid);
 }
 
+function restoreItemLabel(input) {
+    if (!input || !input.dataset.label) return;
+    setTimeout(function() {
+        if (document.activeElement === input) return;
+        const drop = document.getElementById('itemDrop_' + (input.dataset.row || ''));
+        if (drop && drop.style.display !== 'none') return;
+        input.value = input.dataset.label;
+    }, 180);
+}
+
 function selectItem(rid, item) {
-    document.querySelector('#' + rid + ' .item-search').value = item.name;
-    document.getElementById('itemId_'   + rid).value = item.id;
-    document.getElementById('itemDrop_' + rid).style.display = 'none';
+    const input = document.querySelector('#' + rid + ' .item-search');
+    const idEl = document.getElementById('itemId_' + rid);
+    const replacing = !!(idEl && idEl.value);
+    if (input) {
+        input.value = item.name;
+        input.dataset.label = item.name;
+    }
+    if (idEl) idEl.value = item.id;
+    const drop = document.getElementById('itemDrop_' + rid);
+    if (drop) drop.style.display = 'none';
+    // Existing line: swap the catalog item only. Qty, foreign price, and KWD stay.
+    if (replacing) return;
     prefillForeign(rid, item);
     if ((document.getElementById('poCurrency')?.value || 'KWD') !== 'KWD') {
         document.getElementById('kwdprice_' + rid).value = '';
@@ -636,7 +663,11 @@ function checkSaveBtn() {
         return parseFloat(document.getElementById('kwdprice_' + rid)?.value || 0) > 0
             || parseFloat(document.getElementById('kwdtotal_' + rid)?.value || 0) > 0;
     });
-    document.getElementById('poSaveBtn').disabled = !pricesOk || !supplierId;
+    const saveBtn = document.getElementById('poSaveBtn');
+    saveBtn.disabled = !pricesOk || !supplierId;
+    saveBtn.title = saveBtn.disabled
+        ? 'Each line needs an item and a price (foreign price on AED/USD) before Update.'
+        : '';
 }
 
 document.getElementById('otherChargesKwd')?.addEventListener('input', recalcTotals);
@@ -654,7 +685,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const rows = document.querySelectorAll('#poTbody tr[id^="porow_"]');
         const tr = rows[rows.length - 1];
         const rid = tr.id;
-        tr.querySelector('.item-search').value = '<?= addslashes($item['item_name']) ?>';
+        const itemInput = tr.querySelector('.item-search');
+        itemInput.value = <?= json_encode((string) $item['item_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+        itemInput.dataset.label = itemInput.value;
         document.getElementById('itemId_' + rid).value = '<?= $item['item_id'] ?>';
         document.getElementById('qty_' + rid).value = '<?= $item['quantity'] ?>';
         <?php $uk = (float) ($item['unit_price_kwd'] ?? 0); $tk = (float) ($item['total_kwd'] ?? 0); ?>

@@ -32,22 +32,15 @@ $displayStatus = ($sale['status'] ?? '') === 'cancelled' ? 'cancelled' : $invoic
         <a href="?page=sales&action=print&id=<?= $sale['id'] ?>&autopdf=1" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);">
             <i class="bi bi-file-earmark-pdf me-1"></i> PDF
         </a>
+        <?php if (Auth::can('reports', 'view') || Auth::can('rpt_customer_imei', 'view')): ?>
+        <a href="?page=reports&action=invoiceImeiBarcodePrint&sale_id=<?= (int) $sale['id'] ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-upc-scan me-1"></i> IMEI barcodes
+        </a>
+        <?php endif; ?>
         <?php if (($sale['status'] ?? '') !== 'cancelled'): ?>
         <a href="?page=sales&action=exportInvoice&id=<?= (int) $sale['id'] ?>" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-download me-1"></i> Export invoice
         </a>
-        <?php endif; ?>
-        <?php if (!empty($canSaleEditNow) && $sale['status'] !== 'cancelled'): ?>
-        <a href="?page=sales&action=edit&id=<?= $sale['id'] ?>" class="btn btn-sm btn-outline-warning">
-            <i class="bi bi-pencil me-1"></i> Edit
-        </a>
-        <?php endif; ?>
-        <?php if (Auth::can('sales','delete') && $sale['status'] !== 'cancelled' && $sale['status'] !== 'paid'): ?>
-        <form method="POST" action="?page=sales&action=cancel" style="display:inline;" onsubmit="return confirm('Cancel this sale?')">
-            <?= Auth::csrfField() ?>
-            <input type="hidden" name="id" value="<?= $sale['id'] ?>">
-            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i> Cancel</button>
-        </form>
         <?php endif; ?>
     </div>
 </div>
@@ -71,7 +64,7 @@ $latestReq  = $saleEditLatest ?? null;
 ?>">
     <?php if (!empty($unlockReq)): ?>
         <strong>Edit unlocked</strong> until <?= htmlspecialchars((string) $unlockReq['unlocked_until']) ?>.
-        Use <strong>Edit</strong> now. Saving the invoice closes this unlock.
+        Saving the invoice closes this unlock.
     <?php elseif (!empty($pendingReq)): ?>
         <strong>Waiting for admin</strong>
         <?php if (!empty($pendingReq['requested_by_name'])): ?>

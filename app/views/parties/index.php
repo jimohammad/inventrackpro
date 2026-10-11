@@ -134,8 +134,7 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
 /* Match Sales list typography */
 #partiesTable {
     border-collapse: collapse;
-    width: auto;
-    max-width: 100%;
+    width: 100%;
     table-layout: auto;
     font-size: 0.83rem;
 }
@@ -149,13 +148,11 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
 #partiesTable td.party-name-col {
     width: auto;
     min-width: 280px;
-    max-width: 480px;
     white-space: nowrap;
     padding-left: 8px;
 }
 #partiesTable .party-name {
     display: block;
-    max-width: 480px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -177,6 +174,33 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
     font-weight: 700;
     color: #6366f1;
     letter-spacing: 0.4px;
+    white-space: nowrap;
+}
+#partiesTable th.party-type-col,
+#partiesTable td.party-type-col {
+    width: 1%;
+    min-width: max-content;
+    white-space: nowrap;
+    vertical-align: middle;
+    /* Nudge only the customer/type badges left; other columns stay on the right. */
+    padding-right: 48px;
+}
+#partiesTable .party-type-badges {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
+}
+#partiesTable .party-type-badges .badge {
+    display: inline-block;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.15;
+    padding: 2px 6px;
+    margin: 0;
     white-space: nowrap;
 }
 #partiesTable .party-balance {
@@ -263,7 +287,7 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
                     <th class="th-blue" style="width:40px;">#</th>
                     <th class="th-blue party-acc-col">Acc No</th>
                     <th class="th-blue party-name-col">Name</th>
-                    <th class="th-blue" style="width:120px;">Type</th>
+                    <th class="th-blue party-type-col">Type</th>
                     <th class="th-blue" style="width:80px;">Status</th>
                     <th class="th-blue" style="width:120px;text-align:right;">Balance Due</th>
                     <th class="th-blue" style="width:118px;">Actions</th>
@@ -298,7 +322,7 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
                             <?= htmlspecialchars($p['name']) ?>
                         </a>
                     </td>
-                    <td>
+                    <td class="party-type-col">
                         <?php
                         $typeBg = match ($p['type']) {
                             'customer'          => ['rgba(16,185,129,0.15)', 'var(--success)'],
@@ -307,14 +331,16 @@ $partyListUrl = static function (string $tabType, string $balance) use ($type): 
                             default             => ['rgba(245,158,11,0.15)', 'var(--warning)'],
                         };
                         ?>
+                        <span class="party-type-badges">
                         <span class="badge" style="border-radius:5px;background:<?= $typeBg[0] ?>;color:<?= $typeBg[1] ?>;">
                             <?= htmlspecialchars(Party::typeLabel($p['type'])) ?>
                         </span>
                         <?php if (in_array($p['type'], ['customer', 'both'], true)): ?>
-                        <span class="badge ms-1" style="border-radius:5px;background:<?= Party::isRetailCustomer($p['customer_kind'] ?? null) ? 'rgba(99,102,241,0.14);color:#4338ca' : 'rgba(245,158,11,0.14);color:#b45309' ?>;">
+                        <span class="badge" style="border-radius:5px;background:<?= Party::isRetailCustomer($p['customer_kind'] ?? null) ? 'rgba(99,102,241,0.14);color:#4338ca' : 'rgba(245,158,11,0.14);color:#b45309' ?>;">
                             <?= htmlspecialchars(Party::customerKindLabel($p['customer_kind'] ?? null)) ?>
                         </span>
                         <?php endif; ?>
+                        </span>
                     </td>
                     <td>
                         <span class="badge <?= $p['is_active'] ? 'badge-paid' : 'badge-draft' ?> px-2" style="border-radius:5px;">

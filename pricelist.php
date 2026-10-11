@@ -328,15 +328,15 @@ body {
 }
 .pl-nfc-badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 3px 12px;
     border-radius: 20px;
-    font-size: 0.62rem;
+    font-size: 9.5pt;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     background: linear-gradient(135deg, #0d9488, #0891b2);
     color: #fff;
-    line-height: 1.4;
+    line-height: 1.35;
 }
 .pl-item-meta { font-size: 0.72rem; color: #94a3b8; }
 .pl-item-price {

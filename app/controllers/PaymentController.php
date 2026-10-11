@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Payment.php';
+require_once __DIR__ . '/../models/PaymentCollection.php';
 require_once __DIR__ . '/../models/Party.php';
 
 class PaymentController extends BaseController {
@@ -125,6 +126,21 @@ class PaymentController extends BaseController {
             'all_dates'    => $dateRange['all_dates'],
         ];
 
+        $filterParty = null;
+        $partyId = (int) ($filters['party_id'] ?? 0);
+        if ($partyId > 0) {
+            $partyRow = $this->partyModel->find($partyId);
+            $partyType = (string) ($partyRow['type'] ?? '');
+            if (!$partyRow || (Auth::isSalesFloor() && Auth::isSupplierHiddenType($partyType))) {
+                $filters['party_id'] = 0;
+            } else {
+                $filterParty = [
+                    'id'   => (int) $partyRow['id'],
+                    'name' => (string) ($partyRow['name'] ?? ''),
+                ];
+            }
+        }
+
         $accounts       = self::getAccounts();
         $users          = Database::getInstance()->fetchAll(
             'SELECT id, name FROM users WHERE is_active = 1 ORDER BY name ASC'
@@ -135,16 +151,24 @@ class PaymentController extends BaseController {
         $listLimit      = $listPage['limit'];
         $datesDefaulted = $dateRange['dates_defaulted'];
 
-        $filterParty = null;
-        $partyId = (int) ($filters['party_id'] ?? 0);
-        if ($partyId > 0) {
-            $partyRow = $this->partyModel->find($partyId);
-            if ($partyRow) {
-                $filterParty = [
-                    'id'   => (int) $partyRow['id'],
-                    'name' => (string) ($partyRow['name'] ?? ''),
-                ];
+
+        $heldForAdmin = ['cash' => 0.0, 'bank' => 0.0];
+        $collectWaiting = 0;
+        $lockedPaymentIds = [];
+        if (!$isOut) {
+            $db = Database::getInstance();
+            $wh = (int) (Auth::warehouseId() ?? 0);
+            if (in_array(Auth::role(), PaymentCollection::HOLDER_ROLES, true)) {
+                $heldForAdmin = PaymentCollection::heldTotals($db, $wh, (int) Auth::id());
             }
+            if (Auth::isAdmin()) {
+                $collectWaiting = PaymentCollection::openCount($db, $wh);
+            }
+            $idList = [];
+            foreach ($payments as $p) {
+                $idList[] = (int) ($p['id'] ?? 0);
+            }
+            $lockedPaymentIds = PaymentCollection::lockedIdSet($db, $idList);
         }
 
         $pageTitle = $isOut ? 'Payment Out' : 'Payment In';
@@ -185,6 +209,37 @@ class PaymentController extends BaseController {
         }
     }
 
+    /**
+     * @param 'in'|'out' $mode
+     * @return list<string>
+     */
+    private function allowedPaymentPartyTypes(string $mode): array {
+        if ($mode === 'out') {
+            return Auth::isSalesFloor()
+                ? ['customer', 'both']
+                : ['customer', 'supplier', 'both', 'freight_forwarder'];
+        }
+        return Auth::canReceiveFromSupplier()
+            ? ['customer', 'supplier', 'both', 'freight_forwarder']
+            : ['customer', 'both'];
+    }
+
+    /** Salesman never opens a voucher whose party is supplier/freight. */
+    private function assertSalesFloorMaySeePayment(array $payment): void {
+        if (!Auth::isSalesFloor()) {
+            return;
+        }
+        $type = (string) ($payment['party_type'] ?? '');
+        if ($type === '' && (int) ($payment['party_id'] ?? 0) > 0) {
+            $row = $this->partyModel->find((int) $payment['party_id']);
+            $type = (string) ($row['type'] ?? '');
+        }
+        if (Auth::isSupplierHiddenType($type)) {
+            $this->flash('error', 'Payment not found.');
+            $this->redirect('?page=payments');
+        }
+    }
+
     // Back-compat: route /create (and old ?type=in/out links) to receive/pay forms
     public function create(): void {
         $type = $this->input('type', '', 'get');
@@ -196,7 +251,7 @@ class PaymentController extends BaseController {
         $this->redirect("?page=payments&action={$action}{$qs}");
     }
 
-    /** Payment IN — receive money from customer */
+    /** Payment IN — receive money from customer (admin may also receive from a supplier) */
     public function receive(): void {
         $this->renderForm('in');
     }
@@ -217,7 +272,7 @@ class PaymentController extends BaseController {
 
         $importPayable = $mode === 'out' && $this->input('import_payable', '', 'get') === '1';
         $partySearchType = $mode === 'in'
-            ? 'customer'
+            ? (Auth::canReceiveFromSupplier() ? 'payment_in' : 'customer')
             : ($importPayable ? 'all' : 'payment_out');
 
         $accounts = self::getAccounts();
@@ -274,9 +329,15 @@ class PaymentController extends BaseController {
             ];
         } elseif ($preselectPartyId > 0) {
             $preselectParty = $db->fetchOne(
-                "SELECT id, name FROM parties WHERE id = ? AND is_active = 1",
+                "SELECT id, name, type FROM parties WHERE id = ? AND is_active = 1",
                 [$preselectPartyId]
             ) ?: null;
+            if ($preselectParty) {
+                $preType = (string) ($preselectParty['type'] ?? '');
+                if (!in_array($preType, $this->allowedPaymentPartyTypes($mode), true)) {
+                    $preselectParty = null;
+                }
+            }
         }
 
         if ($preselectParty && (int) ($preselectParty['id'] ?? 0) > 0) {
@@ -369,6 +430,10 @@ class PaymentController extends BaseController {
             echo json_encode(['balance' => 0, 'perspective' => 'receivable']);
             return;
         }
+        if (Auth::isSalesFloor() && Auth::isSupplierHiddenType((string) ($party['type'] ?? ''))) {
+            echo json_encode(['error' => 'Forbidden', 'balance' => 0, 'perspective' => 'receivable']);
+            return;
+        }
         $wid  = (int) (Auth::warehouseId() ?? 0);
         $home = $party['warehouse_id'] ?? null;
         if ($wid > 0 && $home !== null && $home !== '' && (int) $home !== $wid) {
@@ -405,6 +470,11 @@ class PaymentController extends BaseController {
         $whId    = (int) (Auth::warehouseId() ?? 0);
         if ($partyId <= 0 || $whId <= 0) {
             echo json_encode(['orders' => []]);
+            return;
+        }
+
+        if (Auth::isSalesFloor()) {
+            echo json_encode(['error' => 'Forbidden', 'orders' => []]);
             return;
         }
 
@@ -483,7 +553,9 @@ class PaymentController extends BaseController {
             $errors = array_merge($errors, $amtErr);
         }
 
-        $partyLabel = $payType === 'out' ? 'Party' : 'Customer';
+        $partyLabel = $payType === 'out' || Auth::canReceiveFromSupplier()
+            ? 'Party'
+            : 'Customer';
 
         if (!empty($errors) || $this->inputInt('party_id') <= 0) {
             if ($this->inputInt('party_id') <= 0 && empty($errors)) {
@@ -515,9 +587,7 @@ class PaymentController extends BaseController {
             return;
         }
         $partyType = (string) ($partyRow['type'] ?? '');
-        $allowedTypes = $payType === 'out'
-            ? ['customer', 'supplier', 'both', 'freight_forwarder']
-            : ['customer', 'both'];
+        $allowedTypes = $this->allowedPaymentPartyTypes($payType === 'out' ? 'out' : 'in');
         if (!in_array($partyType, $allowedTypes, true)) {
             $this->flash('error', 'This party type cannot be used for this payment.');
             $this->redirect('?page=payments&action=' . $returnAction);
@@ -711,10 +781,16 @@ class PaymentController extends BaseController {
         if (!$payment) die('Payment not found.');
         Auth::authorize($this->paymentPermModule($payment), 'view');
         $this->assertPaymentBranch($payment);
+        $this->assertSalesFloorMaySeePayment($payment);
 
         $settings = self::getSettings();
         $paymentsListBase = $this->paymentsListUrlFor($payment);
-        $canEditPayment = Auth::isAdmin();
+        $canEditPayment = Auth::isAdmin()
+            && (
+                (string) ($payment['ref_type'] ?? '') !== 'purchase_order'
+                || $this->isUnlockedPoAdvance($payment)
+            )
+            && (string) ($payment['ref_type'] ?? '') !== 'discount';
         $paymentPrintThermal = $isThermal;
 
         // Party balance — only fetch if a party is linked (PO/expense payments may have null party)
@@ -745,6 +821,8 @@ class PaymentController extends BaseController {
 
         Auth::authorize($this->paymentPermModule($payment), 'view');
         $this->assertPaymentBranch($payment);
+        $this->assertSalesFloorMaySeePayment($payment);
+        $activeCollection = PaymentCollection::activeForPayment(Database::getInstance(), $id);
 
         $pageTitle = 'Payment: ' . $payment['payment_no'];
         $page      = 'payments';
@@ -756,6 +834,91 @@ class PaymentController extends BaseController {
         include __DIR__ . '/../views/payments/view.php';
         $content = ob_get_clean();
         include __DIR__ . '/../views/layout.php';
+    }
+
+    /** Admin counts cash and bank slips the salesman is still holding. */
+    public function collect(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=payments');
+            return;
+        }
+        $db = Database::getInstance();
+        $wh = (int) (Auth::warehouseId() ?? 0);
+        $holders = PaymentCollection::openByHolder($db, $wh);
+        $history = PaymentCollection::recent($db, $wh, 30);
+        $cashWaiting = 0.0;
+        $bankWaiting = 0.0;
+        foreach ($holders as $holder) {
+            $cashWaiting = round($cashWaiting + (float) $holder['cash_total'], 3);
+            $bankWaiting = round($bankWaiting + (float) $holder['bank_total'], 3);
+        }
+
+        $pageTitle = 'Collect from salesman';
+        $page = 'payments';
+        $skipListAssets = true;
+
+        ob_start();
+        include __DIR__ . '/../views/payments/collect.php';
+        $content = ob_get_clean();
+        include __DIR__ . '/../views/layout.php';
+    }
+
+    public function collectStore(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=payments');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=payments&action=collect');
+            return;
+        }
+        $holderId = $this->inputInt('holder_user_id');
+        $rawIds = $_POST['payment_ids'] ?? [];
+        if (!is_array($rawIds)) {
+            $rawIds = [];
+        }
+        $note = $this->input('note', '', 'post', 255);
+        $model = new PaymentCollection();
+        $id = $model->collect(
+            (int) (Auth::warehouseId() ?? 0),
+            (int) Auth::id(),
+            $holderId,
+            $rawIds,
+            $note
+        );
+        if ($id === false) {
+            $err = trim($model->getLastError());
+            $this->flash('error', $err !== '' ? $err : 'Could not save the collection.');
+        } else {
+            $this->logActivity('collect_payments', 'payments', $id, 'Collected receipts from user ' . $holderId);
+            $this->flash('success', 'Saved. These receipts are with you.');
+        }
+        $this->redirect('?page=payments&action=collect');
+    }
+
+    public function collectUndo(): void {
+        if (!Auth::isAdmin()) {
+            $this->flash('error', 'Admin access required.');
+            $this->redirect('?page=payments');
+            return;
+        }
+        if (!$this->isPost()) {
+            $this->redirect('?page=payments&action=collect');
+            return;
+        }
+        $id = $this->inputInt('id');
+        $model = new PaymentCollection();
+        $ok = $model->undo($id, (int) Auth::id(), (int) (Auth::warehouseId() ?? 0));
+        if ($ok) {
+            $this->logActivity('undo_payment_collection', 'payments', $id, 'Undid collection ' . $id);
+            $this->flash('success', 'Undone. Those receipts are back with the salesman.');
+        } else {
+            $err = trim($model->getLastError());
+            $this->flash('error', $err !== '' ? $err : 'Could not undo the collection.');
+        }
+        $this->redirect('?page=payments&action=collect');
     }
 
     // Edit payment form (admin only — financial fields)
@@ -776,13 +939,18 @@ class PaymentController extends BaseController {
             return;
         }
         $this->assertPaymentBranch($editPayment);
+        if (PaymentCollection::isActivelyCollected(Database::getInstance(), $id)) {
+            $this->flash('error', 'This receipt was given to admin. Undo today\'s collection first, then edit.');
+            $this->redirect('?page=payments&action=detail&id=' . $id);
+            return;
+        }
 
         if ((string) ($editPayment['ref_type'] ?? '') === 'discount') {
             $this->flash('error', 'Discount payments can only be edited from Discounts settings.');
             $this->redirect($this->paymentsListUrlFor($editPayment));
             return;
         }
-        if ((string) ($editPayment['ref_type'] ?? '') === 'purchase_order') {
+        if ((string) ($editPayment['ref_type'] ?? '') === 'purchase_order' && !$this->isUnlockedPoAdvance($editPayment)) {
             $this->flash('error', 'PO advances cannot be edited. The bank transfer is posted.');
             $this->redirect('?page=payments&action=detail&id=' . $id);
             return;
@@ -826,6 +994,11 @@ class PaymentController extends BaseController {
             return;
         }
         $this->assertPaymentBranch($payment);
+        if (PaymentCollection::isActivelyCollected(Database::getInstance(), $id)) {
+            $this->flash('error', 'This receipt was given to admin. Undo today\'s collection first, then edit.');
+            $this->redirect('?page=payments&action=detail&id=' . $id);
+            return;
+        }
 
         // Discount PAY rows must only be changed via Discounts module (no cash side-effects).
         if ((string) ($payment['ref_type'] ?? '') === 'discount') {
@@ -833,7 +1006,8 @@ class PaymentController extends BaseController {
             $this->redirect($listUrl);
             return;
         }
-        if ((string) ($payment['ref_type'] ?? '') === 'purchase_order') {
+        $unlockedPoAdvance = $this->isUnlockedPoAdvance($payment);
+        if ((string) ($payment['ref_type'] ?? '') === 'purchase_order' && !$unlockedPoAdvance) {
             $this->flash('error', 'PO advances cannot be edited. The bank transfer is posted.');
             $this->redirect('?page=payments&action=detail&id=' . $id);
             return;
@@ -864,19 +1038,25 @@ class PaymentController extends BaseController {
                 if (!$this->partyModel->isVisibleInCurrentWarehouse($finalPartyId)) {
                     throw new \Exception('Selected party is not available on this branch.');
                 }
+                $payMode = (($payment['payment_type'] ?? 'in') === 'out') ? 'out' : 'in';
+                $allowed = $this->allowedPaymentPartyTypes($payMode);
+                if (!in_array((string) ($newParty['type'] ?? ''), $allowed, true)) {
+                    throw new \Exception('This party type cannot be used for this payment.');
+                }
             }
 
-            $newAccountId = $this->inputInt('account_id') ?: $payment['account_id'];
+            $newAccountId = $this->inputInt('account_id') ?: (int) $payment['account_id'];
+            $oldAcc = (int) $payment['account_id'];
+            $newAcc = (int) $newAccountId;
 
             // Fix account balances: fully reverse old, then apply new
             if ($payment['ref_type'] !== 'discount') {
-                $oldAcc = (int) $payment['account_id'];
-                $newAcc = (int) $newAccountId;
-                $lockIds = array_values(array_unique(array_filter([$oldAcc, $newAcc], static fn(int $id): bool => $id > 0)));
-                sort($lockIds);
-                foreach ($lockIds as $lockId) {
-                    $db->fetchOne('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [$lockId]);
+                // Same till may stay if it was later deactivated (amount correction).
+                // A different till must exist and be active, or the cash leaves the books.
+                if ($oldAcc > 0) {
+                    $this->paymentModel->lockAccountForPosting($oldAcc, false);
                 }
+                $this->paymentModel->lockAccountForPosting($newAcc, $newAcc !== $oldAcc);
                 // Step 1: Reverse old amount from old account
                 if ($payment['payment_type'] === 'in') {
                     $db->execute("UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?", [$oldAmount, $payment['account_id']]);
@@ -892,7 +1072,8 @@ class PaymentController extends BaseController {
             }
 
             // Party change must not keep a stale invoice link (wrong AR/AP allocation).
-            $clearRef = $partyChanged && (int) ($payment['ref_id'] ?? 0) > 0;
+            // An unlocked PO advance stays linked; the PO supplier is updated instead.
+            $clearRef = $partyChanged && (int) ($payment['ref_id'] ?? 0) > 0 && !$unlockedPoAdvance;
             if ($clearRef) {
                 $db->execute(
                     "UPDATE payments SET amount=?, date=?, account_id=?, notes=?, party_id=?, ref_id=0 WHERE id=?",
@@ -953,11 +1134,15 @@ class PaymentController extends BaseController {
                 }
             }
 
+            if ($unlockedPoAdvance) {
+                $this->syncUnlockedPoAdvance($db, (int) ($payment['ref_id'] ?? 0), $finalPartyId, (int) $newAccountId);
+            }
+
             $db->commit();
 
             $rebuildWarned = false;
             // Rebuild FIFO invoice allocation for affected parties (standalone receipts use party FIFO, not ref_id alone)
-            if ($amountChanged || $partyChanged) {
+            if (($amountChanged || $partyChanged) && !$unlockedPoAdvance) {
                 $whId = (int) ($payment['warehouse_id'] ?? 0);
                 if ($whId <= 0) {
                     $whId = (int) (Auth::warehouseId() ?? 0);
@@ -1038,6 +1223,51 @@ class PaymentController extends BaseController {
      * Delete a mistaken payment row and reverse account + FIFO invoice effects.
      * Requires Payments → Delete permission (admins have all actions).
      */
+    private function isUnlockedPoAdvance(array $payment): bool {
+        return (string) ($payment['ref_type'] ?? '') === 'purchase_order'
+            && (string) ($payment['po_no'] ?? '') === Payment::UNLOCK_PO_ADVANCE_NO;
+    }
+
+    /** Keep PO-000077 paid amount, account, supplier, and status aligned with its Payment Out. */
+    private function syncUnlockedPoAdvance($db, int $poId, int $partyId, int $accountId): void {
+        if ($poId <= 0) {
+            return;
+        }
+        $po = $db->fetchOne(
+            "SELECT id, po_no, status, subtotal_kwd, other_charges_kwd, adjustment_kwd, party_id
+             FROM purchase_orders WHERE id = ? FOR UPDATE",
+            [$poId]
+        );
+        if (!$po || (string) ($po['po_no'] ?? '') !== Payment::UNLOCK_PO_ADVANCE_NO) {
+            return;
+        }
+        $sum = round((float) ($db->fetchOne(
+            "SELECT COALESCE(SUM(amount), 0) AS tot
+             FROM payments
+             WHERE ref_type = 'purchase_order' AND ref_id = ? AND status = 'active'",
+            [$poId]
+        )['tot'] ?? 0), 3);
+        $total = round(
+            (float) $po['subtotal_kwd'] + (float) $po['other_charges_kwd'] + (float) $po['adjustment_kwd'],
+            3
+        );
+        $tol = min(0.100, max(0.001, round($total * 0.00001, 3)));
+        $status = (string) ($po['status'] ?? 'draft');
+        if (!in_array($status, ['converted', 'cancelled'], true)) {
+            $status = ($sum > 0 && round($total - $sum, 3) <= $tol) ? 'paid' : 'draft';
+        }
+        $db->execute(
+            "UPDATE purchase_orders SET paid_kwd = ?, account_id = ?, party_id = ?, status = ? WHERE id = ?",
+            [
+                $sum,
+                $accountId > 0 ? $accountId : null,
+                $partyId > 0 ? $partyId : (int) $po['party_id'],
+                $status,
+                $poId,
+            ]
+        );
+    }
+
     public function delete(): void {
         if (!$this->isPost()) {
             $this->redirect('?page=payments');
@@ -1061,6 +1291,16 @@ class PaymentController extends BaseController {
         $listUrl = $this->paymentsListUrlFor($payment);
         Auth::authorize($this->paymentPermModule($payment), 'delete');
         $this->assertPaymentBranch($payment);
+        if (PaymentCollection::isActivelyCollected(Database::getInstance(), $id)) {
+            $this->flash(
+                'error',
+                Auth::isAdmin()
+                    ? 'Undo today\'s collection from Collect from salesman, then delete.'
+                    : 'This receipt was already given to admin.'
+            );
+            $this->redirect($listUrl);
+            return;
+        }
 
         if (($payment['ref_type'] ?? '') === 'discount') {
             $this->flash('error', 'Remove discount-linked payments from the Discounts module.');

@@ -208,6 +208,10 @@ foreach ($stockList as $row) {
     outline: 2px solid var(--sp-ring);
     outline-offset: 2px;
 }
+.stock-action--list {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    box-shadow: 0 3px 10px rgba(79, 70, 229, 0.28);
+}
 .stock-filter {
     display: inline-flex;
     align-items: center;
@@ -538,6 +542,10 @@ foreach ($stockList as $row) {
                 </label>
             </div>
             <div class="stock-toolbar__actions">
+                <a class="stock-action stock-action--list" href="?page=stock&action=stocklistPrint" target="_blank" rel="noopener noreferrer">
+                    <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                    Stock list PDF
+                </a>
                 <a class="stock-action" href="?page=stock&action=pricelistPrint" target="_blank" rel="noopener noreferrer">
                     <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
                     Pricelist PDF

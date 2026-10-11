@@ -9,6 +9,7 @@ class DiscountController extends BaseController {
         Auth::authorizeAny(['discounts', 'settings'], 'view');
         $db = Database::getInstance();
 
+        $whId = (int) Auth::warehouseId();
         $discounts = $db->fetchAll(
             "SELECT d.*, p.name as party_name, i.name as item_name, s.invoice_no as sale_invoice_no,
                     u.name as created_by_name
@@ -17,12 +18,19 @@ class DiscountController extends BaseController {
              LEFT JOIN items i ON i.id = d.item_id
              LEFT JOIN sales s ON s.id = d.sale_id
              LEFT JOIN users u ON u.id = d.created_by
-             ORDER BY d.id DESC LIMIT 100"
+             LEFT JOIN payments py ON py.id = d.payment_id
+             WHERE d.payment_id IS NULL
+                OR py.id IS NULL
+                OR (
+                    py.ref_type = 'discount'
+                    AND py.payment_type = 'in'
+                    AND (py.warehouse_id = ? OR (? = 1 AND py.warehouse_id IS NULL))
+                )
+             ORDER BY d.id DESC LIMIT 100",
+            [$whId, $whId]
         );
 
-        $parties = $db->fetchAll(
-            "SELECT id, name, phone FROM parties WHERE is_active = 1 AND (type = 'customer' OR type = 'both') ORDER BY name"
-        );
+        $parties = (new Party())->listForFilter('customer');
 
         $discountFormNonce = bin2hex(random_bytes(16));
         $_SESSION['discount_form_nonce'] = $discountFormNonce;
@@ -98,8 +106,8 @@ class DiscountController extends BaseController {
             "SELECT id FROM parties WHERE id = ? AND is_active = 1 AND type IN ('customer','both')",
             [$partyId]
         );
-        if (!$party) {
-            $this->flash('error', 'Invalid customer.');
+        if (!$party || !(new Party())->isVisibleInCurrentWarehouse($partyId)) {
+            $this->flash('error', 'Invalid customer for this branch.');
             $this->redirect('?page=discounts');
             return;
         }
@@ -132,20 +140,17 @@ class DiscountController extends BaseController {
                 [$discountNo, $partyId, $saleId, $amount, $date, Auth::id()]
             );
 
-            // Create payment record with ref_type='discount' — reduces customer balance
-            // but does NOT affect account balances (no real money received)
-            $payLast = $db->fetchOne("SELECT payment_no FROM payments ORDER BY id DESC LIMIT 1 FOR UPDATE");
-            $payNum  = $payLast ? (int) substr($payLast['payment_no'], 4) : 0;
-            $payNo   = 'PAY-' . str_pad($payNum + 1, 6, '0', STR_PAD_LEFT);
+            // Customer discount: payment_type=in, ref_type=discount. No bank movement.
+            require_once __DIR__ . '/../models/Payment.php';
+            $payNo = (new Payment())->nextPaymentNo();
 
-            // Use first active account (required field, but won't affect balance)
             $acc = $db->fetchOne("SELECT id FROM accounts WHERE is_active = 1 ORDER BY sort_order ASC LIMIT 1");
             $accId = $acc['id'] ?? 1;
 
             $payNote = 'Discount ' . $discountNo . ($invoiceLabel !== '' ? ' — Inv ' . $invoiceLabel : '');
             $paymentId = $db->insert(
-                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, warehouse_id, created_by)
-                 VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?, ?)",
+                "INSERT INTO payments (payment_no, ref_type, ref_id, party_id, account_id, amount, payment_type, payment_method, date, notes, warehouse_id, status, created_by)
+                 VALUES (?, 'discount', 0, ?, ?, ?, 'in', 'cash', ?, ?, ?, 'active', ?)",
                 [$payNo, $partyId, $accId, $amount, $date, $payNote, Auth::warehouseId(), Auth::id()]
             );
 
@@ -192,12 +197,13 @@ class DiscountController extends BaseController {
         try {
             // Safe delete: prefer linked payment_id; otherwise lock and delete only ref_type='discount'
             $payId = (int)($disc['payment_id'] ?? 0);
+            [$payWhere, $payParams] = $this->customerDiscountPaymentWhere();
             if ($payId > 0) {
-                // Branch-scoped + verified lock: never touch another warehouse's payment,
-                // and fail loudly if the linked row is missing or its ref_type changed.
+                // Customer discounts only (payment_type=in). Packing discounts stay on Packing due.
+                // NULL warehouse_id is legacy Main, same as the party balance.
                 $pay = $db->fetchOne(
-                    "SELECT id FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? FOR UPDATE",
-                    [$payId, Auth::warehouseId()]
+                    "SELECT id FROM payments WHERE id = ? AND {$payWhere} FOR UPDATE",
+                    array_merge([$payId], $payParams)
                 );
                 if (!$pay || empty($pay['id'])) {
                     throw new \Exception(
@@ -206,22 +212,24 @@ class DiscountController extends BaseController {
                         . 'or contact support to relink it.'
                     );
                 }
-                $db->execute("DELETE FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? LIMIT 1", [$payId, Auth::warehouseId()]);
+                $db->execute(
+                    "DELETE FROM payments WHERE id = ? AND {$payWhere} LIMIT 1",
+                    array_merge([$payId], $payParams)
+                );
             } else {
                 // M4 fix: legacy rows (no payment_id link) — if the fuzzy lookup misses,
                 // the customer_discounts row would be deleted while the payment lingers,
                 // leaving the customer balance silently reduced. Fail loudly instead.
                 $pay = $db->fetchOne(
                     "SELECT id FROM payments
-                     WHERE ref_type = 'discount'
+                     WHERE {$payWhere}
                        AND party_id = ?
                        AND amount = ?
-                       AND warehouse_id = ?
                        AND notes LIKE ?
                      ORDER BY id DESC
                      LIMIT 1
                      FOR UPDATE",
-                    [$disc['party_id'], $disc['amount'], Auth::warehouseId(), '%' . $disc['discount_no'] . '%']
+                    array_merge($payParams, [$disc['party_id'], $disc['amount'], '%' . $disc['discount_no'] . '%'])
                 );
                 if (!$pay || empty($pay['id'])) {
                     throw new \Exception(
@@ -230,7 +238,10 @@ class DiscountController extends BaseController {
                         . 'or contact support to relink it.'
                     );
                 }
-                $db->execute("DELETE FROM payments WHERE id = ? LIMIT 1", [(int)$pay['id']]);
+                $db->execute(
+                    "DELETE FROM payments WHERE id = ? AND {$payWhere} LIMIT 1",
+                    array_merge([(int) $pay['id']], $payParams)
+                );
             }
             $db->execute("DELETE FROM customer_discounts WHERE id = ?", [$id]);
             $this->logActivity('delete_discount', 'customer_discounts', $id,
@@ -269,9 +280,7 @@ class DiscountController extends BaseController {
             $this->redirect('?page=discounts');
         }
 
-        $parties = $db->fetchAll(
-            "SELECT id, name FROM parties WHERE is_active = 1 AND (type = 'customer' OR type = 'both') ORDER BY name"
-        );
+        $parties = (new Party())->listForFilter('customer');
 
         $invoices = $db->fetchAll(
             "SELECT id, invoice_no, date, grand_total, balance
@@ -316,8 +325,8 @@ class DiscountController extends BaseController {
             "SELECT id FROM parties WHERE id = ? AND is_active = 1 AND type IN ('customer','both')",
             [$partyId]
         );
-        if (!$party) {
-            $this->flash('error', 'Invalid customer.');
+        if (!$party || !(new Party())->isVisibleInCurrentWarehouse($partyId)) {
+            $this->flash('error', 'Invalid customer for this branch.');
             $this->redirect('?page=discounts&action=edit&id=' . $id);
             return;
         }
@@ -349,12 +358,12 @@ class DiscountController extends BaseController {
 
             $note = 'Discount ' . $disc['discount_no'] . ($invoiceLabel !== '' ? ' — Inv ' . $invoiceLabel : '');
             $payId = (int)($disc['payment_id'] ?? 0);
+            [$payWhere, $payParams] = $this->customerDiscountPaymentWhere();
+            $whId = (int) Auth::warehouseId();
             if ($payId > 0) {
-                // Lock and verify the linked payment (branch-scoped) before updating,
-                // so a concurrent delete cannot leave the discount pointing at nothing.
                 $pay = $db->fetchOne(
-                    "SELECT id FROM payments WHERE id = ? AND ref_type = 'discount' AND warehouse_id = ? FOR UPDATE",
-                    [$payId, Auth::warehouseId()]
+                    "SELECT id FROM payments WHERE id = ? AND {$payWhere} FOR UPDATE",
+                    array_merge([$payId], $payParams)
                 );
                 if (!$pay || empty($pay['id'])) {
                     throw new \Exception(
@@ -363,14 +372,19 @@ class DiscountController extends BaseController {
                     );
                 }
                 $db->execute(
-                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=? WHERE id=? AND ref_type='discount' AND warehouse_id=? LIMIT 1",
-                    [$partyId, $amount, $date, $note, $payId, Auth::warehouseId()]
+                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=?, warehouse_id=?
+                     WHERE id=? AND {$payWhere} LIMIT 1",
+                    array_merge([$partyId, $amount, $date, $note, $whId, $payId], $payParams)
                 );
             } else {
                 $db->execute(
-                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=?
-                     WHERE ref_type='discount' AND notes LIKE ? AND party_id=? AND warehouse_id=? LIMIT 1",
-                    [$partyId, $amount, $date, $note, '%' . $disc['discount_no'] . '%', $disc['party_id'], Auth::warehouseId()]
+                    "UPDATE payments SET party_id=?, amount=?, date=?, notes=?, warehouse_id=?
+                     WHERE {$payWhere} AND notes LIKE ? AND party_id=? LIMIT 1",
+                    array_merge(
+                        [$partyId, $amount, $date, $note, $whId],
+                        $payParams,
+                        ['%' . $disc['discount_no'] . '%', $disc['party_id']]
+                    )
                 );
             }
 
@@ -419,6 +433,28 @@ class DiscountController extends BaseController {
 
         include __DIR__ . '/../views/settings/discount_print.php';
         exit;
+    }
+
+    /**
+     * Customer discount payments on this branch.
+     * Legacy NULL warehouse_id counts as Main (id 1) only. Packing discounts are payment_type=out.
+     *
+     * @return array{0:string,1:list<int>}
+     */
+    private function customerDiscountPaymentWhere(string $alias = ''): array {
+        $col = $alias !== '' ? $alias . '.' : '';
+        $wh = (int) Auth::warehouseId();
+        if ($wh <= 0) {
+            return ['1 = 0', []];
+        }
+        $whSql = $wh === 1
+            ? "({$col}warehouse_id = ? OR {$col}warehouse_id IS NULL)"
+            : "{$col}warehouse_id = ?";
+
+        return [
+            "{$col}ref_type = 'discount' AND {$col}payment_type = 'in' AND {$whSql}",
+            [$wh],
+        ];
     }
 
     /** @return array<string,mixed>|null */

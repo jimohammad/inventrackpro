@@ -2,7 +2,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title">Returns</h1>
-        <p class="page-subtitle">Sale returns and purchase returns to suppliers</p>
     </div>
     <?php if (Auth::can('returns','add')): ?>
     <div class="d-flex gap-2">

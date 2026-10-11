@@ -16,6 +16,13 @@
             </div>
             <div class="card-body" style="padding:1.5rem;">
 
+                <?php if (($editPayment['ref_type'] ?? '') === 'purchase_order'): ?>
+                <div class="alert alert-warning py-2" style="font-size:0.85rem;">
+                    This payment is the bank transfer for <strong><?= htmlspecialchars((string) ($editPayment['po_no'] ?? '')) ?></strong>.
+                    Saving updates that PO’s paid amount and account to match.
+                </div>
+                <?php endif; ?>
+
                 <!-- Non-editable summary -->
                 <?php $isIn = ($editPayment['payment_type'] ?? 'in') === 'in'; ?>
                 <div style="background:rgba(99,102,241,0.06);border:1.5px solid rgba(99,102,241,0.2);border-radius:10px;padding:14px 18px;margin-bottom:20px;">
@@ -36,7 +43,10 @@
                         <div style="position:relative;">
                             <input type="text" id="editPartySearch" class="form-control"
                                    value="<?= htmlspecialchars($editPayment['party_name'] ?? '') ?>"
-                                   placeholder="Search party..." autocomplete="off"
+                                   placeholder="Search party..." autocomplete="one-time-code"
+                                   autocorrect="off" autocapitalize="off" spellcheck="false"
+                                   data-1p-ignore="true" data-lpignore="true" data-form-type="other"
+                                   role="combobox" aria-autocomplete="list"
                                    style="font-size:1rem;font-weight:700;border-color:#10b981;background:#f0fdf4;">
                             <input type="hidden" id="editPartyId" value="<?= $editPayment['party_id'] ?>">
                             <div id="editPartyDrop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e0e7ff;border-radius:10px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:200px;overflow-y:auto;margin-top:4px;"></div>
@@ -103,6 +113,21 @@
                     </div>
                     <input type="hidden" name="print_after_save" id="printAfterSave" value="0">
                 </form>
+                <?php if (
+                    Auth::isAdmin()
+                    && ($editPayment['payment_no'] ?? '') === 'PAY-001188'
+                    && ($editPayment['po_no'] ?? '') === 'PO-000077'
+                    && (int) ($editPayment['ref_id'] ?? 0) > 0
+                ): ?>
+                <form method="POST" action="?page=purchaseorders&action=purgeMistake" class="mt-3"
+                      onsubmit="return confirm('Delete PAY-001188 and PO-000077 completely?\n\nThe 452.900 KWD goes back to the bank account. You can enter them again afterwards.')">
+                    <?= Auth::csrfField() ?>
+                    <input type="hidden" name="id" value="<?= (int) $editPayment['ref_id'] ?>">
+                    <button type="submit" class="btn btn-danger w-100">
+                        <i class="bi bi-trash me-1"></i> Delete this payment and PO-000077
+                    </button>
+                </form>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -111,6 +136,11 @@
 
 <script>
 let editPartyTimer;
+const editPartySearchType = <?= json_encode(
+    (($editPayment['payment_type'] ?? 'in') === 'out')
+        ? 'payment_out'
+        : (Auth::canReceiveFromSupplier() ? 'payment_in' : 'customer')
+) ?>;
 document.getElementById('editPartySearch').addEventListener('input', function() {
     document.getElementById('editPartyId').value = '';
     this.style.borderColor = '#e5e7eb';
@@ -120,7 +150,7 @@ document.getElementById('editPartySearch').addEventListener('input', function() 
     const drop = document.getElementById('editPartyDrop');
     if (q.length < 1) { drop.style.display = 'none'; return; }
     editPartyTimer = setTimeout(() => {
-        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}`)
+        fetch(`?page=sales&action=searchParties&q=${encodeURIComponent(q)}&type=${encodeURIComponent(editPartySearchType)}&balances=0`)
             .then(r => r.json())
             .then(parties => {
                 if (!parties.length) { drop.style.display = 'none'; return; }

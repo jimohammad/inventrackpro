@@ -25,12 +25,7 @@ backups/cache/
 .vscode/
 .vs/
 .cursor/
-!.cursor/skills/
-.cursor/skills/*
-!.cursor/skills/gstack/
-!.cursor/skills/gstack/**
-!.cursor/skills/gstack-*/
-!.cursor/skills/gstack-*/**
+.agents/
 *.swp
 *.swo
 *~

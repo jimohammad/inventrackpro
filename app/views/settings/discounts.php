@@ -1,175 +1,173 @@
 <style>
-.disc-page { display:flex; flex-direction:column; gap:16px; }
+.disc-page { display:flex; flex-direction:column; gap:10px; }
+.disc-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+}
+.disc-head .page-title { margin:0; font-size:1.15rem; }
+.disc-count {
+    font-size:.72rem; font-weight:700; color:#64748b;
+    background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:3px 9px;
+}
 
-.disc-hero {
-    display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;
-    padding:18px 20px; border-radius:16px; border:1px solid #d7e3f8;
-    background:
-        radial-gradient(1200px 180px at 0% 0%, rgba(99,102,241,.12), transparent 55%),
-        linear-gradient(135deg, #f4f7ff 0%, #f8fbff 48%, #eefcf8 100%);
-}
-.disc-hero h1 { margin:0; font-size:1.4rem; font-weight:800; color:#1e3a5f; letter-spacing:-.02em; }
-.disc-hero p { margin:4px 0 0; color:#64748b; font-size:.86rem; }
-
-.disc-card {
-    border:1px solid #d7e3f8; border-radius:16px; overflow:hidden; background:#fff;
-    box-shadow:0 10px 28px rgba(15,23,42,.05);
-}
-.disc-card-head {
-    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
-    padding:12px 18px; border-bottom:1px solid #e8eefb;
-    background:linear-gradient(135deg,#f8faff,#eef3ff);
-}
-.disc-card-title { font-size:.9rem; font-weight:800; color:#1e3a5f; }
-.disc-card-sub { font-size:.74rem; color:#64748b; font-weight:600; }
-
-.disc-create-body { padding:18px; background:linear-gradient(180deg,#fcfdff 0%, #f7faff 100%); }
-.disc-label {
-    display:block; font-size:.7rem; font-weight:800; text-transform:uppercase;
-    color:#64748b; letter-spacing:.45px; margin-bottom:6px;
-}
-.disc-create-body .form-control,
-.disc-create-body .form-select,
-.disc-create-body .input-group-text {
-    border-radius:11px; border:1.6px solid #c9d5e8; min-height:40px; font-size:.88rem;
+.disc-shell {
+    border:1px solid #d7e0ee; border-radius:10px; overflow:hidden;
     background:#fff;
 }
-.disc-create-body .form-control:focus,
-.disc-create-body .form-select:focus {
-    border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.14);
-}
-.disc-invoice-hint {
-    margin-top:6px; font-size:.72rem; color:#94a3b8; min-height:1em;
-}
-.disc-invoice-hint.is-ready { color:#059669; font-weight:600; }
 
-.disc-actions {
-    display:flex; gap:10px; flex-wrap:wrap; align-items:center;
-    margin-top:16px; padding-top:14px; border-top:1px dashed #dbe3f4;
+.disc-create { padding:8px 10px 18px; background:#eef2ff; border-bottom:1px solid #dbe3f4; }
+.disc-grid {
+    display:grid;
+    grid-template-columns: 110px minmax(0,1.2fr) minmax(0,1.25fr) 70px 52px 122px max-content;
+    gap:6px 8px;
+    align-items:end;
 }
-.disc-btn-primary {
-    border:none; border-radius:11px; padding:10px 16px; font-size:.86rem; font-weight:700;
-    color:#fff; background:linear-gradient(135deg,#6366f1,#4f46e5);
-    box-shadow:0 8px 20px rgba(79,70,229,.28);
+.disc-field { min-width:0; position:relative; }
+.disc-label {
+    display:block; font-size:.62rem; font-weight:800; text-transform:uppercase;
+    color:#64748b; letter-spacing:.4px; margin-bottom:3px; line-height:1.2;
 }
-.disc-btn-primary:hover { filter:brightness(.98); transform:translateY(-1px); }
-.disc-btn-print {
-    border:1.6px solid #10b981; border-radius:11px; padding:9px 16px;
-    font-size:.86rem; font-weight:700; color:#047857; background:#ecfdf5;
+.disc-create .form-control,
+.disc-create .form-select,
+.disc-create .input-group-text {
+    border-radius:7px; border:1.4px solid #c9d5e8; min-height:32px; height:32px;
+    font-size:.8rem; padding:2px 8px; background:#fff;
 }
+.disc-create .input-group { flex-wrap:nowrap; height:32px; }
+.disc-create .input-group > .form-control { min-width:0; }
+.disc-create .input-group-text {
+    font-size:.68rem; font-weight:800; padding:0 8px; color:#475569; background:#f1f5f9;
+}
+.disc-create .form-control:focus,
+.disc-create .form-select:focus {
+    border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.14);
+}
+.disc-create #discTotalAmt { font-weight:800; color:#059669; }
+.disc-hint {
+    position:absolute; left:0; top:100%; margin:0; font-size:.62rem; color:#94a3b8; line-height:1.2; white-space:nowrap;
+}
+.disc-hint.is-ready { color:#059669; font-weight:600; }
+
+.disc-actions { display:flex; gap:6px; flex-wrap:nowrap; align-items:center; padding-bottom:1px; }
+.disc-btn {
+    border:none; border-radius:7px; height:32px; padding:0 12px;
+    font-size:.78rem; font-weight:700; white-space:nowrap; display:inline-flex; align-items:center; gap:4px;
+}
+.disc-btn-primary { color:#fff; background:#4f46e5; }
+.disc-btn-primary:hover { background:#4338ca; color:#fff; }
+.disc-btn-print { border:1.4px solid #10b981; color:#047857; background:#ecfdf5; }
 .disc-btn-print:hover { background:#d1fae5; color:#065f46; }
 
 .disc-table-wrap { padding:0; }
-#discountTable thead th {
-    background:#f8fafc; color:#64748b; font-size:.72rem; text-transform:uppercase; letter-spacing:.45px;
-    border-bottom:1.5px solid #e2e8f0; padding:.7rem .75rem;
+.disc-table-wrap .dataTables_wrapper { padding:4px 8px 8px; }
+.disc-table-wrap .dataTables_filter,
+.disc-table-wrap .dataTables_length { margin-top:4px; }
+.disc-table-wrap .dataTables_filter input {
+    height:28px; font-size:.78rem; border:1px solid #dbe3ee; border-radius:6px; padding:0 8px;
 }
-#discountTable tbody td { padding:.68rem .75rem; font-size:.84rem; vertical-align:middle; }
+.disc-table-wrap .dataTables_length,
+.disc-table-wrap .dataTables_info,
+.disc-table-wrap .dataTables_paginate { font-size:.72rem; }
+#discountTable { font-size:.8rem; margin:0; }
+#discountTable thead th {
+    background:#f8fafc; color:#64748b; font-size:.65rem; text-transform:uppercase; letter-spacing:.4px;
+    border-bottom:1px solid #e2e8f0; padding:6px 8px; white-space:nowrap; font-weight:700;
+}
+#discountTable tbody td { padding:4px 8px; vertical-align:middle; border-bottom:1px solid #f1f5f9; }
+#discountTable tbody tr { height:34px; }
 #discountTable tbody tr:hover { background:#f8fbff; }
-.disc-no { font-weight:700; color:#4f46e5; }
-.disc-amt { font-weight:800; color:#059669; }
+.disc-no { font-weight:700; color:#4f46e5; font-variant-numeric:tabular-nums; }
+.disc-amt { font-weight:800; color:#059669; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .disc-inv {
     display:inline-flex; align-items:center; gap:4px;
-    font-weight:700; color:#0f766e; text-decoration:none;
+    font-weight:700; color:#0f766e; text-decoration:none; font-size:.78rem;
 }
 .disc-inv:hover { text-decoration:underline; }
-.disc-muted { color:#64748b; font-size:.8rem; }
-.disc-general { color:#94a3b8; font-style:italic; }
+.disc-muted { color:#64748b; font-size:.76rem; }
+.disc-general { color:#94a3b8; }
+.disc-empty { text-align:center; color:#94a3b8; padding:28px 12px; font-size:.82rem; }
 
-.disc-act { display:inline-flex; gap:6px; }
+.disc-act { display:inline-flex; gap:4px; }
 .disc-act .btn {
-    border:none; width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center;
-    border-radius:8px; padding:0;
+    border:none; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:6px; padding:0; font-size:.75rem;
 }
 .disc-edit  { background:rgba(245,158,11,.14); color:#b45309; }
 .disc-print { background:rgba(16,185,129,.14); color:#047857; }
 .disc-del   { background:rgba(239,68,68,.14); color:#dc2626; }
 
-@media (max-width: 768px) {
+@media (max-width: 992px) {
+    .disc-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .disc-actions { grid-column:1 / -1; }
+}
+@media (max-width: 640px) {
+    .disc-grid { grid-template-columns: 1fr 1fr; }
     .disc-actions { flex-direction:column; align-items:stretch; }
-    .disc-btn-primary, .disc-btn-print { width:100%; text-align:center; }
+    .disc-btn { width:100%; justify-content:center; }
 }
 </style>
 
 <div class="disc-page">
-    <div class="disc-hero">
-        <div>
-            <h1>Customer Discounts</h1>
-        </div>
+    <div class="disc-head">
+        <h1 class="page-title">Customer Discounts</h1>
+        <span class="disc-count"><?= count($discounts) ?> records</span>
     </div>
 
-    <div class="disc-card" id="discountForm">
-        <div class="disc-card-head">
-            <span class="disc-card-title"><i class="bi bi-tag-fill me-2" style="color:#6366f1;"></i>New Discount</span>
-            <span class="disc-card-sub">Per piece × qty fills total — edit total anytime</span>
-        </div>
-        <div class="disc-create-body">
-            <form method="POST" action="?page=discounts&action=store" id="discountCreateForm">
-                <?= Auth::csrfField() ?>
-                <input type="hidden" name="discount_form_nonce" value="<?= htmlspecialchars($discountFormNonce ?? '') ?>">
-                <input type="hidden" name="print_after_save" id="printAfterSave" value="0">
+    <div class="disc-shell" id="discountForm">
+        <form method="POST" action="?page=discounts&action=store" id="discountCreateForm" class="disc-create">
+            <?= Auth::csrfField() ?>
+            <input type="hidden" name="discount_form_nonce" value="<?= htmlspecialchars($discountFormNonce ?? '') ?>">
+            <input type="hidden" name="print_after_save" id="printAfterSave" value="0">
 
-                <div class="row g-3 align-items-start">
-                    <div class="col-6 col-md-2">
-                        <label class="disc-label" for="discDate">Date</label>
-                        <input type="date" name="date" id="discDate" class="form-control" value="<?= date('Y-m-d') ?>" required>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <label class="disc-label" for="discParty">Customer <span class="text-danger">*</span></label>
-                        <select name="party_id" id="discParty" class="form-select" required>
-                            <option value="">Select customer...</option>
-                            <?php foreach ($parties as $p): ?>
-                            <option value="<?= (int) $p['id'] ?>"><?= htmlspecialchars($p['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-3">
-                        <label class="disc-label" for="discSale">Invoice <small style="text-transform:none;font-weight:600;color:#94a3b8;">(optional)</small></label>
-                        <select name="sale_id" id="discSale" class="form-select" disabled>
-                            <option value="">Select customer first...</option>
-                        </select>
-                        <div class="disc-invoice-hint" id="discInvoiceHint">Last 7 days — choose a customer to load invoices</div>
-                    </div>
-                    <div class="col-4 col-md-1">
-                        <label class="disc-label" for="discPerPiece">Per Pc</label>
-                        <input type="number" id="discPerPiece" class="form-control" step="0.001" min="0" placeholder="0.000" style="font-weight:700;">
-                    </div>
-                    <div class="col-4 col-md-1">
-                        <label class="disc-label" for="discQty">Qty</label>
-                        <input type="number" id="discQty" class="form-control" min="1" value="1" required style="font-weight:700;text-align:center;">
-                    </div>
-                    <div class="col-4 col-md-2">
-                        <label class="disc-label" for="discTotalAmt">Total <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <span class="input-group-text" style="font-weight:800;"><?= APP_CURRENCY ?></span>
-                            <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000" style="font-weight:800;color:#059669;">
-                        </div>
+            <div class="disc-grid">
+                <div class="disc-field">
+                    <label class="disc-label" for="discDate">Date</label>
+                    <input type="date" name="date" id="discDate" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                </div>
+                <div class="disc-field">
+                    <label class="disc-label" for="discParty">Customer <span class="text-danger">*</span></label>
+                    <select name="party_id" id="discParty" class="form-select" required>
+                        <option value="">Select customer...</option>
+                        <?php foreach ($parties as $p): ?>
+                        <option value="<?= (int) $p['id'] ?>"><?= htmlspecialchars($p['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="disc-field">
+                    <label class="disc-label" for="discSale">Invoice <span style="text-transform:none;font-weight:600;color:#94a3b8;">optional</span></label>
+                    <select name="sale_id" id="discSale" class="form-select" disabled>
+                        <option value="">Select customer first...</option>
+                    </select>
+                    <div class="disc-hint" id="discInvoiceHint">Last 7 days</div>
+                </div>
+                <div class="disc-field">
+                    <label class="disc-label" for="discPerPiece">Per Pc</label>
+                    <input type="number" id="discPerPiece" class="form-control" step="0.001" min="0" value="0.250" placeholder="0.000" style="font-weight:700;">
+                </div>
+                <div class="disc-field">
+                    <label class="disc-label" for="discQty">Qty</label>
+                    <input type="number" id="discQty" class="form-control" min="1" value="1" required style="font-weight:700;text-align:center;">
+                </div>
+                <div class="disc-field">
+                    <label class="disc-label" for="discTotalAmt">Total <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <span class="input-group-text"><?= APP_CURRENCY ?></span>
+                        <input type="number" name="amount" id="discTotalAmt" class="form-control" step="0.001" min="0.001" required placeholder="0.000">
                     </div>
                 </div>
-
                 <div class="disc-actions">
-                    <button type="submit" class="disc-btn-primary" id="applyDiscountBtn">
-                        <i class="bi bi-check-lg me-1"></i> Apply Discount
+                    <button type="submit" class="disc-btn disc-btn-primary" id="applyDiscountBtn">
+                        <i class="bi bi-check-lg"></i> Apply
                     </button>
-                    <button type="submit" class="disc-btn-print" id="applyPrintDiscountBtn">
-                        <i class="bi bi-printer me-1"></i> Apply &amp; Print
+                    <button type="submit" class="disc-btn disc-btn-print" id="applyPrintDiscountBtn">
+                        <i class="bi bi-printer"></i> Apply &amp; Print
                     </button>
                 </div>
-            </form>
-        </div>
-    </div>
+            </div>
+        </form>
 
-    <div class="disc-card">
-        <div class="disc-card-head">
-            <span class="disc-card-title"><i class="bi bi-list-check me-2" style="color:#6366f1;"></i>Discount History</span>
-            <span class="disc-card-sub"><?= count($discounts) ?> records</span>
-        </div>
         <div class="disc-table-wrap">
             <?php if (empty($discounts)): ?>
-            <div class="text-center text-muted py-5">
-                <i class="bi bi-tag fs-2 d-block mb-2" style="opacity:.3;"></i>
-                No discounts given yet
-            </div>
+            <div class="disc-empty">No discounts given yet</div>
             <?php else: ?>
             <table class="table mb-0" id="discountTable">
                 <thead>
@@ -178,17 +176,17 @@
                         <th>Date</th>
                         <th>Customer</th>
                         <th>Invoice</th>
-                        <th class="text-center">Amount</th>
+                        <th class="text-end">Amount</th>
                         <th>By</th>
-                        <th>Action</th>
+                        <th style="width:92px;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($discounts as $d): ?>
                     <tr>
                         <td class="disc-no"><?= htmlspecialchars($d['discount_no']) ?></td>
-                        <td><?= date('d M Y', strtotime($d['date'])) ?></td>
-                        <td style="font-weight:600;"><?= htmlspecialchars($d['party_name']) ?></td>
+                        <td class="disc-muted"><?= date('d M Y', strtotime($d['date'])) ?></td>
+                        <td style="font-weight:650;"><?= htmlspecialchars($d['party_name']) ?></td>
                         <td>
                             <?php if (!empty($d['sale_invoice_no']) && !empty($d['sale_id'])): ?>
                             <a class="disc-inv" href="?page=sales&action=detail&id=<?= (int) $d['sale_id'] ?>">
@@ -200,7 +198,7 @@
                             <span class="disc-general">—</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-center disc-amt"><?= APP_CURRENCY ?> <?= number_format($d['amount'], DECIMAL_PLACES) ?></td>
+                        <td class="text-end disc-amt"><?= APP_CURRENCY ?> <?= number_format($d['amount'], DECIMAL_PLACES) ?></td>
                         <td class="disc-muted"><?= htmlspecialchars($d['created_by_name'] ?? '—') ?></td>
                         <td>
                             <div class="disc-act">
@@ -293,10 +291,10 @@ function setInvoiceOptions(invoices, selectedId) {
     saleSelect.disabled = false;
     if (hint) {
         if (invoices.length) {
-            hint.textContent = invoices.length + ' invoice' + (invoices.length === 1 ? '' : 's') + ' in last 7 days';
+            hint.textContent = invoices.length + ' in last 7 days';
             hint.classList.add('is-ready');
         } else {
-            hint.textContent = 'No invoices in the last 7 days for this customer';
+            hint.textContent = 'No invoices in last 7 days';
             hint.classList.remove('is-ready');
         }
     }
@@ -311,7 +309,7 @@ function resetInvoiceSelect() {
     saleSelect.innerHTML = '<option value="">Select customer first...</option>';
     saleSelect.disabled = true;
     if (hint) {
-        hint.textContent = 'Last 7 days — choose a customer to load invoices';
+        hint.textContent = 'Last 7 days';
         hint.classList.remove('is-ready');
     }
 }
@@ -328,7 +326,7 @@ function loadCustomerInvoices(partyId) {
         saleSelect.innerHTML = '<option value="">Loading invoices...</option>';
     }
     if (hint) {
-        hint.textContent = 'Loading last 7 days...';
+        hint.textContent = 'Loading...';
         hint.classList.remove('is-ready');
     }
     fetch('?page=discounts&action=customerInvoices&party_id=' + encodeURIComponent(partyId))
@@ -339,7 +337,7 @@ function loadCustomerInvoices(partyId) {
         .catch(function() {
             resetInvoiceSelect();
             if (hint) {
-                hint.textContent = 'Could not load invoices. Try again.';
+                hint.textContent = 'Could not load invoices';
             }
         });
 }
@@ -364,6 +362,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         partySelect.focus();
     }
+
+    calcDiscTotal(true);
 
     function onFormulaInput() {
         calcDiscTotal(false);

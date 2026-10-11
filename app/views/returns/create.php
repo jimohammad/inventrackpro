@@ -272,7 +272,7 @@ table.items-tbl tbody td.col-num { background:#f8fafc; line-height:48px; }
         <div class="sale-composer-row">
             <div class="sale-field customer-search-wrap" id="retPartySearchWrap">
                 <i class="bi bi-person-circle search-icon"></i>
-                <input type="text" id="retPartySearch" placeholder="Search customer / agent..." autocomplete="off">
+                <input type="text" id="retPartySearch" placeholder="<?= Auth::canInvoiceSupplier() ? 'Search customer / agent / supplier...' : 'Search customer / agent...' ?>" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-form-type="other" role="combobox" aria-autocomplete="list">
                 <div class="autocomplete-box" id="retPartyDrop" style="display:none;"></div>
                 <input type="hidden" name="party_id" id="retPartyId" required>
                 <input type="hidden" name="ref_id" id="refIdInput">
@@ -399,6 +399,7 @@ table.items-tbl tbody td.col-num { background:#f8fafc; line-height:48px; }
 </div>
 
 <script>
+const salePartySearchType = <?= Auth::canInvoiceSupplier() ? "'sale'" : "'customer'" ?>;
 let returnRowCount  = 0;
 let retImeiData     = {};
 let retCurrentRow   = null;
@@ -766,7 +767,7 @@ function selectReturnParty(p) {
     retPartyHighlightIdx = -1;
 
     if (!Object.prototype.hasOwnProperty.call(p, 'balance')) {
-        fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(p.id) + '&type=customer')
+        fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(p.id) + '&type=' + salePartySearchType)
             .then(r => r.json())
             .then(rows => {
                 if (String(document.getElementById('retPartyId').value) !== String(p.id)) return;
@@ -818,7 +819,7 @@ function renderRetPartyDropdown(parties, keepHighlight) {
         const phone = p.phone ? `<br><small style="color:#94a3b8;">${retEscapeHtml(p.phone)}</small>` : '';
         return `<div class="autocomplete-item" data-idx="${idx}" style="display:flex;justify-content:space-between;align-items:center;">
             <div>
-                <strong>${retEscapeHtml(p.name)}</strong>${code}${phone}
+                <strong>${retEscapeHtml(p.name)}</strong>${p.type === 'supplier' ? ' <small style="color:#b45309;font-weight:700;">Supplier</small>' : ''}${code}${phone}
             </div>
             <div style="text-align:right;font-size:0.8rem;">
                 ${retPartyBalanceHtml(p)}
@@ -852,7 +853,7 @@ function runRetPartySearch() {
         if (retPartySearchAbort) retPartySearchAbort.abort();
         retPartySearchAbort = new AbortController();
         const signal = retPartySearchAbort.signal;
-        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=customer&balances=0', { signal })
+        fetch('?page=sales&action=searchParties&q=' + encodeURIComponent(qNow) + '&type=' + salePartySearchType + '&balances=0', { signal })
             .then(r => r.json())
             .then(parties => {
                 if (input.value.trim() !== qNow) return;
@@ -860,7 +861,7 @@ function runRetPartySearch() {
                 renderRetPartyDropdown(rows, false);
                 if (!rows.length) return;
                 const ids = rows.map(p => p.id).join(',');
-                return fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(ids) + '&type=customer', { signal })
+                return fetch('?page=sales&action=searchPartyBalances&ids=' + encodeURIComponent(ids) + '&type=' + salePartySearchType, { signal })
                     .then(r => r.json())
                     .then(enriched => {
                         if (input.value.trim() !== qNow) return;

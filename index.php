@@ -8,9 +8,7 @@
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/app/helpers/WebExceptionHandler.php';
 WebExceptionHandler::register();
-require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/app/helpers/Auth.php';
-require_once __DIR__ . '/app/controllers/BaseController.php';
 
 // Models load on demand via spl_autoload_register below.
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -51,6 +49,13 @@ $warehouseExempt = ['login', 'logout', 'warehouse', 'fieldstatement', 'servicetr
 if (!Auth::isPublicPage($page)) {
     Auth::required();
 }
+
+// Sign-in form does not query MySQL. Skip .env and PDO so that page can be sent sooner.
+$loginFormGet = ($page === 'login' && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET'));
+if (!$loginFormGet) {
+    require_once __DIR__ . '/config/database.php';
+}
+require_once __DIR__ . '/app/controllers/BaseController.php';
 
 // Require warehouse selection for all pages except exempt ones
 if (!in_array($page, $warehouseExempt)) {

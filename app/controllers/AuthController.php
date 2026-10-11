@@ -35,6 +35,9 @@ class AuthController extends BaseController {
                 $this->handleLoginPost($error);
             }
 
+            $csrfField = Auth::csrfField();
+            Auth::releaseSession();
+
             $view = __DIR__ . '/../views/login.php';
             if (!is_readable($view)) {
                 $view = __DIR__ . '/../../app/views/login.php';
@@ -169,14 +172,15 @@ class AuthController extends BaseController {
             . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
             . '<title>Login | ' . htmlspecialchars($app, ENT_QUOTES, 'UTF-8') . '</title>'
             . '<style>
-                body{background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0;font-family:Segoe UI,sans-serif}
-                .card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:2.5rem;width:100%;max-width:420px}
-                h1{color:#6366f1;font-size:1.8rem;margin:0 0 .5rem;text-align:center}
+                html{background:#fff;color-scheme:light}
+                body{background:#fff;color:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0;font-family:Segoe UI,sans-serif}
+                .card{background:#1e293b;border:1px solid #334155;border-top:3px solid #f59e0b;border-radius:16px;padding:2.5rem;width:100%;max-width:420px}
+                h1{color:#fbbf24;font-size:1.8rem;margin:0 0 .5rem;text-align:center}
                 p{color:#94a3b8;text-align:center;margin:0 0 1rem}
-                label{color:#94a3b8;font-size:.875rem;display:block;margin:0 0 .35rem}
-                input{width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:.75rem 1rem;margin:0 0 1rem}
-                button{width:100%;background:#6366f1;border:none;border-radius:8px;padding:.75rem;color:#fff;font-weight:600;cursor:pointer}
-                .alert{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:.75rem;margin:0 0 1rem}
+                label{color:#cbd5e1;font-size:.875rem;display:block;margin:0 0 .35rem}
+                input{width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #334155;color:#f8fafc;border-radius:8px;padding:.75rem 1rem;margin:0 0 1rem}
+                button{width:100%;background:#f59e0b;border:none;border-radius:8px;padding:.75rem;color:#1c1917;font-weight:600;cursor:pointer}
+                .alert{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);color:#fecaca;border-radius:8px;padding:.75rem;margin:0 0 1rem}
             </style></head><body>' . $diag
             . '<div class="card"><h1>IqbalErp</h1><p>Sign in to your account</p>'
             . ($err !== '' ? '<div class="alert">' . $err . '</div>' : '')
@@ -184,7 +188,7 @@ class AuthController extends BaseController {
             . '<label>Email Address</label><input type="email" name="email" value="' . $email . '" required autofocus>'
             . '<label>Password</label><input type="password" name="password" required>'
             . '<button type="submit">Sign In</button></form>'
-            . '<p style="margin-top:1.5rem;color:#475569;font-size:.8rem">' . htmlspecialchars($app, ENT_QUOTES, 'UTF-8')
+            . '<p style="margin-top:1.5rem;color:#94a3b8;font-size:.8rem">' . htmlspecialchars($app, ENT_QUOTES, 'UTF-8')
             . ' &copy; ' . $year . '</p></div></body></html>';
     }
 

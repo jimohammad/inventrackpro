@@ -8,7 +8,7 @@
 define('APP_NAME', 'IqbalErp');
 define('APP_VERSION', '1.0.0');
 /** Increment when changing `assets/css/layout.css` or `assets/js/app.js` (avoids slow per-request filemtime + CDN/browser cache). */
-define('ASSETS_VER', '20260910a');
+define('ASSETS_VER', '20261011b');
 define('APP_URL', 'https://iqbal.app');
 define('APP_TIMEZONE', 'Asia/Kuwait');          // change to your timezone
 

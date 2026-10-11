@@ -1,7 +1,6 @@
 <?php
 
 require_once __DIR__ . '/../../config/app.php';
-require_once __DIR__ . '/../../config/database.php';
 
 /**
  * Auth Helper
@@ -60,7 +59,7 @@ class Auth {
 
     // Login - returns true on success, string error on failure
     public static function login(string $email, string $password): bool|string {
-        $db   = Database::getInstance();
+        $db   = self::db();
         $user = $db->fetchOne("SELECT * FROM users WHERE email = ? AND is_active = 1", [$email]);
 
         if (!$user) {
@@ -109,7 +108,7 @@ class Auth {
             return;
         }
         try {
-            $db = Database::getInstance();
+            $db = self::db();
             $perms = $db->fetchAll(
                 "SELECT module, can_view, can_add, can_edit, can_delete
                  FROM permissions
@@ -398,7 +397,7 @@ class Auth {
             return true;
         }
         try {
-            $db = Database::getInstance();
+            $db = self::db();
             $wh = $db->fetchOne(
                 'SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY (id = 1) DESC, id ASC LIMIT 1'
             );
@@ -442,7 +441,7 @@ class Auth {
         }
 
         try {
-            $db = Database::getInstance();
+            $db = self::db();
             $wh = $db->fetchOne(
                 'SELECT id, name, is_active FROM warehouses WHERE id = ?',
                 [$id]
@@ -459,6 +458,12 @@ class Auth {
 
         $_SESSION['warehouse_is_active'] = 1;
         $_SESSION['warehouse_verified_at'] = time();
+    }
+
+    /** Open the database only when a query is actually needed (login form GET skips this). */
+    private static function db() {
+        require_once __DIR__ . '/../../config/database.php';
+        return Database::getInstance();
     }
 
     /** Release session lock early so parallel tabs/AJAX are not serialized. */
